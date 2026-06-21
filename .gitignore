@@ -24,3 +24,6 @@ backend/prisma/*.db
 .DS_Store
 .vscode/
 coverage/
+
+# Vercel
+.vercel

@@ -3,7 +3,9 @@
 // purchase orders, POS sales, approvals and KPI tracking.
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" for local dev; the rhel targets are for Vercel's serverless runtime.
+  binaryTargets = ["native", "rhel-openssl-3.0.x", "rhel-openssl-1.0.x"]
 }
 
 datasource db {

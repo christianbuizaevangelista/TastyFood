@@ -1,0 +1,33 @@
+{
+  "name": "tasty-food-distribution",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tasty Food Manufacturing distribution system — Vercel full-stack deploy (Vite frontend + Express API as serverless functions)",
+  "engines": {
+    "node": "20.x"
+  },
+  "scripts": {
+    "vercel-build": "prisma generate --schema=backend/prisma/schema.prisma && tsc -p backend/tsconfig.json && npm --prefix frontend install --no-audit --no-fund && npm --prefix frontend run build"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/morgan": "^1.9.9",
+    "@types/node": "^20.14.0",
+    "@vercel/node": "^3.2.0",
+    "prisma": "^5.22.0",
+    "typescript": "^5.5.4"
+  }
+}
