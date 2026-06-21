@@ -1,0 +1,348 @@
+// Tasty Food Manufacturing Inc. — Distribution Management System
+// Prisma schema: multi-tier distribution hierarchy with RBAC, inventory,
+// purchase orders, POS sales, approvals and KPI tracking.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum OrgType {
+  PRINCIPAL
+  PROVINCIAL
+  CITY
+  RESELLER
+}
+
+enum OrgStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum UserRole {
+  PRINCIPAL
+  PROVINCIAL
+  CITY
+  RESELLER
+}
+
+enum DistributionType {
+  TRADE
+  DROP_SHIP
+}
+
+enum PoStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  FULFILLED
+  RECEIVED
+  CANCELLED
+}
+
+enum SaleChannel {
+  PO
+  POS
+}
+
+enum ApprovalType {
+  ORG_ONBOARDING
+  PO_APPROVAL
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ---------------------------------------------------------------------------
+// Core entities
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id           String    @id @default(cuid())
+  name         String
+  type         OrgType
+  // Each tier purchases from exactly one level above it.
+  parentId     String?
+  parent       Organization?  @relation("OrgHierarchy", fields: [parentId], references: [id])
+  children     Organization[] @relation("OrgHierarchy")
+
+  // Discount off SRP this org receives when it BUYS from its parent.
+  // PRINCIPAL 0, PROVINCIAL 0.20, CITY 0.15, RESELLER 0.08
+  discountRate Float     @default(0)
+
+  // Onboarding/approval state.
+  status       OrgStatus @default(PENDING)
+  // Membership activation (independent of approval; can be toggled later).
+  isActive     Boolean   @default(true)
+
+  // CRM / contact details.
+  contactName  String?
+  contactEmail String?
+  contactPhone String?
+  address      String?
+  notes        String?
+
+  // KPI target (revenue) for the current period.
+  salesTarget  Float     @default(0)
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  users        User[]
+  inventory    Inventory[]
+  ledger       StockLedger[]
+
+  poAsBuyer    PurchaseOrder[] @relation("PoBuyer")
+  poAsSeller   PurchaseOrder[] @relation("PoSeller")
+
+  salesAsSeller Sale[] @relation("SaleSeller")
+  salesAsBuyer  Sale[] @relation("SaleBuyer")
+
+  approvalsForOrg Approval[] @relation("ApprovalSubject")
+  kpiRecords    KPIRecord[]
+
+  @@index([parentId])
+  @@index([type])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         UserRole
+  orgId        String
+  org          Organization @relation(fields: [orgId], references: [id])
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  createdPOs   PurchaseOrder[] @relation("PoCreatedBy")
+  createdSales Sale[]          @relation("SaleCreatedBy")
+  requestedApprovals Approval[] @relation("ApprovalRequester")
+  decidedApprovals   Approval[] @relation("ApprovalDecider")
+
+  @@index([orgId])
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  sku         String   @unique
+  name        String
+  description String?
+  category    String?
+  // Suggested Retail Price — the basis for all tier pricing.
+  srp         Float
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  inventory   Inventory[]
+  ledger      StockLedger[]
+  poItems     PurchaseOrderItem[]
+  saleItems   SaleItem[]
+}
+
+// ---------------------------------------------------------------------------
+// Inventory
+// ---------------------------------------------------------------------------
+
+model Inventory {
+  id           String   @id @default(cuid())
+  orgId        String
+  org          Organization @relation(fields: [orgId], references: [id])
+  productId    String
+  product      Product  @relation(fields: [productId], references: [id])
+  quantity     Int      @default(0)
+  reorderLevel Int      @default(20)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([orgId, productId])
+  @@index([orgId])
+}
+
+// Append-only per-SKU stock ledger for auditability.
+model StockLedger {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  change    Int      // +in / -out
+  balance   Int      // resulting balance after this movement
+  reason    String   // e.g. PO_RECEIVED, PO_FULFILLED, POS_SALE, ADJUSTMENT
+  refType   String?  // PurchaseOrder | Sale | Adjustment
+  refId     String?
+  createdAt DateTime @default(now())
+
+  @@index([orgId, productId])
+}
+
+// ---------------------------------------------------------------------------
+// Purchase Orders (buyer orders from immediate parent)
+// ---------------------------------------------------------------------------
+
+model PurchaseOrder {
+  id               String   @id @default(cuid())
+  number           String   @unique
+  buyerOrgId       String
+  buyerOrg         Organization @relation("PoBuyer", fields: [buyerOrgId], references: [id])
+  sellerOrgId      String
+  sellerOrg        Organization @relation("PoSeller", fields: [sellerOrgId], references: [id])
+  distributionType DistributionType @default(TRADE)
+  status           PoStatus @default(DRAFT)
+
+  discountRate     Float    // buyer tier discount applied to the whole PO
+  subtotal         Float    @default(0) // sum of line SRP * qty
+  total            Float    @default(0) // sum of discounted line totals
+
+  createdById      String
+  createdBy        User     @relation("PoCreatedBy", fields: [createdById], references: [id])
+
+  submittedAt      DateTime?
+  approvedAt       DateTime?
+  fulfilledAt      DateTime?
+  receivedAt       DateTime?
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  items            PurchaseOrderItem[]
+  approvals        Approval[] @relation("ApprovalPO")
+  sale             Sale?      @relation("SaleFromPO")
+
+  @@index([buyerOrgId])
+  @@index([sellerOrgId])
+  @@index([status])
+}
+
+model PurchaseOrderItem {
+  id        String   @id @default(cuid())
+  poId      String
+  po        PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  quantity  Int
+  unitSrp   Float    // SRP at time of order
+  unitPrice Float    // discounted unit price
+  lineTotal Float    // unitPrice * quantity
+
+  @@index([poId])
+}
+
+// ---------------------------------------------------------------------------
+// Sales (POS direct sales, or the recorded sale generated from a PO)
+// ---------------------------------------------------------------------------
+
+model Sale {
+  id               String   @id @default(cuid())
+  number           String   @unique
+  sellerOrgId      String
+  sellerOrg        Organization @relation("SaleSeller", fields: [sellerOrgId], references: [id])
+  // Optional downstream org buyer (if selling to a known account).
+  buyerOrgId       String?
+  buyerOrg         Organization? @relation("SaleBuyer", fields: [buyerOrgId], references: [id])
+  channel          SaleChannel @default(POS)
+  distributionType DistributionType @default(TRADE)
+
+  customerName     String?  // walk-in / end customer for POS
+  discountRate     Float    @default(0)
+  subtotal         Float    @default(0)
+  total            Float    @default(0)
+
+  // If this sale was generated from a fulfilled PO.
+  poId             String?  @unique
+  po               PurchaseOrder? @relation("SaleFromPO", fields: [poId], references: [id])
+
+  createdById      String
+  createdBy        User     @relation("SaleCreatedBy", fields: [createdById], references: [id])
+
+  createdAt        DateTime @default(now())
+
+  items            SaleItem[]
+
+  @@index([sellerOrgId])
+  @@index([channel])
+  @@index([distributionType])
+  @@index([createdAt])
+}
+
+model SaleItem {
+  id        String   @id @default(cuid())
+  saleId    String
+  sale      Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  quantity  Int
+  unitSrp   Float
+  unitPrice Float
+  lineTotal Float
+
+  @@index([saleId])
+}
+
+// ---------------------------------------------------------------------------
+// Approvals (org onboarding + PO approval)
+// ---------------------------------------------------------------------------
+
+model Approval {
+  id            String   @id @default(cuid())
+  type          ApprovalType
+  status        ApprovalStatus @default(PENDING)
+
+  // Subject org (the org being onboarded/approved).
+  orgId         String
+  org           Organization @relation("ApprovalSubject", fields: [orgId], references: [id])
+
+  // Optional PO subject (for PO_APPROVAL).
+  poId          String?
+  po            PurchaseOrder? @relation("ApprovalPO", fields: [poId], references: [id])
+
+  requestedById String?
+  requestedBy   User?    @relation("ApprovalRequester", fields: [requestedById], references: [id])
+  decidedById   String?
+  decidedBy     User?    @relation("ApprovalDecider", fields: [decidedById], references: [id])
+  decidedAt     DateTime?
+  note          String?
+
+  createdAt     DateTime @default(now())
+
+  @@index([orgId])
+  @@index([status])
+  @@index([type])
+}
+
+// ---------------------------------------------------------------------------
+// KPI snapshots (per org, per period)
+// ---------------------------------------------------------------------------
+
+model KPIRecord {
+  id                String   @id @default(cuid())
+  orgId             String
+  org               Organization @relation(fields: [orgId], references: [id])
+  periodStart       DateTime
+  periodEnd         DateTime
+  salesVolume       Int      @default(0)   // units sold
+  revenue           Float    @default(0)
+  target            Float    @default(0)
+  activeMembers     Int      @default(0)   // active downstream members
+  poFulfillmentRate Float    @default(0)   // 0..1
+  inventoryTurnover Float    @default(0)
+  growthPct         Float    @default(0)   // period-over-period %
+  createdAt         DateTime @default(now())
+
+  @@index([orgId])
+  @@index([periodStart, periodEnd])
+}

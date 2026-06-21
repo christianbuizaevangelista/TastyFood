@@ -1,0 +1,48 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tasty
+      POSTGRES_PASSWORD: tasty
+      POSTGRES_DB: tasty_food
+    ports:
+      - '5432:5432'
+    volumes:
+      - tasty_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U tasty -d tasty_food']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://tasty:tasty@db:5432/tasty_food?schema=public
+      JWT_SECRET: docker-dev-secret-change-me
+      JWT_EXPIRES_IN: 1d
+      PORT: 4000
+      CLIENT_ORIGIN: http://localhost:5173
+      NODE_ENV: production
+    ports:
+      - '4000:4000'
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Browser calls the backend directly; CORS is enabled on the API.
+        VITE_API_URL: http://localhost:4000/api
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - '5173:5173'
+
+volumes:
+  tasty_pgdata:

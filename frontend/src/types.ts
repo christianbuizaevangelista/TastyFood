@@ -1,0 +1,56 @@
+export type Role = 'PRINCIPAL' | 'PROVINCIAL' | 'CITY' | 'RESELLER';
+export type OrgType = Role;
+export type DistributionType = 'TRADE' | 'DROP_SHIP';
+export type PoStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'FULFILLED' | 'RECEIVED' | 'CANCELLED';
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  org: {
+    id: string;
+    name: string;
+    type: OrgType;
+    discountRate: number;
+    parentId?: string | null;
+  };
+}
+
+export interface Product {
+  id: string;
+  sku: string;
+  name: string;
+  category?: string;
+  srp: number;
+}
+
+export interface InventoryItem {
+  id: string;
+  productId: string;
+  sku: string;
+  name: string;
+  category?: string;
+  srp: number;
+  quantity: number;
+  reorderLevel: number;
+  lowStock: boolean;
+  stockValue: number;
+}
+
+export interface Org {
+  id: string;
+  name: string;
+  type: OrgType;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  isActive: boolean;
+  discountRate: number;
+  contactName?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  address?: string;
+  notes?: string;
+  salesTarget: number;
+  parent?: { id: string; name: string; type: OrgType } | null;
+  _count?: { children: number; users: number };
+}
