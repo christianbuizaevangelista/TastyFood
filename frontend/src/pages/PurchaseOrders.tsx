@@ -42,6 +42,9 @@ export default function PurchaseOrders() {
   const products = useFetch<{ products: Product[] }>('/products');
   const [showCreate, setShowCreate] = useState(false);
   const [actionErr, setActionErr] = useState<string | null>(null);
+  const [tab, setTab] = useState<'supplier' | 'customer'>(
+    user!.role === 'PRINCIPAL' ? 'customer' : 'supplier'
+  );
 
   async function runAction(po: PO, path: string) {
     setActionErr(null);
@@ -56,58 +59,57 @@ export default function PurchaseOrders() {
   if (loading) return <Spinner />;
   if (error) return <Alert>{error}</Alert>;
 
+  const myOrgId = user!.org.id;
   const canCreate = user!.role !== 'PRINCIPAL';
+  const orders = data?.orders ?? [];
 
-  return (
-    <div>
-      <PageHeader
-        title="Purchase Orders"
-        subtitle="Order from your immediate supplier. Trade adjusts stock; drop-ship does not."
-        action={
-          canCreate ? (
-            <button className="btn-primary" onClick={() => setShowCreate(true)}>
-              + New PO
-            </button>
-          ) : (
-            <span className="text-xs text-slate-400">Principal has no upstream supplier</span>
-          )
-        }
-      />
+  // POs I placed with my supplier (I'm the buyer, the tier above) vs POs my
+  // downstream customers placed (I'm the seller, or deeper in my chain).
+  const supplierPOs = orders.filter((po) => po.buyerOrg.id === myOrgId);
+  const customerPOs = orders.filter((po) => po.buyerOrg.id !== myOrgId);
 
-      {actionErr && <div className="mb-4"><Alert>{actionErr}</Alert></div>}
+  const tabs = [
+    { key: 'supplier' as const, label: 'To Supplier', hint: 'Orders you placed with the tier above you.', list: supplierPOs },
+    { key: 'customer' as const, label: 'From Customers', hint: 'Orders your downstream (1–2 tiers below) placed with you.', list: customerPOs },
+  ];
 
-      <div className="card overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-slate-100">
-              <th className="th">PO #</th>
-              <th className="th">Buyer</th>
-              <th className="th">Seller</th>
-              <th className="th">Type</th>
-              <th className="th">Status</th>
-              <th className="th text-right">Total</th>
-              <th className="th">Date</th>
-              <th className="th text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data?.orders.map((po) => (
+  const renderTable = (list: PO[], counterpartyHeader: string, emptyText: string) => (
+    <div className="card overflow-x-auto">
+      <table className="w-full">
+        <thead>
+          <tr className="border-b border-slate-100">
+            <th className="th">PO #</th>
+            <th className="th">{counterpartyHeader}</th>
+            <th className="th">Type</th>
+            <th className="th">Status</th>
+            <th className="th text-right">Total</th>
+            <th className="th">Date</th>
+            <th className="th text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {list.map((po) => {
+            // Show the other party: supplier view -> seller; customer view -> buyer.
+            const counterparty = tab === 'supplier' ? po.sellerOrg : po.buyerOrg;
+            return (
               <tr key={po.id} className="border-b border-slate-50">
                 <td className="td font-mono text-xs">{po.number}</td>
-                <td className="td">{po.buyerOrg.name}</td>
-                <td className="td">{po.sellerOrg.name}</td>
+                <td className="td">
+                  {counterparty.name}
+                  <span className="ml-1 text-xs text-slate-400">({counterparty.type})</span>
+                </td>
                 <td className="td"><Badge value={po.distributionType} /></td>
                 <td className="td"><Badge value={po.status} /></td>
                 <td className="td text-right font-semibold">{peso(po.total)}</td>
                 <td className="td whitespace-nowrap text-xs text-slate-500">{date(po.createdAt)}</td>
                 <td className="td text-right">
                   <div className="flex justify-end gap-1">
-                    {actionsFor(po, user!.org.id).map((a) => (
+                    {actionsFor(po, myOrgId).map((a) => (
                       <button
                         key={a.path}
                         onClick={() => runAction(po, a.path)}
                         className={`rounded-md px-2 py-1 text-xs font-semibold ${
-                          a.path === 'cancel'
+                          a.path === 'cancel' || a.path === 'reject'
                             ? 'text-red-600 hover:bg-red-50'
                             : 'text-brand-600 hover:bg-brand-50'
                         }`}
@@ -118,13 +120,57 @@ export default function PurchaseOrders() {
                   </div>
                 </td>
               </tr>
-            ))}
-            {!data?.orders.length && (
-              <tr><td className="td text-slate-400" colSpan={8}>No purchase orders yet.</td></tr>
-            )}
-          </tbody>
-        </table>
+            );
+          })}
+          {list.length === 0 && (
+            <tr><td className="td text-slate-400" colSpan={7}>{emptyText}</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  return (
+    <div>
+      <PageHeader
+        title="Purchase Orders"
+        subtitle="Separate views: what you buy from your supplier, and what your customers order from you."
+        action={
+          canCreate ? (
+            <button className="btn-primary" onClick={() => setShowCreate(true)}>
+              + New PO to supplier
+            </button>
+          ) : (
+            <span className="text-xs text-slate-400">Principal has no upstream supplier</span>
+          )
+        }
+      />
+
+      {actionErr && <div className="mb-4"><Alert>{actionErr}</Alert></div>}
+
+      <div className="mb-1 flex gap-2 border-b border-slate-200">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-semibold ${
+              tab === t.key
+                ? 'border-brand-500 text-brand-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {t.label}
+            <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{t.list.length}</span>
+          </button>
+        ))}
       </div>
+      <p className="mb-3 mt-2 text-xs text-slate-400">
+        {tabs.find((t) => t.key === tab)!.hint}
+      </p>
+
+      {tab === 'supplier'
+        ? renderTable(supplierPOs, 'Supplier', 'No orders to your supplier yet.')
+        : renderTable(customerPOs, 'Customer', 'No orders from your customers yet.')}
 
       {showCreate && (
         <CreatePO
