@@ -60,9 +60,42 @@ function canReceive(po: PO, myOrgId: string): boolean {
   return po.buyerOrg.id === myOrgId && ['FULFILLED', 'PARTIALLY_RECEIVED'].includes(po.status);
 }
 
+type DatePreset = 'all' | 'today' | 'yesterday' | '7' | '15' | '30' | 'month' | 'custom';
+const DATE_PRESETS: { key: DatePreset; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'today', label: 'Today' },
+  { key: 'yesterday', label: 'Yesterday' },
+  { key: '7', label: '7 days ago' },
+  { key: '15', label: '15 days ago' },
+  { key: '30', label: '30 days ago' },
+  { key: 'month', label: 'Current Month' },
+  { key: 'custom', label: 'Customize Date' },
+];
+const ymd = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+
 export default function PurchaseOrders() {
   const { user } = useAuth();
+  const [preset, setPreset] = useState<DatePreset>('all');
   const [dateFilter, setDateFilter] = useState({ from: '', to: '' });
+
+  function applyPreset(p: DatePreset) {
+    setPreset(p);
+    const now = new Date();
+    const today = ymd(now);
+    if (p === 'all') setDateFilter({ from: '', to: '' });
+    else if (p === 'today') setDateFilter({ from: today, to: today });
+    else if (p === 'yesterday') {
+      const y = ymd(addDays(now, -1));
+      setDateFilter({ from: y, to: y });
+    } else if (p === '7') setDateFilter({ from: ymd(addDays(now, -7)), to: today });
+    else if (p === '15') setDateFilter({ from: ymd(addDays(now, -15)), to: today });
+    else if (p === '30') setDateFilter({ from: ymd(addDays(now, -30)), to: today });
+    else if (p === 'month')
+      setDateFilter({ from: ymd(new Date(now.getFullYear(), now.getMonth(), 1)), to: today });
+    // 'custom' keeps whatever is currently set and reveals the manual inputs.
+  }
   const url = useMemo(() => {
     const p = new URLSearchParams();
     if (dateFilter.from) p.set('from', dateFilter.from);
@@ -198,22 +231,53 @@ export default function PurchaseOrders() {
 
       {actionErr && <div className="mb-4"><Alert>{actionErr}</Alert></div>}
 
-      {/* Order-date range filter */}
-      <div className="card mb-4 flex flex-wrap items-end gap-3">
-        <div>
-          <label className="label">From</label>
-          <input type="date" className="input" value={dateFilter.from} onChange={(e) => setDateFilter({ ...dateFilter, from: e.target.value })} />
+      {/* Order-date range filter with quick presets */}
+      <div className="card mb-4">
+        <div className="flex flex-wrap items-center gap-2">
+          {DATE_PRESETS.map((p) => (
+            <button
+              key={p.key}
+              onClick={() => applyPreset(p.key)}
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                preset === p.key
+                  ? 'bg-brand-500 text-white'
+                  : 'border border-slate-200 text-slate-600 hover:border-brand-400 hover:text-brand-600'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+          <span className="ml-auto text-xs text-slate-400">Filters by order date</span>
         </div>
-        <div>
-          <label className="label">To</label>
-          <input type="date" className="input" value={dateFilter.to} onChange={(e) => setDateFilter({ ...dateFilter, to: e.target.value })} />
-        </div>
-        {(dateFilter.from || dateFilter.to) && (
-          <button className="btn-ghost" onClick={() => setDateFilter({ from: '', to: '' })}>
-            Clear
-          </button>
+
+        {preset === 'custom' && (
+          <div className="mt-3 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-3">
+            <div>
+              <label className="label">From</label>
+              <input
+                type="date"
+                className="input"
+                value={dateFilter.from}
+                onChange={(e) => setDateFilter({ ...dateFilter, from: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="label">To</label>
+              <input
+                type="date"
+                className="input"
+                value={dateFilter.to}
+                onChange={(e) => setDateFilter({ ...dateFilter, to: e.target.value })}
+              />
+            </div>
+          </div>
         )}
-        <span className="ml-auto text-xs text-slate-400">Filters by order date</span>
+
+        {preset !== 'all' && preset !== 'custom' && (dateFilter.from || dateFilter.to) && (
+          <p className="mt-2 text-xs text-slate-400">
+            Showing {dateFilter.from} → {dateFilter.to}
+          </p>
+        )}
       </div>
 
       <div className="mb-1 flex gap-2 border-b border-slate-200">
