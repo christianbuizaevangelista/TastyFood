@@ -72,6 +72,16 @@ enum ApprovalStatus {
   REJECTED
 }
 
+// Geographic clustering for territories.
+//  REGION (cluster) > PROVINCE (Provincial Distributor) >
+//  CITY/Municipality (City Distributor) > BARANGAY (Reseller)
+enum TerritoryLevel {
+  REGION
+  PROVINCE
+  CITY
+  BARANGAY
+}
+
 // ---------------------------------------------------------------------------
 // Core entities
 // ---------------------------------------------------------------------------
@@ -119,6 +129,9 @@ model Organization {
 
   approvalsForOrg Approval[] @relation("ApprovalSubject")
   kpiRecords    KPIRecord[]
+
+  // The geographic territory this org occupies (if assigned).
+  territory     Territory? @relation("OrgTerritory")
 
   @@index([parentId])
   @@index([type])
@@ -359,6 +372,24 @@ model Approval {
 // ---------------------------------------------------------------------------
 // KPI snapshots (per org, per period)
 // ---------------------------------------------------------------------------
+
+// A geographic node in the distribution territory tree. A territory below the
+// REGION level can be assigned to exactly one organization (its distributor);
+// an unassigned assignable territory is "vacant".
+model Territory {
+  id            String   @id @default(cuid())
+  name          String
+  level         TerritoryLevel
+  parentId      String?
+  parent        Territory?  @relation("TerritoryTree", fields: [parentId], references: [id])
+  children      Territory[] @relation("TerritoryTree")
+  assignedOrgId String?  @unique
+  assignedOrg   Organization? @relation("OrgTerritory", fields: [assignedOrgId], references: [id])
+  createdAt     DateTime @default(now())
+
+  @@index([parentId])
+  @@index([level])
+}
 
 model KPIRecord {
   id                String   @id @default(cuid())

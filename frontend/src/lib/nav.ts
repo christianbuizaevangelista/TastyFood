@@ -12,6 +12,7 @@ const ALL: Role[] = ['PRINCIPAL', 'PROVINCIAL', 'CITY', 'RESELLER'];
 // Sidebar modules, filtered by role. Order reflects the build/UX priority.
 export const NAV: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: '📊', roles: ALL },
+  { to: '/structure', label: 'Org Structure', icon: '🗺️', roles: ALL },
   { to: '/inventory', label: 'Inventory', icon: '📦', roles: ALL },
   { to: '/purchase-orders', label: 'Purchase Orders', icon: '🧾', roles: ALL },
   { to: '/pos', label: 'Point of Sale', icon: '🛒', roles: ['PROVINCIAL', 'CITY', 'RESELLER'] },

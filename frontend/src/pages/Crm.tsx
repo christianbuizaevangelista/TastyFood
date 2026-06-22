@@ -7,6 +7,7 @@ import { peso } from '../lib/format';
 import { Org, OrgType } from '../types';
 
 const PARENT_OF: Record<string, OrgType> = { PROVINCIAL: 'PRINCIPAL', CITY: 'PROVINCIAL', RESELLER: 'CITY' };
+const LEVEL_OF: Record<string, string> = { PROVINCIAL: 'PROVINCE', CITY: 'CITY', RESELLER: 'BARANGAY' };
 
 export default function Crm() {
   const { user } = useAuth();
@@ -127,6 +128,7 @@ function Onboard({
   const [form, setForm] = useState({
     name: '',
     parentId: '',
+    territoryId: '',
     contactName: '',
     contactPhone: '',
     address: '',
@@ -137,6 +139,12 @@ function Onboard({
   });
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Vacant territories of the level this position occupies, within scope.
+  const vacant = useFetch<{ vacant: { id: string; name: string; level: string; parentName: string | null }[] }>(
+    `/territories/vacant?level=${LEVEL_OF[type]}`,
+    [type]
+  );
 
   // Valid parents = in-scope orgs of the required parent tier.
   const parentTier = PARENT_OF[type];
@@ -153,6 +161,7 @@ function Onboard({
         name: form.name,
         type,
         parentId: form.parentId,
+        territoryId: form.territoryId || undefined,
         contactName: form.contactName || undefined,
         contactPhone: form.contactPhone || undefined,
         address: form.address || undefined,
@@ -177,7 +186,7 @@ function Onboard({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="label">Tier</label>
-            <select className="input" value={type} onChange={(e) => { setType(e.target.value as OrgType); setForm({ ...form, parentId: '' }); }}>
+            <select className="input" value={type} onChange={(e) => { setType(e.target.value as OrgType); setForm({ ...form, parentId: '', territoryId: '' }); }}>
               {tiers.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
@@ -187,6 +196,20 @@ function Onboard({
               <option value="">Select…</option>
               {parentOptions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
             </select>
+          </div>
+          <div className="col-span-2">
+            <label className="label">Territory to assign ({LEVEL_OF[type]})</label>
+            <select className="input" value={form.territoryId} onChange={(e) => setForm({ ...form, territoryId: e.target.value })}>
+              <option value="">{vacant.loading ? 'Loading…' : 'Unassigned (assign later)'}</option>
+              {vacant.data?.vacant.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}{t.parentName ? ` — ${t.parentName}` : ''}
+                </option>
+              ))}
+            </select>
+            {!vacant.loading && (vacant.data?.vacant.length ?? 0) === 0 && (
+              <p className="mt-1 text-xs text-amber-600">No vacant {LEVEL_OF[type]} territory available in your scope.</p>
+            )}
           </div>
           <div className="col-span-2">
             <label className="label">Business name</label>

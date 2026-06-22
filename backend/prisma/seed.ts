@@ -1,5 +1,6 @@
 import { PrismaClient, OrgType, OrgStatus, DistributionType, SaleChannel } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { seedTerritories } from './seedTerritories';
 
 const prisma = new PrismaClient();
 
@@ -30,6 +31,7 @@ async function main() {
   console.log('🌱 Seeding Tasty Food distribution data...');
 
   // Clean slate (order matters for FKs).
+  await prisma.territory.deleteMany();
   await prisma.saleItem.deleteMany();
   await prisma.sale.deleteMany();
   await prisma.purchaseOrderItem.deleteMany();
@@ -419,6 +421,8 @@ async function main() {
     lines: pick(8).map((l, i) => ({ ...l, qty: 100 + i })),
   });
   console.log('  • Sample purchase orders (DRAFT, SUBMITTED, APPROVED, RECEIVED)');
+
+  await seedTerritories(prisma);
 
   console.log('\n✅ Seed complete. Test logins (password for all: ' + PASSWORD + '):');
   console.log('   PRINCIPAL    principal@tasty.test');

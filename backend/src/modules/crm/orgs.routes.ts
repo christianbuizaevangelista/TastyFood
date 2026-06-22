@@ -9,6 +9,7 @@ import { badRequest, forbidden, notFound } from '../../lib/errors';
 import { TIER_DISCOUNT, PARENT_TYPE } from '../../lib/pricing';
 import { hashPassword } from '../../lib/auth';
 import { canApproveOrgOnboarding } from './approvals.service';
+import { LEVEL_FOR_TYPE } from '../territories/territories.routes';
 
 export const orgsRouter = Router();
 orgsRouter.use(authenticate);
@@ -80,6 +81,8 @@ const createSchema = z.object({
   name: z.string().min(1),
   type: z.enum(['PROVINCIAL', 'CITY', 'RESELLER']),
   parentId: z.string(),
+  // Optional geographic territory to assign this account to.
+  territoryId: z.string().optional(),
   contactName: z.string().optional(),
   contactEmail: z.string().email().optional(),
   contactPhone: z.string().optional(),
@@ -123,6 +126,16 @@ orgsRouter.post(
     });
     if (existingUser) throw badRequest('A user with that email already exists');
 
+    // If assigning a territory, validate it is vacant and the right level.
+    if (body.territoryId) {
+      const terr = await prisma.territory.findUnique({ where: { id: body.territoryId } });
+      if (!terr) throw notFound('Territory not found');
+      if (terr.assignedOrgId) throw badRequest('That territory is already occupied');
+      if (terr.level !== LEVEL_FOR_TYPE[body.type as OrgType]) {
+        throw badRequest(`A ${body.type} must occupy a ${LEVEL_FOR_TYPE[body.type as OrgType]} territory`);
+      }
+    }
+
     const org = await prisma.$transaction(async (tx) => {
       const created = await tx.organization.create({
         data: {
@@ -156,6 +169,12 @@ orgsRouter.post(
           requestedById: req.auth!.sub,
         },
       });
+      if (body.territoryId) {
+        await tx.territory.update({
+          where: { id: body.territoryId },
+          data: { assignedOrgId: created.id },
+        });
+      }
       return created;
     });
 
