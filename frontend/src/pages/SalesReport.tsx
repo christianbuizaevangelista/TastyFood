@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  LineChart, Line, PieChart, Pie, Cell, Legend, Tooltip, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
+  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, Legend, Tooltip, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
 } from 'recharts';
 import { api, apiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
@@ -292,6 +292,22 @@ export default function SalesReport() {
           )}
 
           {tab === 'sku' && (
+            <div className="space-y-4">
+            <div className="card">
+              <h3 className="mb-3 text-sm font-semibold text-slate-700">Revenue per item</h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={data!.summary.bySku} margin={{ top: 5, right: 10, left: 0, bottom: 60 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis dataKey="sku" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" interval={0} height={60} />
+                  <YAxis tick={{ fontSize: 11 }} width={70} tickFormatter={(v) => peso(v)} />
+                  <Tooltip
+                    formatter={(v: number) => peso(v)}
+                    labelFormatter={(sku) => data!.summary.bySku.find((r) => r.sku === sku)?.name ?? sku}
+                  />
+                  <Bar dataKey="revenue" name="Revenue" fill="#e8521d" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
             <div className="card overflow-x-auto">
               <table className="w-full">
                 <thead>
@@ -316,6 +332,7 @@ export default function SalesReport() {
                   )}
                 </tbody>
               </table>
+            </div>
             </div>
           )}
 
