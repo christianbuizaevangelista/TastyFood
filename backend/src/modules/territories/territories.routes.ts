@@ -1,11 +1,22 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { OrgType, TerritoryLevel } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
+import { requireRole } from '../../middleware/rbac';
+import { badRequest, notFound, conflict } from '../../lib/errors';
 
 export const territoriesRouter = Router();
 territoriesRouter.use(authenticate);
+
+// Required parent level for each territory level.
+const PARENT_LEVEL: Record<TerritoryLevel, TerritoryLevel | null> = {
+  REGION: null,
+  PROVINCE: 'REGION',
+  CITY: 'PROVINCE',
+  BARANGAY: 'CITY',
+};
 
 // Which territory level a given org type occupies.
 export const LEVEL_FOR_TYPE: Partial<Record<OrgType, TerritoryLevel>> = {
@@ -109,5 +120,69 @@ territoriesRouter.get(
         parentName: t.parentId ? byId.get(t.parentId)?.name ?? null : null,
       }));
     res.json({ vacant });
+  })
+);
+
+// --- Manual encoding (Principal only) ---------------------------------------
+
+const createSchema = z.object({
+  name: z.string().min(1).max(120),
+  level: z.enum(['REGION', 'PROVINCE', 'CITY', 'BARANGAY']),
+  parentId: z.string().optional(),
+});
+
+// POST /territories — add a new area.
+territoriesRouter.post(
+  '/',
+  requireRole('PRINCIPAL'),
+  asyncHandler(async (req, res) => {
+    const body = createSchema.parse(req.body);
+    const needsParent = PARENT_LEVEL[body.level];
+
+    if (!needsParent) {
+      if (body.parentId) throw badRequest('A region cannot have a parent');
+    } else {
+      if (!body.parentId) throw badRequest(`A ${body.level} must belong to a ${needsParent}`);
+      const parent = await prisma.territory.findUnique({ where: { id: body.parentId } });
+      if (!parent) throw notFound('Parent area not found');
+      if (parent.level !== needsParent) {
+        throw badRequest(`A ${body.level} must belong to a ${needsParent}, not a ${parent.level}`);
+      }
+    }
+
+    const created = await prisma.territory.create({
+      data: { name: body.name, level: body.level, parentId: body.parentId ?? null },
+    });
+    res.status(201).json(created);
+  })
+);
+
+// PATCH /territories/:id — rename an area.
+territoriesRouter.patch(
+  '/:id',
+  requireRole('PRINCIPAL'),
+  asyncHandler(async (req, res) => {
+    const { name } = z.object({ name: z.string().min(1).max(120) }).parse(req.body);
+    const existing = await prisma.territory.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw notFound('Area not found');
+    const updated = await prisma.territory.update({ where: { id: req.params.id }, data: { name } });
+    res.json(updated);
+  })
+);
+
+// DELETE /territories/:id — remove an empty, unassigned area.
+territoriesRouter.delete(
+  '/:id',
+  requireRole('PRINCIPAL'),
+  asyncHandler(async (req, res) => {
+    const t = await prisma.territory.findUnique({
+      where: { id: req.params.id },
+      include: { _count: { select: { children: true } } },
+    });
+    if (!t) throw notFound('Area not found');
+    if (t.assignedOrgId) throw conflict('Cannot delete an occupied area; unassign it first');
+    if (t._count.children > 0) throw conflict('Cannot delete an area that still has sub-areas');
+    await prisma.territory.delete({ where: { id: req.params.id } });
+    res.json({ ok: true });
   })
 );
