@@ -20,6 +20,7 @@ export const NAV: NavItem[] = [
   { to: '/crm', label: 'CRM / Accounts', icon: '🤝', roles: ['PRINCIPAL', 'PROVINCIAL', 'CITY'] },
   { to: '/approvals', label: 'Approvals', icon: '✅', roles: ['PRINCIPAL', 'PROVINCIAL'] },
   { to: '/products', label: 'Products', icon: '🏷️', roles: ['PRINCIPAL'] },
+  { to: '/account', label: 'Account Settings', icon: '👤', roles: ALL },
 ];
 
 export function navForRole(role: Role): NavItem[] {

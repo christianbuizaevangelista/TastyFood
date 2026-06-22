@@ -15,6 +15,7 @@ import Kpi from './pages/Kpi';
 import Crm from './pages/Crm';
 import Approvals from './pages/Approvals';
 import Products from './pages/Products';
+import Account from './pages/Account';
 
 function Protected({ children, roles }: { children: ReactNode; roles?: Role[] }) {
   const { user, loading } = useAuth();
@@ -72,6 +73,7 @@ export default function App() {
           </Protected>
         }
       />
+      <Route path="/account" element={<Protected><Account /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
