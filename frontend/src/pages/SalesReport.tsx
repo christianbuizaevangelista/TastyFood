@@ -61,7 +61,7 @@ export default function SalesReport() {
     return p.toString();
   }, [filters]);
 
-  const { data, loading, error } = useFetch<SalesResponse>(`/sales?${qs}`, [qs]);
+  const { data, loading, error, refetch } = useFetch<SalesResponse>(`/sales?${qs}`, [qs]);
   const [exporting, setExporting] = useState(false);
   const [exportErr, setExportErr] = useState<string | null>(null);
   const [tab, setTab] = useState<SalesTab>('sales');
@@ -362,7 +362,7 @@ export default function SalesReport() {
         </>
       )}
 
-      {detailId && <SaleDetail saleId={detailId} onClose={() => setDetailId(null)} />}
+      {detailId && <SaleDetail saleId={detailId} onClose={() => setDetailId(null)} onRefunded={refetch} />}
     </div>
   );
 }
@@ -379,15 +379,29 @@ interface ReceiptDetail {
   total: number;
   savings: number;
   createdAt: string;
-  lines: { sku: string; name: string; quantity: number; unitSrp: number; unitPrice: number; lineTotal: number }[];
+  canRefund: boolean;
+  lines: {
+    id: string;
+    sku: string;
+    name: string;
+    quantity: number;
+    refundedQuantity: number;
+    refundable: number;
+    unitSrp: number;
+    unitPrice: number;
+    lineTotal: number;
+  }[];
 }
 
-function SaleDetail({ saleId, onClose }: { saleId: string; onClose: () => void }) {
-  const { data, loading, error } = useFetch<ReceiptDetail>(`/sales/${saleId}`);
+function SaleDetail({ saleId, onClose, onRefunded }: { saleId: string; onClose: () => void; onRefunded?: () => void }) {
+  const { data, loading, error, refetch } = useFetch<ReceiptDetail>(`/sales/${saleId}`);
   const [email, setEmail] = useState('');
   const [sending, setSending] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [refundMode, setRefundMode] = useState(false);
+  const [refundQty, setRefundQty] = useState<Record<string, number>>({});
+  const [refunding, setRefunding] = useState(false);
 
   // Pre-fill with the customer's email once loaded.
   useEffect(() => {
@@ -405,6 +419,30 @@ function SaleDetail({ saleId, onClose }: { saleId: string; onClose: () => void }
       setErr(apiError(e));
     } finally {
       setSending(false);
+    }
+  }
+
+  const refundTotal = data
+    ? data.lines.reduce((s, l) => s + (refundQty[l.id] || 0) * l.unitPrice, 0)
+    : 0;
+
+  async function submitRefund() {
+    setErr(null);
+    setMsg(null);
+    setRefunding(true);
+    try {
+      await api.post(`/sales/${saleId}/refund`, {
+        items: (data?.lines ?? []).map((l) => ({ itemId: l.id, quantity: refundQty[l.id] || 0 })),
+      });
+      setMsg('Refund processed — stock returned and sale adjusted.');
+      setRefundMode(false);
+      setRefundQty({});
+      refetch();
+      onRefunded?.();
+    } catch (e) {
+      setErr(apiError(e));
+    } finally {
+      setRefunding(false);
     }
   }
 
@@ -429,10 +467,33 @@ function SaleDetail({ saleId, onClose }: { saleId: string; onClose: () => void }
             <div className="mb-3 text-xs text-slate-500">Customer: {data.customerName || 'Walk-in'}</div>
             <table className="w-full text-sm">
               <tbody>
-                {data.lines.map((l, i) => (
-                  <tr key={i} className="border-b border-dashed border-slate-100">
-                    <td className="py-1">{l.name}<div className="text-xs text-slate-400">{l.quantity} × {peso(l.unitPrice)}</div></td>
-                    <td className="py-1 text-right">{peso(l.lineTotal)}</td>
+                {data.lines.map((l) => (
+                  <tr key={l.id} className="border-b border-dashed border-slate-100">
+                    <td className="py-1">
+                      {l.name}
+                      <div className="text-xs text-slate-400">
+                        {l.quantity} × {peso(l.unitPrice)}
+                        {l.refundedQuantity > 0 && <span className="ml-1 text-red-500">({l.refundedQuantity} refunded)</span>}
+                      </div>
+                    </td>
+                    {refundMode ? (
+                      <td className="py-1 text-right">
+                        <input
+                          type="number"
+                          min={0}
+                          max={l.refundable}
+                          disabled={l.refundable === 0}
+                          className="input w-20 text-right disabled:bg-slate-50"
+                          value={refundQty[l.id] ?? 0}
+                          onChange={(e) =>
+                            setRefundQty({ ...refundQty, [l.id]: Math.max(0, Math.min(l.refundable, Math.floor(Number(e.target.value) || 0))) })
+                          }
+                        />
+                        <div className="text-[10px] text-slate-400">max {l.refundable}</div>
+                      </td>
+                    ) : (
+                      <td className="py-1 text-right">{peso(l.lineTotal)}</td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -442,6 +503,27 @@ function SaleDetail({ saleId, onClose }: { saleId: string; onClose: () => void }
               <div className="flex justify-between text-slate-500"><span>Discount ({Math.round(data.discountRate * 100)}%)</span><span>-{peso(data.savings)}</span></div>
               <div className="flex justify-between text-lg font-bold text-brand-600"><span>Total</span><span>{peso(data.total)}</span></div>
             </div>
+
+            {/* Refund */}
+            {data.canRefund && !refundMode && (
+              <button className="btn-ghost mt-3 w-full text-red-600" onClick={() => setRefundMode(true)}>
+                ↩ Refund items
+              </button>
+            )}
+            {refundMode && (
+              <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3">
+                <div className="mb-2 text-sm font-semibold text-red-700">Refund — stock will be returned</div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-600">Refund amount: <span className="font-semibold">{peso(refundTotal)}</span></span>
+                  <div className="flex gap-2">
+                    <button className="btn-ghost" onClick={() => { setRefundMode(false); setRefundQty({}); }}>Cancel</button>
+                    <button className="btn-primary bg-red-600 hover:bg-red-700" disabled={refunding || refundTotal <= 0} onClick={submitRefund}>
+                      {refunding ? 'Processing…' : 'Process refund'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="mt-5 border-t border-slate-100 pt-4">
               <label className="label">Email receipt to customer</label>

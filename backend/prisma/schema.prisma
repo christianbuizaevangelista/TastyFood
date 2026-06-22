@@ -337,6 +337,7 @@ model SaleItem {
   productId String
   product   Product  @relation(fields: [productId], references: [id])
   quantity  Int
+  refundedQuantity Int @default(0)
   unitSrp   Float
   unitPrice Float
   lineTotal Float

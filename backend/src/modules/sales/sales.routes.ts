@@ -6,6 +6,7 @@ import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
 import { forbidden, notFound, badRequest } from '../../lib/errors';
 import { sendSaleReceiptEmail } from '../../lib/email';
+import { applyStockMovement } from '../inventory/inventory.service';
 
 export const salesRouter = Router();
 salesRouter.use(authenticate);
@@ -31,7 +32,8 @@ async function loadScopedSale(req: any, id: string) {
   return sale;
 }
 
-function receiptOf(sale: any) {
+function receiptOf(sale: any, viewerOrgId?: string) {
+  const hasRefundable = sale.items.some((i: any) => i.quantity - (i.refundedQuantity ?? 0) > 0);
   return {
     id: sale.id,
     number: sale.number,
@@ -46,10 +48,15 @@ function receiptOf(sale: any) {
     total: sale.total,
     savings: Math.round((sale.subtotal - sale.total) * 100) / 100,
     createdAt: sale.createdAt,
+    // Only the seller of the sale may process a refund (and only if any qty remains).
+    canRefund: !!viewerOrgId && sale.sellerOrgId === viewerOrgId && hasRefundable,
     lines: sale.items.map((i: any) => ({
+      id: i.id,
       sku: i.product.sku,
       name: i.product.name,
       quantity: i.quantity,
+      refundedQuantity: i.refundedQuantity ?? 0,
+      refundable: i.quantity - (i.refundedQuantity ?? 0),
       unitSrp: i.unitSrp,
       unitPrice: i.unitPrice,
       lineTotal: i.lineTotal,
@@ -225,7 +232,65 @@ salesRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
     const sale = await loadScopedSale(req, req.params.id);
-    res.json(receiptOf(sale));
+    res.json(receiptOf(sale, req.auth!.orgId));
+  })
+);
+
+// POST /sales/:id/refund — refund pcs per item; adjusts the sale total and
+// returns the refunded stock to the seller's inventory (Trade sales).
+const refundSchema = z.object({
+  items: z.array(z.object({ itemId: z.string(), quantity: z.number().int().min(0) })).min(1),
+});
+
+salesRouter.post(
+  '/:id/refund',
+  asyncHandler(async (req, res) => {
+    const body = refundSchema.parse(req.body);
+    const sale = await loadScopedSale(req, req.params.id);
+    if (sale.sellerOrgId !== req.auth!.orgId) {
+      throw forbidden('Only the seller of this sale can process a refund');
+    }
+
+    const byId = new Map(sale.items.map((i) => [i.id, i]));
+    for (const r of body.items) {
+      const item = byId.get(r.itemId);
+      if (!item) throw badRequest(`Unknown sale item ${r.itemId}`);
+      if (r.quantity > item.quantity - item.refundedQuantity) {
+        throw badRequest(`Refund exceeds remaining quantity for ${item.product.name}`);
+      }
+    }
+    const totalRefundQty = body.items.reduce((s, r) => s + r.quantity, 0);
+    if (totalRefundQty <= 0) throw badRequest('Enter at least one item to refund');
+
+    const updated = await prisma.$transaction(async (tx) => {
+      for (const r of body.items) {
+        if (r.quantity <= 0) continue;
+        const item = byId.get(r.itemId)!;
+        await tx.saleItem.update({
+          where: { id: item.id },
+          data: { refundedQuantity: { increment: r.quantity } },
+        });
+        // Trade sales deducted seller stock at sale time — return it now.
+        if (sale.distributionType === 'TRADE') {
+          await applyStockMovement(tx, {
+            orgId: sale.sellerOrgId,
+            productId: item.productId,
+            change: r.quantity,
+            reason: 'SALE_REFUND',
+            refType: 'Sale',
+            refId: sale.id,
+            allowNegative: true,
+          });
+        }
+      }
+      // Recompute the sale's net totals from remaining (non-refunded) quantities.
+      const items = await tx.saleItem.findMany({ where: { saleId: sale.id } });
+      const subtotal = round2(items.reduce((s, i) => s + i.unitSrp * (i.quantity - i.refundedQuantity), 0));
+      const total = round2(items.reduce((s, i) => s + i.unitPrice * (i.quantity - i.refundedQuantity), 0));
+      return tx.sale.update({ where: { id: sale.id }, data: { subtotal, total } });
+    });
+
+    res.json({ ok: true, refundedQty: totalRefundQty, newTotal: updated.total });
   })
 );
 
