@@ -683,45 +683,51 @@ function CreatePO({
     return sum + (p ? p.srp * (1 - discountRate) * q : 0);
   }, 0);
 
-  function uploadProof(poId: string): Promise<void> {
-    return new Promise((resolve) => {
-      if (!proofFile) return resolve();
+  function fileToDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          await api.post(`/purchase-orders/${poId}/attachments`, {
-            fileName: proofFile.name,
-            mimeType: proofFile.type || 'application/octet-stream',
-            dataBase64: reader.result as string,
-          });
-        } catch {
-          /* PO is created; proof can still be uploaded later from details */
-        }
-        resolve();
-      };
-      reader.onerror = () => resolve();
-      reader.readAsDataURL(proofFile);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error('Could not read file'));
+      reader.readAsDataURL(file);
     });
   }
 
   async function submit() {
     setErr(null);
-    if (isDropship && (!recipient.name || !recipient.address || !recipient.phone)) {
-      setErr('Drop-ship requires recipient name, complete address, and cellphone number.');
-      return;
+    if (isDropship) {
+      if (!recipient.name || !recipient.address || !recipient.phone) {
+        setErr('Drop-ship requires recipient name, complete address, and cellphone number.');
+        return;
+      }
+      if (!proofFile) {
+        setErr('Drop-ship requires an attached proof of payment.');
+        return;
+      }
+      if (proofFile.size > 3 * 1024 * 1024) {
+        setErr('Proof of payment is too large (max 3 MB).');
+        return;
+      }
     }
     setBusy(true);
     try {
-      const { data: po } = await api.post('/purchase-orders', {
+      let proofOfPayment;
+      if (isDropship && proofFile) {
+        proofOfPayment = {
+          fileName: proofFile.name,
+          mimeType: proofFile.type || 'application/octet-stream',
+          dataBase64: await fileToDataUrl(proofFile),
+        };
+      }
+      await api.post('/purchase-orders', {
         distributionType,
         expectedDeliveryDate: expectedDeliveryDate || undefined,
         recipientName: isDropship ? recipient.name : undefined,
         recipientAddress: isDropship ? recipient.address : undefined,
         recipientPhone: isDropship ? recipient.phone : undefined,
         landmark: isDropship ? recipient.landmark || undefined : undefined,
+        proofOfPayment,
         items: items.map(([productId, quantity]) => ({ productId, quantity })),
       });
-      if (isDropship && proofFile) await uploadProof(po.id);
       onCreated();
     } catch (e) {
       setErr(apiError(e));
@@ -781,13 +787,14 @@ function CreatePO({
                 <input className="input" value={recipient.landmark} onChange={(e) => setRecipient({ ...recipient, landmark: e.target.value })} />
               </div>
               <div className="sm:col-span-2">
-                <label className="label">Proof of Payment (image/PDF)</label>
+                <label className="label">Proof of Payment (image/PDF) *</label>
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/webp,application/pdf"
                   className="text-xs"
                   onChange={(e) => setProofFile(e.target.files?.[0] ?? null)}
                 />
+                {proofFile && <span className="ml-2 text-xs text-green-600">✓ {proofFile.name}</span>}
               </div>
             </div>
           </div>
@@ -838,7 +845,15 @@ function CreatePO({
           </div>
           <div className="flex gap-2">
             <button className="btn-ghost" onClick={onClose}>Cancel</button>
-            <button className="btn-primary" disabled={busy || items.length === 0} onClick={submit}>
+            <button
+              className="btn-primary"
+              disabled={
+                busy ||
+                items.length === 0 ||
+                (isDropship && (!recipient.name || !recipient.address || !recipient.phone || !proofFile))
+              }
+              onClick={submit}
+            >
               {busy ? 'Creating…' : 'Create draft PO'}
             </button>
           </div>

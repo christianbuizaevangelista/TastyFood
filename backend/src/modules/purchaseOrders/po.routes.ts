@@ -31,6 +31,10 @@ const createSchema = z.object({
   recipientAddress: z.string().optional(),
   recipientPhone: z.string().optional(),
   landmark: z.string().optional(),
+  // Proof of payment (required for drop-ship) — uploaded together with the PO.
+  proofOfPayment: z
+    .object({ fileName: z.string().min(1), mimeType: z.string().min(1), dataBase64: z.string().min(1) })
+    .optional(),
   items: z
     .array(z.object({ productId: z.string(), quantity: z.number().int().positive() }))
     .min(1),
@@ -91,6 +95,7 @@ poRouter.post(
       throw forbidden('Your organization must be approved and active to create purchase orders');
     }
     if (!buyer.parentId) throw badRequest('Principal has no upstream supplier to order from');
+    const sellerOrgId = buyer.parentId;
 
     const products = await prisma.product.findMany({
       where: { id: { in: body.items.map((i) => i.productId) } },
@@ -100,13 +105,25 @@ poRouter.post(
     }
     const srpById = new Map(products.map((p) => [p.id, p.srp]));
 
-    // Drop-ship orders are shipped directly to an end recipient, so capture
-    // the delivery details the Principal will need.
-    if (body.distributionType === 'DROP_SHIP') {
+    // Drop-ship orders ship directly to an end recipient, so the delivery
+    // details AND proof of payment are required before the order can proceed.
+    const isDropship = body.distributionType === 'DROP_SHIP';
+    let proofData: string | null = null;
+    if (isDropship) {
       if (!body.recipientName || !body.recipientAddress || !body.recipientPhone) {
         throw badRequest(
           'Drop-ship orders require recipient name, complete address, and cellphone number'
         );
+      }
+      if (!body.proofOfPayment) {
+        throw badRequest('Drop-ship orders require an attached proof of payment');
+      }
+      if (!ALLOWED_TYPES.includes(body.proofOfPayment.mimeType.toLowerCase())) {
+        throw badRequest('Proof of payment must be an image (PNG/JPG/WEBP) or PDF');
+      }
+      proofData = body.proofOfPayment.dataBase64.replace(/^data:[^;]+;base64,/, '');
+      if (Math.floor((proofData.length * 3) / 4) > MAX_UPLOAD_BYTES) {
+        throw badRequest('Proof of payment is too large (max 3 MB)');
       }
     }
 
@@ -119,25 +136,41 @@ poRouter.post(
       buyer.discountRate
     );
 
-    const po = await prisma.purchaseOrder.create({
-      data: {
-        number: poNumber(),
-        buyerOrgId: buyer.id,
-        sellerOrgId: buyer.parentId,
-        distributionType: body.distributionType,
-        status: 'DRAFT',
-        discountRate: buyer.discountRate,
-        subtotal: priced.subtotal,
-        total: priced.total,
-        expectedDeliveryDate: body.expectedDeliveryDate ?? null,
-        recipientName: body.distributionType === 'DROP_SHIP' ? body.recipientName : null,
-        recipientAddress: body.distributionType === 'DROP_SHIP' ? body.recipientAddress : null,
-        recipientPhone: body.distributionType === 'DROP_SHIP' ? body.recipientPhone : null,
-        landmark: body.distributionType === 'DROP_SHIP' ? body.landmark ?? null : null,
-        createdById: req.auth!.sub,
-        items: { create: priced.items },
-      },
-      include: { items: true },
+    const po = await prisma.$transaction(async (tx) => {
+      const created = await tx.purchaseOrder.create({
+        data: {
+          number: poNumber(),
+          buyerOrgId: buyer.id,
+          sellerOrgId,
+          distributionType: body.distributionType,
+          status: 'DRAFT',
+          discountRate: buyer.discountRate,
+          subtotal: priced.subtotal,
+          total: priced.total,
+          expectedDeliveryDate: body.expectedDeliveryDate ?? null,
+          recipientName: isDropship ? body.recipientName : null,
+          recipientAddress: isDropship ? body.recipientAddress : null,
+          recipientPhone: isDropship ? body.recipientPhone : null,
+          landmark: isDropship ? body.landmark ?? null : null,
+          createdById: req.auth!.sub,
+          items: { create: priced.items },
+        },
+        include: { items: true },
+      });
+      if (isDropship && body.proofOfPayment && proofData) {
+        await tx.poAttachment.create({
+          data: {
+            poId: created.id,
+            kind: 'PROOF_OF_PAYMENT',
+            fileName: body.proofOfPayment.fileName,
+            mimeType: body.proofOfPayment.mimeType,
+            size: Math.floor((proofData.length * 3) / 4),
+            data: proofData,
+            uploadedById: req.auth!.sub,
+          },
+        });
+      }
+      return created;
     });
     res.status(201).json(po);
   })
