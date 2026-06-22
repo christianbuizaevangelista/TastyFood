@@ -170,6 +170,22 @@ territoriesRouter.patch(
   })
 );
 
+// POST /territories/:id/unassign — remove the assigned member (make vacant).
+territoriesRouter.post(
+  '/:id/unassign',
+  requireRole('PRINCIPAL'),
+  asyncHandler(async (req, res) => {
+    const t = await prisma.territory.findUnique({ where: { id: req.params.id } });
+    if (!t) throw notFound('Area not found');
+    if (!t.assignedOrgId) throw badRequest('This area has no member assigned');
+    const updated = await prisma.territory.update({
+      where: { id: req.params.id },
+      data: { assignedOrgId: null },
+    });
+    res.json(updated);
+  })
+);
+
 // DELETE /territories/:id — remove an empty, unassigned area.
 territoriesRouter.delete(
   '/:id',
