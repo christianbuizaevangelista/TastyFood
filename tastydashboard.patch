@@ -1,0 +1,573 @@
+From 5209ff5e434afe70a3c247d62ba1394b11f6c013 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 22 Jun 2026 02:30:56 +0000
+Subject: [PATCH] Add customizable date range, line chart, and period
+ comparison to Dashboard
+
+- Date-range picker on the dashboard (presets: This month / 30D / 3M / 6M /
+  12M, plus custom from/to inputs) driving the /dashboard window.
+- Revenue chart switched from bars to a line chart, now overlaying the
+  current period against the equally-aligned previous period.
+- Backend reports a comparison vs. the preceding equal-length window; Total
+  Sales and Units Sold cards show an up/down % delta ("vs prev").
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017wL5TKWdYWJoAAGqKmJZxL
+---
+ .../src/modules/dashboard/dashboard.routes.ts |  89 +++--
+ frontend/src/components/ui.tsx                |  33 +-
+ frontend/src/pages/Dashboard.tsx              | 303 +++++++++++++-----
+ 3 files changed, 321 insertions(+), 104 deletions(-)
+
+diff --git a/backend/src/modules/dashboard/dashboard.routes.ts b/backend/src/modules/dashboard/dashboard.routes.ts
+index c6f17ea..adb442d 100644
+--- a/backend/src/modules/dashboard/dashboard.routes.ts
++++ b/backend/src/modules/dashboard/dashboard.routes.ts
+@@ -12,7 +12,31 @@ function round2(n: number): number {
+   return Math.round((n + Number.EPSILON) * 100) / 100;
+ }
+ 
+-// GET /dashboard — role-aware KPI cards + chart data, scoped to the chain.
++// Percentage change of `current` over `previous` (100% when growing from zero).
++function growthPct(current: number, previous: number): number {
++  if (previous > 0) return round2(((current - previous) / previous) * 100);
++  return current > 0 ? 100 : 0;
++}
++
++// Calendar-month buckets spanning [from, to], including the (possibly partial) end month.
++function monthBuckets(from: Date, to: Date): { label: string; year: number; month: number }[] {
++  const out: { label: string; year: number; month: number }[] = [];
++  let d = new Date(from.getFullYear(), from.getMonth(), 1);
++  const last = new Date(to.getFullYear(), to.getMonth(), 1);
++  while (d <= last) {
++    out.push({
++      label: d.toLocaleString('en-US', { month: 'short', year: '2-digit' }),
++      year: d.getFullYear(),
++      month: d.getMonth(),
++    });
++    d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
++  }
++  return out;
++}
++
++// GET /dashboard?from=&to= — role-aware KPI cards + chart data, scoped to the chain.
++// Honors a custom [from, to] window and reports a comparison vs. the immediately
++// preceding window of equal length (e.g. "vs. last month" for a one-month window).
+ dashboardRouter.get(
+   '/',
+   asyncHandler(async (req, res) => {
+@@ -20,12 +44,26 @@ dashboardRouter.get(
+     const myOrgId = req.auth!.orgId;
+     const { from, to } = parseWindow(req.query);
+ 
+-    const [sales, ownInventory, activeMembers, pendingApprovals, sixMonthSales, downstreamKpis] =
++    // Preceding window of equal length, for the headline comparison.
++    const windowMs = to.getTime() - from.getTime();
++    const prevFrom = new Date(from.getTime() - windowMs);
++
++    // Monthly trend spans the selected window; the comparison line is the same
++    // set of months shifted back by the window's month-span.
++    const months = monthBuckets(from, to);
++    const span = Math.max(1, months.length);
++    const trendStart = new Date(months[0].year, months[0].month - span, 1);
++
++    const [sales, prevSales, ownInventory, activeMembers, pendingApprovals, trendSales, downstreamKpis] =
+       await Promise.all([
+         prisma.sale.findMany({
+           where: { sellerOrgId: { in: scope }, createdAt: { gte: from, lte: to } },
+           include: { items: true },
+         }),
++        prisma.sale.findMany({
++          where: { sellerOrgId: { in: scope }, createdAt: { gte: prevFrom, lt: from } },
++          include: { items: true },
++        }),
+         prisma.inventory.findMany({
+           where: { orgId: myOrgId },
+           include: { product: { select: { srp: true } } },
+@@ -35,11 +73,8 @@ dashboardRouter.get(
+         }),
+         pendingApprovalsCount(req.auth!.role, myOrgId),
+         prisma.sale.findMany({
+-          where: {
+-            sellerOrgId: { in: scope },
+-            createdAt: { gte: new Date(new Date().setMonth(new Date().getMonth() - 5, 1)) },
+-          },
+-          select: { total: true, createdAt: true, distributionType: true },
++          where: { sellerOrgId: { in: scope }, createdAt: { gte: trendStart, lte: to } },
++          select: { total: true, createdAt: true },
+         }),
+         computeOrgKpis(
+           scope.filter((id) => id !== myOrgId),
+@@ -50,27 +85,27 @@ dashboardRouter.get(
+ 
+     const revenue = round2(sales.reduce((s, x) => s + x.total, 0));
+     const units = sales.reduce((s, x) => s + x.items.reduce((u, i) => u + i.quantity, 0), 0);
++    const prevRevenue = round2(prevSales.reduce((s, x) => s + x.total, 0));
++    const prevUnits = prevSales.reduce((s, x) => s + x.items.reduce((u, i) => u + i.quantity, 0), 0);
+     const inventoryValue = round2(
+       ownInventory.reduce((s, r) => s + r.quantity * r.product.srp, 0)
+     );
+ 
+-    // Monthly revenue trend (last 6 months).
+-    const months: { key: string; label: string; revenue: number }[] = [];
+-    const now = new Date();
+-    for (let i = 5; i >= 0; i--) {
+-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+-      months.push({
+-        key: `${d.getFullYear()}-${d.getMonth()}`,
+-        label: d.toLocaleString('en-US', { month: 'short' }),
+-        revenue: 0,
+-      });
+-    }
+-    const monthIndex = new Map(months.map((m, idx) => [m.key, idx]));
+-    for (const s of sixMonthSales) {
++    // Bucket trend sales by calendar month, then read each current month and the
++    // aligned month from the preceding period.
++    const byMonth = new Map<string, number>();
++    for (const s of trendSales) {
+       const key = `${s.createdAt.getFullYear()}-${s.createdAt.getMonth()}`;
+-      const idx = monthIndex.get(key);
+-      if (idx !== undefined) months[idx].revenue = round2(months[idx].revenue + s.total);
++      byMonth.set(key, (byMonth.get(key) ?? 0) + s.total);
+     }
++    const revenueTrend = months.map((b) => {
++      const prev = new Date(b.year, b.month - span, 1);
++      return {
++        label: b.label,
++        current: round2(byMonth.get(`${b.year}-${b.month}`) ?? 0),
++        previous: round2(byMonth.get(`${prev.getFullYear()}-${prev.getMonth()}`) ?? 0),
++      };
++    });
+ 
+     const byType = {
+       trade: round2(
+@@ -89,6 +124,14 @@ dashboardRouter.get(
+     res.json({
+       role: req.auth!.role,
+       period: { from, to },
++      comparison: {
++        previousFrom: prevFrom,
++        previousTo: from,
++        previousRevenue: prevRevenue,
++        previousUnits: prevUnits,
++        revenueGrowthPct: growthPct(revenue, prevRevenue),
++        unitsGrowthPct: growthPct(units, prevUnits),
++      },
+       cards: {
+         totalRevenue: revenue,
+         salesUnits: units,
+@@ -98,7 +141,7 @@ dashboardRouter.get(
+         lowStockItems: ownInventory.filter((r) => r.quantity <= r.reorderLevel).length,
+       },
+       charts: {
+-        monthlyRevenue: months,
++        revenueTrend,
+         byDistributionType: byType,
+         topPerformers,
+       },
+diff --git a/frontend/src/components/ui.tsx b/frontend/src/components/ui.tsx
+index a3d520b..b3e8a9e 100644
+--- a/frontend/src/components/ui.tsx
++++ b/frontend/src/components/ui.tsx
+@@ -20,16 +20,47 @@ export function PageHeader({ title, subtitle, action }: { title: string; subtitl
+   );
+ }
+ 
+-export function KpiCard({ label, value, hint, accent }: { label: string; value: string; hint?: string; accent?: string }) {
++export function KpiCard({
++  label,
++  value,
++  hint,
++  accent,
++  delta,
++}: {
++  label: string;
++  value: string;
++  hint?: string;
++  accent?: string;
++  delta?: number;
++}) {
+   return (
+     <div className="card">
+       <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+       <div className={`mt-2 text-2xl font-bold ${accent ?? 'text-slate-900'}`}>{value}</div>
++      {delta !== undefined && <DeltaChip value={delta} />}
+       {hint && <div className="mt-1 text-xs text-slate-400">{hint}</div>}
+     </div>
+   );
+ }
+ 
++// Up/down percentage pill comparing a value against the previous period.
++export function DeltaChip({ value }: { value: number }) {
++  const up = value > 0;
++  const down = value < 0;
++  const cls = up
++    ? 'bg-green-50 text-green-700'
++    : down
++    ? 'bg-red-50 text-red-700'
++    : 'bg-slate-100 text-slate-500';
++  const arrow = up ? '▲' : down ? '▼' : '–';
++  return (
++    <div className={`mt-1.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium ${cls}`}>
++      <span>{arrow}</span>
++      <span>{Math.abs(value).toFixed(1)}% vs prev</span>
++    </div>
++  );
++}
++
+ const STATUS_STYLES: Record<string, string> = {
+   APPROVED: 'bg-green-100 text-green-700',
+   RECEIVED: 'bg-green-100 text-green-700',
+diff --git a/frontend/src/pages/Dashboard.tsx b/frontend/src/pages/Dashboard.tsx
+index ce9370f..51dc79b 100644
+--- a/frontend/src/pages/Dashboard.tsx
++++ b/frontend/src/pages/Dashboard.tsx
+@@ -1,6 +1,8 @@
++import { useMemo, useState } from 'react';
+ import {
+-  BarChart,
+-  Bar,
++  LineChart,
++  Line,
++  CartesianGrid,
+   XAxis,
+   YAxis,
+   Tooltip,
+@@ -13,10 +15,19 @@ import {
+ import { useAuth } from '../auth/AuthContext';
+ import { useFetch } from '../lib/useFetch';
+ import { KpiCard, PageHeader, Spinner, Alert } from '../components/ui';
+-import { peso, num } from '../lib/format';
++import { peso, num, date as fmtDate } from '../lib/format';
+ import { ROLE_LABEL } from '../lib/nav';
+ 
+ interface DashboardData {
++  period: { from: string; to: string };
++  comparison: {
++    previousFrom: string;
++    previousTo: string;
++    previousRevenue: number;
++    previousUnits: number;
++    revenueGrowthPct: number;
++    unitsGrowthPct: number;
++  };
+   cards: {
+     totalRevenue: number;
+     salesUnits: number;
+@@ -26,7 +37,7 @@ interface DashboardData {
+     lowStockItems: number;
+   };
+   charts: {
+-    monthlyRevenue: { label: string; revenue: number }[];
++    revenueTrend: { label: string; current: number; previous: number }[];
+     byDistributionType: { trade: number; dropShip: number };
+     topPerformers: { orgId: string; name: string; type: string; revenue: number }[];
+   };
+@@ -34,96 +45,228 @@ interface DashboardData {
+ 
+ const PIE_COLORS = ['#0ea5e9', '#8b5cf6'];
+ 
++// ---------------------------------------------------------------------------
++// Date-range presets + custom picker
++// ---------------------------------------------------------------------------
++
++type Range = { from: string; to: string; preset: string };
++
++function ymd(d: Date): string {
++  const p = (n: number) => String(n).padStart(2, '0');
++  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
++}
++
++const PRESETS: { key: string; label: string }[] = [
++  { key: 'thisMonth', label: 'This month' },
++  { key: '30d', label: '30D' },
++  { key: '3m', label: '3M' },
++  { key: '6m', label: '6M' },
++  { key: '12m', label: '12M' },
++];
++
++function presetRange(key: string): Range {
++  const now = new Date();
++  const to = ymd(now);
++  let from: Date;
++  switch (key) {
++    case 'thisMonth':
++      from = new Date(now.getFullYear(), now.getMonth(), 1);
++      break;
++    case '30d':
++      from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29);
++      break;
++    case '3m':
++      from = new Date(now.getFullYear(), now.getMonth() - 2, 1);
++      break;
++    case '12m':
++      from = new Date(now.getFullYear(), now.getMonth() - 11, 1);
++      break;
++    case '6m':
++    default:
++      from = new Date(now.getFullYear(), now.getMonth() - 5, 1);
++      break;
++  }
++  return { from: ymd(from), to, preset: key };
++}
++
++function PeriodSelector({ range, onChange }: { range: Range; onChange: (r: Range) => void }) {
++  return (
++    <div className="flex flex-wrap items-center gap-2">
++      <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">
++        {PRESETS.map((p) => (
++          <button
++            key={p.key}
++            onClick={() => onChange(presetRange(p.key))}
++            className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${
++              range.preset === p.key
++                ? 'bg-brand-500 text-white'
++                : 'text-slate-600 hover:bg-slate-100'
++            }`}
++          >
++            {p.label}
++          </button>
++        ))}
++      </div>
++      <div className="flex items-center gap-1.5">
++        <input
++          type="date"
++          value={range.from}
++          max={range.to}
++          onChange={(e) => onChange({ ...range, from: e.target.value, preset: 'custom' })}
++          className="input w-auto py-1 text-xs"
++        />
++        <span className="text-xs text-slate-400">→</span>
++        <input
++          type="date"
++          value={range.to}
++          min={range.from}
++          onChange={(e) => onChange({ ...range, to: e.target.value, preset: 'custom' })}
++          className="input w-auto py-1 text-xs"
++        />
++      </div>
++    </div>
++  );
++}
++
++// ---------------------------------------------------------------------------
++// Dashboard
++// ---------------------------------------------------------------------------
++
+ export default function Dashboard() {
+   const { user } = useAuth();
+-  const { data, loading, error } = useFetch<DashboardData>('/dashboard');
++  const [range, setRange] = useState<Range>(() => presetRange('6m'));
+ 
+-  if (loading) return <Spinner />;
+-  if (error) return <Alert>{error}</Alert>;
+-  if (!data) return null;
++  const url = `/dashboard?from=${range.from}&to=${range.to}`;
++  const { data, loading, error } = useFetch<DashboardData>(url, [range.from, range.to]);
+ 
+-  const c = data.cards;
+-  const pieData = [
+-    { name: 'Trade', value: data.charts.byDistributionType.trade },
+-    { name: 'Drop Ship', value: data.charts.byDistributionType.dropShip },
+-  ];
++  const pieData = useMemo(
++    () =>
++      data
++        ? [
++            { name: 'Trade', value: data.charts.byDistributionType.trade },
++            { name: 'Drop Ship', value: data.charts.byDistributionType.dropShip },
++          ]
++        : [],
++    [data]
++  );
++
++  const c = data?.cards;
++  const cmp = data?.comparison;
+ 
+   return (
+     <div>
+       <PageHeader
+         title={`Welcome, ${user?.name.split(' ')[0]}`}
+-        subtitle={`${ROLE_LABEL[user!.role]} · ${user?.org.name} · figures cover your chain, this month`}
++        subtitle={`${ROLE_LABEL[user!.role]} · ${user?.org.name} · ${fmtDate(range.from)} – ${fmtDate(
++          range.to
++        )}`}
++        action={<PeriodSelector range={range} onChange={setRange} />}
+       />
+ 
+-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
+-        <KpiCard label="Total Sales" value={peso(c.totalRevenue)} accent="text-brand-600" />
+-        <KpiCard label="Units Sold" value={num(c.salesUnits)} />
+-        <KpiCard label="Inventory Value" value={peso(c.inventoryValue)} hint="your org" />
+-        <KpiCard label="Active Members" value={num(c.activeMembers)} hint="downstream" />
+-        <KpiCard
+-          label="Pending Approvals"
+-          value={num(c.pendingApprovals)}
+-          accent={c.pendingApprovals ? 'text-amber-600' : 'text-slate-900'}
+-        />
+-        <KpiCard
+-          label="Low-stock Items"
+-          value={num(c.lowStockItems)}
+-          accent={c.lowStockItems ? 'text-red-600' : 'text-slate-900'}
+-        />
+-      </div>
++      {error && <Alert>{error}</Alert>}
+ 
+-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+-        <div className="card lg:col-span-2">
+-          <h2 className="mb-4 text-sm font-semibold text-slate-700">Revenue — last 6 months</h2>
+-          <ResponsiveContainer width="100%" height={260}>
+-            <BarChart data={data.charts.monthlyRevenue}>
+-              <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+-              <YAxis tick={{ fontSize: 12 }} width={70} tickFormatter={(v) => peso(v)} />
+-              <Tooltip formatter={(v: number) => peso(v)} />
+-              <Bar dataKey="revenue" fill="#e8521d" radius={[4, 4, 0, 0]} />
+-            </BarChart>
+-          </ResponsiveContainer>
+-        </div>
++      {!data || !c || !cmp ? (
++        <Spinner />
++      ) : (
++        <div className={loading ? 'opacity-60 transition' : 'transition'}>
++          <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
++            <KpiCard
++              label="Total Sales"
++              value={peso(c.totalRevenue)}
++              accent="text-brand-600"
++              delta={cmp.revenueGrowthPct}
++            />
++            <KpiCard label="Units Sold" value={num(c.salesUnits)} delta={cmp.unitsGrowthPct} />
++            <KpiCard label="Inventory Value" value={peso(c.inventoryValue)} hint="your org" />
++            <KpiCard label="Active Members" value={num(c.activeMembers)} hint="downstream" />
++            <KpiCard
++              label="Pending Approvals"
++              value={num(c.pendingApprovals)}
++              accent={c.pendingApprovals ? 'text-amber-600' : 'text-slate-900'}
++            />
++            <KpiCard
++              label="Low-stock Items"
++              value={num(c.lowStockItems)}
++              accent={c.lowStockItems ? 'text-red-600' : 'text-slate-900'}
++            />
++          </div>
+ 
+-        <div className="card">
+-          <h2 className="mb-4 text-sm font-semibold text-slate-700">Trade vs Drop Ship</h2>
+-          <ResponsiveContainer width="100%" height={260}>
+-            <PieChart>
+-              <Pie data={pieData} dataKey="value" nameKey="name" outerRadius={90} label>
+-                {pieData.map((_, i) => (
+-                  <Cell key={i} fill={PIE_COLORS[i]} />
+-                ))}
+-              </Pie>
+-              <Legend />
+-              <Tooltip formatter={(v: number) => peso(v)} />
+-            </PieChart>
+-          </ResponsiveContainer>
+-        </div>
+-      </div>
++          <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
++            <div className="card lg:col-span-2">
++              <div className="mb-4 flex items-center justify-between">
++                <h2 className="text-sm font-semibold text-slate-700">Revenue trend</h2>
++                <span className="text-xs text-slate-400">current vs. previous period</span>
++              </div>
++              <ResponsiveContainer width="100%" height={260}>
++                <LineChart data={data.charts.revenueTrend} margin={{ top: 5, right: 8, left: 0, bottom: 0 }}>
++                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
++                  <XAxis dataKey="label" tick={{ fontSize: 12 }} />
++                  <YAxis tick={{ fontSize: 12 }} width={70} tickFormatter={(v) => peso(v)} />
++                  <Tooltip formatter={(v: number) => peso(v)} />
++                  <Legend />
++                  <Line
++                    type="monotone"
++                    dataKey="previous"
++                    name="Previous period"
++                    stroke="#94a3b8"
++                    strokeWidth={2}
++                    strokeDasharray="5 5"
++                    dot={false}
++                  />
++                  <Line
++                    type="monotone"
++                    dataKey="current"
++                    name="Current period"
++                    stroke="#e8521d"
++                    strokeWidth={2.5}
++                    dot={{ r: 3 }}
++                    activeDot={{ r: 5 }}
++                  />
++                </LineChart>
++              </ResponsiveContainer>
++            </div>
++
++            <div className="card">
++              <h2 className="mb-4 text-sm font-semibold text-slate-700">Trade vs Drop Ship</h2>
++              <ResponsiveContainer width="100%" height={260}>
++                <PieChart>
++                  <Pie data={pieData} dataKey="value" nameKey="name" outerRadius={90} label>
++                    {pieData.map((_, i) => (
++                      <Cell key={i} fill={PIE_COLORS[i]} />
++                    ))}
++                  </Pie>
++                  <Legend />
++                  <Tooltip formatter={(v: number) => peso(v)} />
++                </PieChart>
++              </ResponsiveContainer>
++            </div>
++          </div>
+ 
+-      {data.charts.topPerformers.length > 0 && (
+-        <div className="card mt-6">
+-          <h2 className="mb-4 text-sm font-semibold text-slate-700">Top Performers (downstream)</h2>
+-          <table className="w-full">
+-            <thead>
+-              <tr className="border-b border-slate-100">
+-                <th className="th">#</th>
+-                <th className="th">Organization</th>
+-                <th className="th">Tier</th>
+-                <th className="th text-right">Revenue</th>
+-              </tr>
+-            </thead>
+-            <tbody>
+-              {data.charts.topPerformers.map((p, i) => (
+-                <tr key={p.orgId} className="border-b border-slate-50">
+-                  <td className="td">{i + 1}</td>
+-                  <td className="td font-medium">{p.name}</td>
+-                  <td className="td">{p.type}</td>
+-                  <td className="td text-right font-semibold">{peso(p.revenue)}</td>
+-                </tr>
+-              ))}
+-            </tbody>
+-          </table>
++          {data.charts.topPerformers.length > 0 && (
++            <div className="card mt-6">
++              <h2 className="mb-4 text-sm font-semibold text-slate-700">Top Performers (downstream)</h2>
++              <table className="w-full">
++                <thead>
++                  <tr className="border-b border-slate-100">
++                    <th className="th">#</th>
++                    <th className="th">Organization</th>
++                    <th className="th">Tier</th>
++                    <th className="th text-right">Revenue</th>
++                  </tr>
++                </thead>
++                <tbody>
++                  {data.charts.topPerformers.map((p, i) => (
++                    <tr key={p.orgId} className="border-b border-slate-50">
++                      <td className="td">{i + 1}</td>
++                      <td className="td font-medium">{p.name}</td>
++                      <td className="td">{p.type}</td>
++                      <td className="td text-right font-semibold">{peso(p.revenue)}</td>
++                    </tr>
++                  ))}
++                </tbody>
++              </table>
++            </div>
++          )}
+         </div>
+       )}
+     </div>
+-- 
+2.43.0
+
