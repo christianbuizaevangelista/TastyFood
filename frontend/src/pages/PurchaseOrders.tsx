@@ -827,8 +827,12 @@ function CreatePO({
               ))}
             </div>
             {paymentMethod === 'MANA' && (
-              <p className="mt-1 text-xs text-slate-500">
-                Mana balance: <span className="font-semibold">{(wallet.data?.balance ?? 0).toLocaleString()} ✨</span>. Transfers to the supplier on approval.
+              <p className={`mt-1 text-xs ${estTotal > (wallet.data?.balance ?? 0) ? 'text-red-600' : 'text-slate-500'}`}>
+                Mana balance: <span className="font-semibold">{(wallet.data?.balance ?? 0).toLocaleString()} ✨</span> ·
+                order total ≈ <span className="font-semibold">{peso(estTotal)}</span>.
+                {estTotal > (wallet.data?.balance ?? 0)
+                  ? ' Not enough Mana — buy more in the Mana Wallet first.'
+                  : ' Transfers to the supplier on approval.'}
               </p>
             )}
           </div>
@@ -884,7 +888,9 @@ function CreatePO({
               disabled={
                 busy ||
                 items.length === 0 ||
-                (isDropship && (!recipient.name || !recipient.address || !recipient.phone || !proofFile))
+                (isDropship && (!recipient.name || !recipient.address || !recipient.phone)) ||
+                (isDropship && paymentMethod !== 'MANA' && !proofFile) ||
+                (paymentMethod === 'MANA' && !isStockIn && estTotal > (wallet.data?.balance ?? 0))
               }
               onClick={submit}
             >
