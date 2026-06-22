@@ -7,6 +7,7 @@ import { peso, date } from '../lib/format';
 import { DistributionType, PoStatus, Product } from '../types';
 import { distLabel } from '../lib/labels';
 import { exportPoPdf } from '../lib/poPdf';
+import AddressPicker from '../components/AddressPicker';
 
 interface POItem {
   id: string;
@@ -776,7 +777,7 @@ function CreatePO({
               </div>
               <div className="sm:col-span-2">
                 <label className="label">Complete Address *</label>
-                <input className="input" value={recipient.address} onChange={(e) => setRecipient({ ...recipient, address: e.target.value })} />
+                <AddressPicker onChange={(address) => setRecipient((r) => ({ ...r, address }))} />
               </div>
               <div>
                 <label className="label">Cellphone Number *</label>

@@ -15,6 +15,7 @@ import { dashboardRouter } from './modules/dashboard/dashboard.routes';
 import { orgsRouter } from './modules/crm/orgs.routes';
 import { approvalsRouter } from './modules/crm/approvals.routes';
 import { territoriesRouter } from './modules/territories/territories.routes';
+import { locationsRouter } from './modules/locations/locations.routes';
 
 export function createApp() {
   const app = express();
@@ -37,6 +38,7 @@ export function createApp() {
   app.use('/api/orgs', orgsRouter);
   app.use('/api/approvals', approvalsRouter);
   app.use('/api/territories', territoriesRouter);
+  app.use('/api/locations', locationsRouter);
 
   app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
   app.use(errorHandler);
