@@ -96,12 +96,16 @@ function Node({
             <span className="text-xs text-slate-400">{countVacant(node)} vacant inside</span>
           ) : node.assignedOrg ? (
             <span className="flex items-center gap-1 text-xs text-slate-600">
-              {node.assignedOrg.name} <Badge value={node.assignedOrg.status} />
+              <button
+                onClick={() => actions.onDetails(node.assignedOrg!.id)}
+                className="font-semibold text-brand-600 hover:underline"
+                title="View member details"
+              >
+                {node.assignedOrg.name}
+              </button>
+              <Badge value={node.assignedOrg.status} />
               {actions.canManage && (
-                <>
-                  <button onClick={() => actions.onDetails(node.assignedOrg!.id)} className="rounded px-1 font-semibold text-brand-600 hover:bg-brand-50" title="Member details">Details</button>
-                  <button onClick={() => actions.onRemoveMember(node)} className="rounded px-1 font-semibold text-red-600 hover:bg-red-50" title="Remove member">Remove</button>
-                </>
+                <button onClick={() => actions.onRemoveMember(node)} className="rounded px-1 font-semibold text-red-600 hover:bg-red-50" title="Remove member">Remove</button>
               )}
             </span>
           ) : (
