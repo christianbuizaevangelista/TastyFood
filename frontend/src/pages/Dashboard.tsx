@@ -27,7 +27,13 @@ interface DashboardData {
     lowStockItems: number;
   };
   charts: {
-    monthlyRevenue: { label: string; revenue: number }[];
+    currentMonth: {
+      label: string;
+      lastMonthLabel: string;
+      dailyRevenue: { day: number; thisMonth: number; lastMonth: number }[];
+      thisMonthTotal: number;
+      lastMonthTotal: number;
+    };
     byDistributionType: { trade: number; dropShip: number };
     topPerformers: { orgId: string; name: string; type: string; revenue: number }[];
   };
@@ -49,10 +55,10 @@ export default function Dashboard() {
     { name: 'Drop Ship', value: data.charts.byDistributionType.dropShip },
   ];
 
-  // Current month vs last month (last two points of the 6-month trend).
-  const mr = data.charts.monthlyRevenue;
-  const thisMonth = mr[mr.length - 1]?.revenue ?? 0;
-  const lastMonth = mr[mr.length - 2]?.revenue ?? 0;
+  // Current month vs last month totals.
+  const cm = data.charts.currentMonth;
+  const thisMonth = cm.thisMonthTotal;
+  const lastMonth = cm.lastMonthTotal;
   const momDelta = lastMonth > 0 ? ((thisMonth - lastMonth) / lastMonth) * 100 : thisMonth > 0 ? 100 : 0;
   const momUp = thisMonth >= lastMonth;
 
@@ -83,14 +89,17 @@ export default function Dashboard() {
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="card lg:col-span-2">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-            <h2 className="text-sm font-semibold text-slate-700">Revenue — last 6 months</h2>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-700">Revenue — {cm.label}</h2>
+              <p className="text-xs text-slate-400">Daily, vs {cm.lastMonthLabel}</p>
+            </div>
             <div className="text-right">
-              <div className="text-xs text-slate-400">This month</div>
+              <div className="text-xs text-slate-400">This month total</div>
               <div className="flex items-center gap-2">
                 <span className="text-lg font-bold text-slate-900">{peso(thisMonth)}</span>
                 <span
                   className={`badge ${momUp ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
-                  title={`Last month: ${peso(lastMonth)}`}
+                  title={`${cm.lastMonthLabel} total: ${peso(lastMonth)}`}
                 >
                   {momUp ? '▲' : '▼'} {pct(Math.abs(momDelta))} vs last month
                 </span>
@@ -98,17 +107,28 @@ export default function Dashboard() {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={data.charts.monthlyRevenue} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+            <LineChart data={cm.dailyRevenue} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+              <XAxis dataKey="day" tick={{ fontSize: 12 }} interval={2} />
               <YAxis tick={{ fontSize: 12 }} width={70} tickFormatter={(v) => peso(v)} />
-              <Tooltip formatter={(v: number) => peso(v)} />
+              <Tooltip formatter={(v: number) => peso(v)} labelFormatter={(d) => `Day ${d}`} />
+              <Legend />
               <Line
                 type="monotone"
-                dataKey="revenue"
+                dataKey="lastMonth"
+                name={cm.lastMonthLabel}
+                stroke="#cbd5e1"
+                strokeWidth={2}
+                strokeDasharray="4 4"
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="thisMonth"
+                name="This month"
                 stroke="#e8521d"
                 strokeWidth={2.5}
-                dot={{ r: 3, fill: '#e8521d' }}
+                dot={{ r: 2, fill: '#e8521d' }}
                 activeDot={{ r: 5 }}
               />
             </LineChart>

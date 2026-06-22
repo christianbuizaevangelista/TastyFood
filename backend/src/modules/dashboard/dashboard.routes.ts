@@ -20,7 +20,12 @@ dashboardRouter.get(
     const myOrgId = req.auth!.orgId;
     const { from, to } = parseWindow(req.query);
 
-    const [sales, ownInventory, activeMembers, pendingApprovals, sixMonthSales, downstreamKpis] =
+    // Current-month and previous-month boundaries (for the daily trend).
+    const now = new Date();
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+    const [sales, ownInventory, activeMembers, pendingApprovals, lastMonthSales, downstreamKpis] =
       await Promise.all([
         prisma.sale.findMany({
           where: { sellerOrgId: { in: scope }, createdAt: { gte: from, lte: to } },
@@ -37,9 +42,9 @@ dashboardRouter.get(
         prisma.sale.findMany({
           where: {
             sellerOrgId: { in: scope },
-            createdAt: { gte: new Date(new Date().setMonth(new Date().getMonth() - 5, 1)) },
+            createdAt: { gte: lastMonthStart, lt: thisMonthStart },
           },
-          select: { total: true, createdAt: true, distributionType: true },
+          select: { total: true, createdAt: true },
         }),
         computeOrgKpis(
           scope.filter((id) => id !== myOrgId),
@@ -54,23 +59,26 @@ dashboardRouter.get(
       ownInventory.reduce((s, r) => s + r.quantity * r.product.srp, 0)
     );
 
-    // Monthly revenue trend (last 6 months).
-    const months: { key: string; label: string; revenue: number }[] = [];
-    const now = new Date();
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      months.push({
-        key: `${d.getFullYear()}-${d.getMonth()}`,
-        label: d.toLocaleString('en-US', { month: 'short' }),
-        revenue: 0,
-      });
+    // Daily revenue for the current month, with last month overlaid by day.
+    const daysInThisMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const dailyRevenue = Array.from({ length: daysInThisMonth }, (_, i) => ({
+      day: i + 1,
+      thisMonth: 0,
+      lastMonth: 0,
+    }));
+    for (const s of sales) {
+      const idx = s.createdAt.getDate() - 1;
+      if (idx >= 0 && idx < daysInThisMonth) dailyRevenue[idx].thisMonth += s.total;
     }
-    const monthIndex = new Map(months.map((m, idx) => [m.key, idx]));
-    for (const s of sixMonthSales) {
-      const key = `${s.createdAt.getFullYear()}-${s.createdAt.getMonth()}`;
-      const idx = monthIndex.get(key);
-      if (idx !== undefined) months[idx].revenue = round2(months[idx].revenue + s.total);
+    for (const s of lastMonthSales) {
+      const idx = s.createdAt.getDate() - 1;
+      if (idx >= 0 && idx < daysInThisMonth) dailyRevenue[idx].lastMonth += s.total;
     }
+    for (const d of dailyRevenue) {
+      d.thisMonth = round2(d.thisMonth);
+      d.lastMonth = round2(d.lastMonth);
+    }
+    const lastMonthTotal = round2(lastMonthSales.reduce((s, x) => s + x.total, 0));
 
     const byType = {
       trade: round2(
@@ -98,7 +106,13 @@ dashboardRouter.get(
         lowStockItems: ownInventory.filter((r) => r.quantity <= r.reorderLevel).length,
       },
       charts: {
-        monthlyRevenue: months,
+        currentMonth: {
+          label: thisMonthStart.toLocaleString('en-US', { month: 'long', year: 'numeric' }),
+          lastMonthLabel: lastMonthStart.toLocaleString('en-US', { month: 'long' }),
+          dailyRevenue,
+          thisMonthTotal: revenue,
+          lastMonthTotal,
+        },
         byDistributionType: byType,
         topPerformers,
       },
