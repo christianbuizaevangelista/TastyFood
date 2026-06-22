@@ -27,6 +27,10 @@ interface PO {
   total: number;
   createdAt: string;
   expectedDeliveryDate?: string | null;
+  recipientName?: string | null;
+  recipientAddress?: string | null;
+  recipientPhone?: string | null;
+  landmark?: string | null;
   buyerOrg: OrgParty;
   sellerOrg: OrgParty;
   items: POItem[];
@@ -428,6 +432,18 @@ function PoDetails({ po, onClose }: { po: PO; onClose: () => void }) {
           </div>
         </div>
 
+        {po.distributionType === 'DROP_SHIP' && (
+          <div className="mb-5 rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm text-violet-900">
+            <div className="mb-1 font-semibold">📦 Drop-ship delivery (ship directly to recipient)</div>
+            <div className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
+              <div><span className="text-violet-600">Name:</span> {po.recipientName || '—'}</div>
+              <div><span className="text-violet-600">Cellphone:</span> {po.recipientPhone || '—'}</div>
+              <div className="sm:col-span-2"><span className="text-violet-600">Address:</span> {po.recipientAddress || '—'}</div>
+              <div className="sm:col-span-2"><span className="text-violet-600">Landmark:</span> {po.landmark || '—'}</div>
+            </div>
+          </div>
+        )}
+
         <table className="w-full">
           <thead>
             <tr className="border-b border-slate-100">
@@ -654,25 +670,58 @@ function CreatePO({
 }) {
   const [distributionType, setDistributionType] = useState<DistributionType>('TRADE');
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
+  const [recipient, setRecipient] = useState({ name: '', address: '', phone: '', landmark: '' });
+  const [proofFile, setProofFile] = useState<File | null>(null);
   const [lines, setLines] = useState<Record<string, number>>({});
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const isDropship = distributionType === 'DROP_SHIP';
   const items = Object.entries(lines).filter(([, q]) => q > 0);
   const estTotal = items.reduce((sum, [pid, q]) => {
     const p = products.find((x) => x.id === pid);
     return sum + (p ? p.srp * (1 - discountRate) * q : 0);
   }, 0);
 
+  function uploadProof(poId: string): Promise<void> {
+    return new Promise((resolve) => {
+      if (!proofFile) return resolve();
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          await api.post(`/purchase-orders/${poId}/attachments`, {
+            fileName: proofFile.name,
+            mimeType: proofFile.type || 'application/octet-stream',
+            dataBase64: reader.result as string,
+          });
+        } catch {
+          /* PO is created; proof can still be uploaded later from details */
+        }
+        resolve();
+      };
+      reader.onerror = () => resolve();
+      reader.readAsDataURL(proofFile);
+    });
+  }
+
   async function submit() {
     setErr(null);
+    if (isDropship && (!recipient.name || !recipient.address || !recipient.phone)) {
+      setErr('Drop-ship requires recipient name, complete address, and cellphone number.');
+      return;
+    }
     setBusy(true);
     try {
-      await api.post('/purchase-orders', {
+      const { data: po } = await api.post('/purchase-orders', {
         distributionType,
         expectedDeliveryDate: expectedDeliveryDate || undefined,
+        recipientName: isDropship ? recipient.name : undefined,
+        recipientAddress: isDropship ? recipient.address : undefined,
+        recipientPhone: isDropship ? recipient.phone : undefined,
+        landmark: isDropship ? recipient.landmark || undefined : undefined,
         items: items.map(([productId, quantity]) => ({ productId, quantity })),
       });
+      if (isDropship && proofFile) await uploadProof(po.id);
       onCreated();
     } catch (e) {
       setErr(apiError(e));
@@ -704,6 +753,45 @@ function CreatePO({
             ))}
           </div>
         </div>
+
+        {isDropship && (
+          <div className="mb-4 rounded-lg border border-violet-200 bg-violet-50 p-3">
+            <div className="mb-2 text-sm font-semibold text-violet-800">
+              Drop-ship delivery details
+            </div>
+            <p className="mb-3 text-xs text-violet-700">
+              The Principal ships directly to this recipient. These details and your proof of
+              payment will be attached to the order.
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label className="label">Complete Name *</label>
+                <input className="input" value={recipient.name} onChange={(e) => setRecipient({ ...recipient, name: e.target.value })} />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="label">Complete Address *</label>
+                <input className="input" value={recipient.address} onChange={(e) => setRecipient({ ...recipient, address: e.target.value })} />
+              </div>
+              <div>
+                <label className="label">Cellphone Number *</label>
+                <input className="input" value={recipient.phone} onChange={(e) => setRecipient({ ...recipient, phone: e.target.value })} />
+              </div>
+              <div>
+                <label className="label">Landmark</label>
+                <input className="input" value={recipient.landmark} onChange={(e) => setRecipient({ ...recipient, landmark: e.target.value })} />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="label">Proof of Payment (image/PDF)</label>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,application/pdf"
+                  className="text-xs"
+                  onChange={(e) => setProofFile(e.target.files?.[0] ?? null)}
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="mb-4">
           <label className="label">Expected delivery date (optional)</label>

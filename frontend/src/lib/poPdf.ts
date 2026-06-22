@@ -20,6 +20,10 @@ interface PoLike {
   total: number;
   createdAt: string;
   expectedDeliveryDate?: string | null;
+  recipientName?: string | null;
+  recipientAddress?: string | null;
+  recipientPhone?: string | null;
+  landmark?: string | null;
   buyerOrg: Party;
   sellerOrg: Party;
   items: {
@@ -125,6 +129,23 @@ export function exportPoPdf(po: PoLike) {
     y += 14;
   }
   y += 44;
+
+  // Drop-ship delivery block (ship directly to end recipient).
+  if (po.distributionType === 'DROP_SHIP') {
+    doc.setDrawColor(196, 181, 253);
+    doc.setFillColor(245, 243, 255);
+    doc.rect(M, y - 12, W - M * 2, 74, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(91, 33, 182);
+    doc.text('Drop-ship Delivery — ship directly to recipient', M + 8, y + 2);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(60, 60, 60);
+    doc.text(`Name: ${po.recipientName ?? '—'}`, M + 8, y + 18);
+    doc.text(`Cellphone: ${po.recipientPhone ?? '—'}`, M + 8, y + 32);
+    doc.text(`Address: ${po.recipientAddress ?? '—'}`, M + 8, y + 46);
+    doc.text(`Landmark: ${po.landmark ?? '—'}`, M + 8, y + 60);
+    y += 84;
+  }
 
   // Items table
   autoTable(doc, {

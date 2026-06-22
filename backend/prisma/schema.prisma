@@ -232,6 +232,12 @@ model PurchaseOrder {
   // Buyer's target/expected delivery date (optional).
   expectedDeliveryDate DateTime?
 
+  // Drop-ship delivery details (end recipient the Principal ships to directly).
+  recipientName    String?
+  recipientAddress String?
+  recipientPhone   String?
+  landmark         String?
+
   createdById      String
   createdBy        User     @relation("PoCreatedBy", fields: [createdById], references: [id])
 

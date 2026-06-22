@@ -26,6 +26,11 @@ const orgSelect = {
 const createSchema = z.object({
   distributionType: z.enum(['TRADE', 'DROP_SHIP']).default('TRADE'),
   expectedDeliveryDate: z.coerce.date().optional(),
+  // Drop-ship delivery details (required when distributionType is DROP_SHIP).
+  recipientName: z.string().optional(),
+  recipientAddress: z.string().optional(),
+  recipientPhone: z.string().optional(),
+  landmark: z.string().optional(),
   items: z
     .array(z.object({ productId: z.string(), quantity: z.number().int().positive() }))
     .min(1),
@@ -95,6 +100,16 @@ poRouter.post(
     }
     const srpById = new Map(products.map((p) => [p.id, p.srp]));
 
+    // Drop-ship orders are shipped directly to an end recipient, so capture
+    // the delivery details the Principal will need.
+    if (body.distributionType === 'DROP_SHIP') {
+      if (!body.recipientName || !body.recipientAddress || !body.recipientPhone) {
+        throw badRequest(
+          'Drop-ship orders require recipient name, complete address, and cellphone number'
+        );
+      }
+    }
+
     const priced = priceLines(
       body.items.map((i) => ({
         productId: i.productId,
@@ -115,6 +130,10 @@ poRouter.post(
         subtotal: priced.subtotal,
         total: priced.total,
         expectedDeliveryDate: body.expectedDeliveryDate ?? null,
+        recipientName: body.distributionType === 'DROP_SHIP' ? body.recipientName : null,
+        recipientAddress: body.distributionType === 'DROP_SHIP' ? body.recipientAddress : null,
+        recipientPhone: body.distributionType === 'DROP_SHIP' ? body.recipientPhone : null,
+        landmark: body.distributionType === 'DROP_SHIP' ? body.landmark ?? null : null,
         createdById: req.auth!.sub,
         items: { create: priced.items },
       },
