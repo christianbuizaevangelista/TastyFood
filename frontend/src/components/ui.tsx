@@ -34,6 +34,7 @@ const STATUS_STYLES: Record<string, string> = {
   APPROVED: 'bg-green-100 text-green-700',
   RECEIVED: 'bg-green-100 text-green-700',
   FULFILLED: 'bg-emerald-100 text-emerald-700',
+  PARTIALLY_RECEIVED: 'bg-orange-100 text-orange-700',
   PENDING: 'bg-amber-100 text-amber-700',
   SUBMITTED: 'bg-amber-100 text-amber-700',
   DRAFT: 'bg-slate-100 text-slate-600',

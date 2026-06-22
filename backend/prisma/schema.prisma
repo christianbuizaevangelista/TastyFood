@@ -51,6 +51,7 @@ enum PoStatus {
   SUBMITTED
   APPROVED
   FULFILLED
+  PARTIALLY_RECEIVED
   RECEIVED
   CANCELLED
 }
@@ -241,6 +242,8 @@ model PurchaseOrderItem {
   productId String
   product   Product  @relation(fields: [productId], references: [id])
   quantity  Int
+  // Cumulative quantity actually received by the buyer (supports partial receipts).
+  receivedQuantity Int @default(0)
   unitSrp   Float    // SRP at time of order
   unitPrice Float    // discounted unit price
   lineTotal Float    // unitPrice * quantity

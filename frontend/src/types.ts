@@ -1,7 +1,14 @@
 export type Role = 'PRINCIPAL' | 'PROVINCIAL' | 'CITY' | 'RESELLER';
 export type OrgType = Role;
 export type DistributionType = 'TRADE' | 'DROP_SHIP';
-export type PoStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'FULFILLED' | 'RECEIVED' | 'CANCELLED';
+export type PoStatus =
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'APPROVED'
+  | 'FULFILLED'
+  | 'PARTIALLY_RECEIVED'
+  | 'RECEIVED'
+  | 'CANCELLED';
 
 export interface AuthUser {
   id: string;

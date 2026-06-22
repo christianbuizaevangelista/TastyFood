@@ -259,54 +259,143 @@ poRouter.post(
   })
 );
 
-// Buyer receives a FULFILLED PO. Trade -> increase buyer inventory.
-// Drop-ship -> no buyer inventory change (shipped directly upstream).
+// Buyer records actual quantities received (supports partial receipts).
+// Body: { items: [{ itemId, received }] } where `received` is the quantity
+// received in THIS event. Trade -> increases buyer inventory by that amount;
+// Drop-ship -> no inventory change but receipts are still tracked.
+// Status becomes PARTIALLY_RECEIVED, then RECEIVED once every line is complete.
+const receiveSchema = z.object({
+  items: z
+    .array(z.object({ itemId: z.string(), received: z.number().int().min(0) }))
+    .min(1),
+});
+
 poRouter.post(
   '/:id/receive',
   asyncHandler(async (req, res) => {
+    const body = receiveSchema.parse(req.body);
     const po = await loadScopedPo(req, req.params.id);
     requireBuyer(req, po);
-    if (po.status !== 'FULFILLED') throw conflict(`Cannot receive a PO in status ${po.status}`);
+    if (po.status !== 'FULFILLED' && po.status !== 'PARTIALLY_RECEIVED') {
+      throw conflict(`Cannot receive a PO in status ${po.status}`);
+    }
 
-    const updated = await prisma.$transaction(async (tx) => {
-      if (po.distributionType === 'TRADE') {
-        for (const item of po.items) {
-          await applyStockMovement(tx, {
-            orgId: po.buyerOrgId,
-            productId: item.productId,
-            change: item.quantity,
-            reason: 'PO_RECEIVED',
-            refType: 'PurchaseOrder',
-            refId: po.id,
+    const itemById = new Map(po.items.map((i) => [i.id, i]));
+    // Validate every line up front.
+    for (const r of body.items) {
+      const item = itemById.get(r.itemId);
+      if (!item) throw badRequest(`Unknown PO item ${r.itemId}`);
+      const newTotal = item.receivedQuantity + r.received;
+      if (newTotal > item.quantity) {
+        throw badRequest(
+          `Received (${newTotal}) exceeds ordered (${item.quantity}) for ${item.product.name}`
+        );
+      }
+    }
+
+    try {
+      const updated = await prisma.$transaction(async (tx) => {
+        for (const r of body.items) {
+          if (r.received <= 0) continue;
+          const item = itemById.get(r.itemId)!;
+          if (po.distributionType === 'TRADE') {
+            await applyStockMovement(tx, {
+              orgId: po.buyerOrgId,
+              productId: item.productId,
+              change: r.received,
+              reason: 'PO_RECEIVED',
+              refType: 'PurchaseOrder',
+              refId: po.id,
+            });
+          }
+          await tx.purchaseOrderItem.update({
+            where: { id: item.id },
+            data: { receivedQuantity: { increment: r.received } },
           });
         }
-      }
-      return tx.purchaseOrder.update({
-        where: { id: po.id },
-        data: { status: 'RECEIVED', receivedAt: new Date() },
+
+        // Recompute completion from fresh totals.
+        const items = await tx.purchaseOrderItem.findMany({ where: { poId: po.id } });
+        const fullyReceived = items.every((i) => i.receivedQuantity >= i.quantity);
+        const anyReceived = items.some((i) => i.receivedQuantity > 0);
+        const status = fullyReceived ? 'RECEIVED' : anyReceived ? 'PARTIALLY_RECEIVED' : po.status;
+
+        return tx.purchaseOrder.update({
+          where: { id: po.id },
+          data: { status, receivedAt: fullyReceived ? new Date() : po.receivedAt },
+          include: { items: { include: { product: { select: { sku: true, name: true } } } } },
+        });
       });
-    });
-    res.json(updated);
+      res.json(updated);
+    } catch (err: any) {
+      if (typeof err?.message === 'string' && err.message.startsWith('Insufficient stock')) {
+        throw badRequest(err.message);
+      }
+      throw err;
+    }
   })
 );
 
-// Cancel (buyer, before fulfillment).
+// Cancel (buyer). Allowed any time before completion (RECEIVED). If the PO was
+// already fulfilled/partially received, its inventory effects and generated
+// sale are reversed so the books stay consistent.
 poRouter.post(
   '/:id/cancel',
   asyncHandler(async (req, res) => {
     const po = await loadScopedPo(req, req.params.id);
     requireBuyer(req, po);
-    if (['FULFILLED', 'RECEIVED', 'CANCELLED'].includes(po.status)) {
+    if (po.status === 'RECEIVED' || po.status === 'CANCELLED') {
       throw conflict(`Cannot cancel a PO in status ${po.status}`);
     }
-    const updated = await prisma.purchaseOrder.update({
-      where: { id: po.id },
-      data: { status: 'CANCELLED' },
+    const needsReversal = po.status === 'FULFILLED' || po.status === 'PARTIALLY_RECEIVED';
+
+    const updated = await prisma.$transaction(async (tx) => {
+      if (needsReversal) {
+        if (po.distributionType === 'TRADE') {
+          for (const item of po.items) {
+            // Return the fulfilled quantity to the seller.
+            await applyStockMovement(tx, {
+              orgId: po.sellerOrgId,
+              productId: item.productId,
+              change: item.quantity,
+              reason: 'PO_CANCELLED_RESTOCK',
+              refType: 'PurchaseOrder',
+              refId: po.id,
+              allowNegative: true,
+            });
+            // Remove anything the buyer had already received.
+            if (item.receivedQuantity > 0) {
+              await applyStockMovement(tx, {
+                orgId: po.buyerOrgId,
+                productId: item.productId,
+                change: -item.receivedQuantity,
+                reason: 'PO_CANCELLED_RETURN',
+                refType: 'PurchaseOrder',
+                refId: po.id,
+                allowNegative: true,
+              });
+            }
+          }
+        }
+        // Void the sale that was generated on fulfillment.
+        await tx.saleItem.deleteMany({ where: { sale: { poId: po.id } } });
+        await tx.sale.deleteMany({ where: { poId: po.id } });
+        await tx.purchaseOrderItem.updateMany({
+          where: { poId: po.id },
+          data: { receivedQuantity: 0 },
+        });
+      }
+
+      await tx.approval.updateMany({
+        where: { poId: po.id, status: 'PENDING' },
+        data: { status: 'REJECTED', note: 'PO cancelled' },
+      });
+      return tx.purchaseOrder.update({
+        where: { id: po.id },
+        data: { status: 'CANCELLED' },
+      });
     });
-    await prisma.approval.updateMany({
-      where: { poId: po.id, status: 'PENDING' },
-      data: { status: 'REJECTED', note: 'PO cancelled' },
-    });
+
     res.json(updated);
   })
 );

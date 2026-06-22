@@ -6,8 +6,17 @@ import { PageHeader, Spinner, Alert, Badge } from '../components/ui';
 import { peso, date } from '../lib/format';
 import { DistributionType, PoStatus, Product } from '../types';
 import { distLabel } from '../lib/labels';
+import { exportPoPdf } from '../lib/poPdf';
 
-interface POItem { quantity: number; unitSrp: number; unitPrice: number; lineTotal: number; product: { sku: string; name: string }; }
+interface POItem {
+  id: string;
+  quantity: number;
+  receivedQuantity: number;
+  unitSrp: number;
+  unitPrice: number;
+  lineTotal: number;
+  product: { sku: string; name: string };
+}
 interface PO {
   id: string;
   number: string;
@@ -30,10 +39,14 @@ function actionsFor(po: PO, myOrgId: string): { label: string; path: string }[] 
   if (isBuyer && po.status === 'DRAFT') a.push({ label: 'Submit', path: 'submit' });
   if (isSeller && po.status === 'SUBMITTED') a.push({ label: 'Approve', path: 'approve' });
   if (isSeller && po.status === 'APPROVED') a.push({ label: 'Fulfill', path: 'fulfill' });
-  if (isBuyer && po.status === 'FULFILLED') a.push({ label: 'Receive', path: 'receive' });
   if (isBuyer && ['DRAFT', 'SUBMITTED', 'APPROVED'].includes(po.status))
     a.push({ label: 'Cancel', path: 'cancel' });
   return a;
+}
+
+// Buyer can record receipts while the order is fulfilled but not yet complete.
+function canReceive(po: PO, myOrgId: string): boolean {
+  return po.buyerOrg.id === myOrgId && ['FULFILLED', 'PARTIALLY_RECEIVED'].includes(po.status);
 }
 
 export default function PurchaseOrders() {
@@ -41,6 +54,7 @@ export default function PurchaseOrders() {
   const { data, loading, error, refetch } = useFetch<{ orders: PO[] }>('/purchase-orders');
   const products = useFetch<{ products: Product[] }>('/products');
   const [showCreate, setShowCreate] = useState(false);
+  const [receivePo, setReceivePo] = useState<PO | null>(null);
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [tab, setTab] = useState<'supplier' | 'customer'>(
     user!.role === 'PRINCIPAL' ? 'customer' : 'supplier'
@@ -103,7 +117,7 @@ export default function PurchaseOrders() {
                 <td className="td text-right font-semibold">{peso(po.total)}</td>
                 <td className="td whitespace-nowrap text-xs text-slate-500">{date(po.createdAt)}</td>
                 <td className="td text-right">
-                  <div className="flex justify-end gap-1">
+                  <div className="flex flex-wrap justify-end gap-1">
                     {actionsFor(po, myOrgId).map((a) => (
                       <button
                         key={a.path}
@@ -117,6 +131,21 @@ export default function PurchaseOrders() {
                         {a.label}
                       </button>
                     ))}
+                    {canReceive(po, myOrgId) && (
+                      <button
+                        onClick={() => setReceivePo(po)}
+                        className="rounded-md bg-brand-500 px-2 py-1 text-xs font-semibold text-white hover:bg-brand-600"
+                      >
+                        Receive
+                      </button>
+                    )}
+                    <button
+                      onClick={() => exportPoPdf(po)}
+                      className="rounded-md px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                      title="Export PDF"
+                    >
+                      PDF
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -183,6 +212,147 @@ export default function PurchaseOrders() {
           }}
         />
       )}
+
+      {receivePo && (
+        <ReceivePO
+          po={receivePo}
+          onClose={() => setReceivePo(null)}
+          onDone={() => {
+            setReceivePo(null);
+            refetch();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ReceivePO({ po, onClose, onDone }: { po: PO; onClose: () => void; onDone: () => void }) {
+  // Pre-fill each line with the still-outstanding quantity.
+  const [recv, setRecv] = useState<Record<string, number>>(
+    Object.fromEntries(po.items.map((i) => [i.id, Math.max(0, i.quantity - i.receivedQuantity)]))
+  );
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const totalOrdered = po.items.reduce((s, i) => s + i.quantity, 0);
+  const alreadyReceived = po.items.reduce((s, i) => s + i.receivedQuantity, 0);
+  const receivingNow = po.items.reduce((s, i) => s + (recv[i.id] || 0), 0);
+  const willComplete = po.items.every((i) => i.receivedQuantity + (recv[i.id] || 0) >= i.quantity);
+
+  function setQty(item: POItem, val: number) {
+    const max = item.quantity - item.receivedQuantity;
+    setRecv({ ...recv, [item.id]: Math.max(0, Math.min(max, Math.floor(val || 0))) });
+  }
+
+  async function submit() {
+    setErr(null);
+    setBusy(true);
+    try {
+      await api.post(`/purchase-orders/${po.id}/receive`, {
+        items: po.items.map((i) => ({ itemId: i.id, received: recv[i.id] || 0 })),
+      });
+      onDone();
+    } catch (e) {
+      setErr(apiError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelPo() {
+    setErr(null);
+    setBusy(true);
+    try {
+      await api.post(`/purchase-orders/${po.id}/cancel`);
+      onDone();
+    } catch (e) {
+      setErr(apiError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+      <div className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        {/* Header: PO on the left, status on the right */}
+        <div className="mb-1 flex items-start justify-between">
+          <div>
+            <h2 className="text-lg font-bold">Receive — {po.number}</h2>
+            <p className="text-xs text-slate-500">
+              From {po.sellerOrg.name} · {distLabel(po.distributionType)}
+            </p>
+          </div>
+          <div className="text-right">
+            <Badge value={po.status} />
+            <div className="mt-1 text-xs text-slate-400">
+              {alreadyReceived}/{totalOrdered} received
+            </div>
+          </div>
+        </div>
+
+        {err && <div className="my-3"><Alert>{err}</Alert></div>}
+
+        <table className="mt-4 w-full">
+          <thead>
+            <tr className="border-b border-slate-100">
+              <th className="th">Product</th>
+              <th className="th text-right">Ordered</th>
+              <th className="th text-right">Already</th>
+              <th className="th text-right">Receive now</th>
+            </tr>
+          </thead>
+          <tbody>
+            {po.items.map((i) => {
+              const outstanding = i.quantity - i.receivedQuantity;
+              return (
+                <tr key={i.id} className="border-b border-slate-50">
+                  <td className="td">
+                    {i.product.name}
+                    <div className="font-mono text-xs text-slate-400">{i.product.sku}</div>
+                  </td>
+                  <td className="td text-right">{i.quantity}</td>
+                  <td className="td text-right text-slate-500">{i.receivedQuantity}</td>
+                  <td className="td text-right">
+                    <input
+                      type="number"
+                      min={0}
+                      max={outstanding}
+                      disabled={outstanding === 0}
+                      className="input w-24 text-right disabled:bg-slate-50"
+                      value={recv[i.id] ?? 0}
+                      onChange={(e) => setQty(i, Number(e.target.value))}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm text-slate-600">
+            Receiving <span className="font-semibold">{receivingNow}</span> pcs
+            {willComplete ? (
+              <span className="ml-2 badge bg-green-100 text-green-700">Will complete order</span>
+            ) : (
+              <span className="ml-2 badge bg-orange-100 text-orange-700">Partial</span>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button className="btn-ghost text-red-600" disabled={busy} onClick={cancelPo} title="Cancel this purchase order">
+              Cancel PO
+            </button>
+            <button className="btn-ghost" disabled={busy} onClick={() => exportPoPdf(po)}>
+              Export PDF
+            </button>
+            <button className="btn-primary" disabled={busy || receivingNow === 0} onClick={submit}>
+              {busy ? 'Saving…' : willComplete ? 'Receive & complete' : 'Save partial receipt'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
