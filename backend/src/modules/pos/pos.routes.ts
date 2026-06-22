@@ -34,15 +34,16 @@ posRouter.post(
       throw forbidden('Your organization must be approved and active to record sales');
     }
 
-    // Determine the discount to apply.
+    // Determine the discount to apply. Selling to a downstream account in your
+    // network auto-applies that account's tier discount; walk-in/other = SRP.
     let discountRate = body.discountRate ?? 0;
-    if (body.discountRate === undefined && body.buyerOrgId) {
+    if (body.buyerOrgId) {
       const buyer = await prisma.organization.findUnique({ where: { id: body.buyerOrgId } });
       if (!buyer) throw badRequest('Buyer organization not found');
-      if (buyer.parentId !== seller.id) {
-        throw badRequest('You can only sell to your own direct downstream accounts');
+      if (!req.scopeOrgIds!.includes(buyer.id) || buyer.id === seller.id) {
+        throw badRequest('You can only sell to accounts within your downstream network');
       }
-      discountRate = buyer.discountRate;
+      discountRate = buyer.discountRate; // tier discount: PROVINCIAL 20%, CITY 15%, RESELLER 8%
     }
 
     const products = await prisma.product.findMany({
