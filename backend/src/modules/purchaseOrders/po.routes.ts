@@ -7,6 +7,7 @@ import { badRequest, forbidden, notFound, conflict } from '../../lib/errors';
 import { priceLines } from '../../lib/pricing';
 import { poNumber, saleNumber } from '../../lib/numbering';
 import { applyStockMovement } from '../inventory/inventory.service';
+import { adjustMana } from '../mana/mana.service';
 import { sendPoSubmittedEmail } from '../../lib/email';
 
 export const poRouter = Router();
@@ -25,6 +26,7 @@ const orgSelect = {
 
 const createSchema = z.object({
   distributionType: z.enum(['TRADE', 'DROP_SHIP']).default('TRADE'),
+  paymentMethod: z.enum(['CASH', 'MANA']).default('CASH'),
   expectedDeliveryDate: z.coerce.date().optional(),
   // Drop-ship delivery details (required when distributionType is DROP_SHIP).
   recipientName: z.string().optional(),
@@ -145,6 +147,7 @@ poRouter.post(
           buyerOrgId: buyer.id,
           sellerOrgId,
           distributionType: body.distributionType,
+          paymentMethod: body.paymentMethod,
           status: 'DRAFT',
           discountRate: buyer.discountRate,
           subtotal: priced.subtotal,
@@ -187,6 +190,14 @@ poRouter.post(
     const po = await loadScopedPo(req, req.params.id);
     requireBuyer(req, po);
     if (po.status !== 'DRAFT') throw conflict(`Cannot submit a PO in status ${po.status}`);
+
+    // Mana-paid orders need enough balance up front (transfer happens on approval).
+    if (po.paymentMethod === 'MANA' && po.buyerOrgId !== po.sellerOrgId) {
+      const buyer = await prisma.organization.findUnique({ where: { id: po.buyerOrgId }, select: { manaBalance: true } });
+      if ((buyer?.manaBalance ?? 0) < po.total) {
+        throw badRequest(`Not enough Mana to pay this order (need ${po.total}, have ${buyer?.manaBalance ?? 0})`);
+      }
+    }
 
     const updated = await prisma.$transaction(async (tx) => {
       const u = await tx.purchaseOrder.update({
@@ -239,18 +250,31 @@ poRouter.post(
     requireSeller(req, po);
     if (po.status !== 'SUBMITTED') throw conflict(`Cannot approve a PO in status ${po.status}`);
 
-    const updated = await prisma.$transaction(async (tx) => {
-      const u = await tx.purchaseOrder.update({
-        where: { id: po.id },
-        data: { status: 'APPROVED', approvedAt: new Date() },
+    const isStockIn = po.buyerOrgId === po.sellerOrgId;
+    try {
+      const updated = await prisma.$transaction(async (tx) => {
+        // Settle Mana: transfer credits from buyer to seller (advance payment).
+        if (po.paymentMethod === 'MANA' && !isStockIn) {
+          await adjustMana(tx, { orgId: po.buyerOrgId, change: -po.total, reason: 'PO_PAYMENT', refType: 'PurchaseOrder', refId: po.id });
+          await adjustMana(tx, { orgId: po.sellerOrgId, change: po.total, reason: 'PO_RECEIPT', refType: 'PurchaseOrder', refId: po.id });
+        }
+        const u = await tx.purchaseOrder.update({
+          where: { id: po.id },
+          data: { status: 'APPROVED', approvedAt: new Date() },
+        });
+        await tx.approval.updateMany({
+          where: { poId: po.id, type: 'PO_APPROVAL', status: 'PENDING' },
+          data: { status: 'APPROVED', decidedById: req.auth!.sub, decidedAt: new Date() },
+        });
+        return u;
       });
-      await tx.approval.updateMany({
-        where: { poId: po.id, type: 'PO_APPROVAL', status: 'PENDING' },
-        data: { status: 'APPROVED', decidedById: req.auth!.sub, decidedAt: new Date() },
-      });
-      return u;
-    });
-    res.json(updated);
+      res.json(updated);
+    } catch (err: any) {
+      if (typeof err?.message === 'string' && err.message.startsWith('Insufficient Mana')) {
+        throw badRequest(err.message);
+      }
+      throw err;
+    }
   })
 );
 
@@ -432,8 +456,16 @@ poRouter.post(
       throw conflict(`Cannot cancel a PO in status ${po.status}`);
     }
     const needsReversal = po.status === 'FULFILLED' || po.status === 'PARTIALLY_RECEIVED';
+    const isStockIn = po.buyerOrgId === po.sellerOrgId;
+    // Mana is transferred on approval, so any approved-or-later Mana PO needs a refund.
+    const manaTransferred =
+      po.paymentMethod === 'MANA' && !isStockIn && ['APPROVED', 'FULFILLED', 'PARTIALLY_RECEIVED'].includes(po.status);
 
     const updated = await prisma.$transaction(async (tx) => {
+      if (manaTransferred) {
+        await adjustMana(tx, { orgId: po.buyerOrgId, change: po.total, reason: 'PO_MANA_REFUND', refType: 'PurchaseOrder', refId: po.id });
+        await adjustMana(tx, { orgId: po.sellerOrgId, change: -po.total, reason: 'PO_MANA_REFUND_REVERSAL', refType: 'PurchaseOrder', refId: po.id, allowNegative: true });
+      }
       if (needsReversal) {
         if (po.distributionType === 'TRADE') {
           for (const item of po.items) {

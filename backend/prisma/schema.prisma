@@ -61,6 +61,12 @@ enum SaleChannel {
   POS
 }
 
+// How a purchase order is paid. MANA = the in-system credits wallet (1 PHP = 1 Mana).
+enum PaymentMethod {
+  CASH
+  MANA
+}
+
 enum ApprovalType {
   ORG_ONBOARDING
   PO_APPROVAL
@@ -114,6 +120,9 @@ model Organization {
   // KPI target (revenue) for the current period.
   salesTarget  Float     @default(0)
 
+  // "Mana" credits wallet (1 PHP = 1 Mana). Used to pre-pay purchase orders.
+  manaBalance  Float     @default(0)
+
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -132,6 +141,9 @@ model Organization {
 
   // The geographic territory this org occupies (if assigned).
   territory     Territory? @relation("OrgTerritory")
+
+  manaPurchases ManaPurchase[]
+  manaTxns      ManaTxn[]
 
   @@index([parentId])
   @@index([type])
@@ -228,6 +240,9 @@ model PurchaseOrder {
   discountRate     Float    // buyer tier discount applied to the whole PO
   subtotal         Float    @default(0) // sum of line SRP * qty
   total            Float    @default(0) // sum of discounted line totals
+
+  // Payment method; MANA transfers credits from buyer to seller on approval.
+  paymentMethod    PaymentMethod @default(CASH)
 
   // Buyer's target/expected delivery date (optional).
   expectedDeliveryDate DateTime?
@@ -396,6 +411,42 @@ model Territory {
 
   @@index([parentId])
   @@index([level])
+}
+
+// A request to buy Mana credits, with proof of payment, approved by the Principal.
+model ManaPurchase {
+  id            String   @id @default(cuid())
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id])
+  amount        Float
+  status        ApprovalStatus @default(PENDING)
+  fileName      String
+  mimeType      String
+  size          Int
+  data          String   // base64 proof of payment
+  requestedById String?
+  decidedById   String?
+  decidedAt     DateTime?
+  note          String?
+  createdAt     DateTime @default(now())
+
+  @@index([orgId])
+  @@index([status])
+}
+
+// Append-only ledger of Mana movements per org.
+model ManaTxn {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  change    Float
+  balance   Float
+  reason    String
+  refType   String?
+  refId     String?
+  createdAt DateTime @default(now())
+
+  @@index([orgId])
 }
 
 model KPIRecord {

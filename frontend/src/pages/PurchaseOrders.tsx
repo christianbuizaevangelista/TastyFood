@@ -26,6 +26,7 @@ interface PO {
   discountRate: number;
   subtotal: number;
   total: number;
+  paymentMethod?: 'CASH' | 'MANA';
   createdAt: string;
   expectedDeliveryDate?: string | null;
   recipientName?: string | null;
@@ -413,7 +414,7 @@ function PoDetails({ po, onClose }: { po: PO; onClose: () => void }) {
           <div>
             <h2 className="text-lg font-bold">{po.number}</h2>
             <p className="text-xs text-slate-500">
-              {distLabel(po.distributionType)} · Ordered {date(po.createdAt)}
+              {distLabel(po.distributionType)} · {po.paymentMethod === 'MANA' ? 'Paid via Mana ✨' : 'Cash'} · Ordered {date(po.createdAt)}
               {po.expectedDeliveryDate ? ` · Expected delivery ${date(po.expectedDeliveryDate)}` : ''}
             </p>
           </div>
@@ -670,6 +671,8 @@ function CreatePO({
   onCreated: () => void;
 }) {
   const [distributionType, setDistributionType] = useState<DistributionType>('TRADE');
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MANA'>('CASH');
+  const wallet = useFetch<{ balance: number }>('/mana/wallet');
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
   const [recipient, setRecipient] = useState({ name: '', address: '', phone: '', landmark: '' });
   const [proofFile, setProofFile] = useState<File | null>(null);
@@ -721,6 +724,7 @@ function CreatePO({
       }
       await api.post('/purchase-orders', {
         distributionType,
+        paymentMethod: isStockIn ? 'CASH' : paymentMethod,
         expectedDeliveryDate: expectedDeliveryDate || undefined,
         recipientName: isDropship ? recipient.name : undefined,
         recipientAddress: isDropship ? recipient.address : undefined,
@@ -802,6 +806,28 @@ function CreatePO({
                 {proofFile && <span className="ml-2 text-xs text-green-600">✓ {proofFile.name}</span>}
               </div>
             </div>
+          </div>
+        )}
+
+        {!isStockIn && (
+          <div className="mb-4">
+            <label className="label">Payment method</label>
+            <div className="flex gap-2">
+              {(['CASH', 'MANA'] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setPaymentMethod(m)}
+                  className={`btn ${paymentMethod === m ? 'bg-brand-500 text-white' : 'border border-slate-300 bg-white'}`}
+                >
+                  {m === 'CASH' ? 'Cash' : 'Mana ✨'}
+                </button>
+              ))}
+            </div>
+            {paymentMethod === 'MANA' && (
+              <p className="mt-1 text-xs text-slate-500">
+                Mana balance: <span className="font-semibold">{(wallet.data?.balance ?? 0).toLocaleString()} ✨</span>. Transfers to the supplier on approval.
+              </p>
+            )}
           </div>
         )}
 
