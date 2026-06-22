@@ -1,4 +1,4 @@
-import { useState, ChangeEvent } from 'react';
+import { useState, useMemo, ChangeEvent } from 'react';
 import { api, apiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { useFetch } from '../lib/useFetch';
@@ -26,6 +26,7 @@ interface PO {
   subtotal: number;
   total: number;
   createdAt: string;
+  expectedDeliveryDate?: string | null;
   buyerOrg: OrgParty;
   sellerOrg: OrgParty;
   items: POItem[];
@@ -61,7 +62,15 @@ function canReceive(po: PO, myOrgId: string): boolean {
 
 export default function PurchaseOrders() {
   const { user } = useAuth();
-  const { data, loading, error, refetch } = useFetch<{ orders: PO[] }>('/purchase-orders');
+  const [dateFilter, setDateFilter] = useState({ from: '', to: '' });
+  const url = useMemo(() => {
+    const p = new URLSearchParams();
+    if (dateFilter.from) p.set('from', dateFilter.from);
+    if (dateFilter.to) p.set('to', dateFilter.to);
+    const qs = p.toString();
+    return `/purchase-orders${qs ? `?${qs}` : ''}`;
+  }, [dateFilter]);
+  const { data, loading, error, refetch } = useFetch<{ orders: PO[] }>(url, [url]);
   const products = useFetch<{ products: Product[] }>('/products');
   const [showCreate, setShowCreate] = useState(false);
   const [receivePo, setReceivePo] = useState<PO | null>(null);
@@ -80,9 +89,6 @@ export default function PurchaseOrders() {
       setActionErr(apiError(e));
     }
   }
-
-  if (loading) return <Spinner />;
-  if (error) return <Alert>{error}</Alert>;
 
   const myOrgId = user!.org.id;
   const canCreate = user!.role !== 'PRINCIPAL';
@@ -192,6 +198,24 @@ export default function PurchaseOrders() {
 
       {actionErr && <div className="mb-4"><Alert>{actionErr}</Alert></div>}
 
+      {/* Order-date range filter */}
+      <div className="card mb-4 flex flex-wrap items-end gap-3">
+        <div>
+          <label className="label">From</label>
+          <input type="date" className="input" value={dateFilter.from} onChange={(e) => setDateFilter({ ...dateFilter, from: e.target.value })} />
+        </div>
+        <div>
+          <label className="label">To</label>
+          <input type="date" className="input" value={dateFilter.to} onChange={(e) => setDateFilter({ ...dateFilter, to: e.target.value })} />
+        </div>
+        {(dateFilter.from || dateFilter.to) && (
+          <button className="btn-ghost" onClick={() => setDateFilter({ from: '', to: '' })}>
+            Clear
+          </button>
+        )}
+        <span className="ml-auto text-xs text-slate-400">Filters by order date</span>
+      </div>
+
       <div className="mb-1 flex gap-2 border-b border-slate-200">
         {tabs.map((t) => (
           <button
@@ -212,9 +236,15 @@ export default function PurchaseOrders() {
         {tabs.find((t) => t.key === tab)!.hint}
       </p>
 
-      {tab === 'supplier'
-        ? renderTable(supplierPOs, 'Supplier', 'No orders to your supplier yet.')
-        : renderTable(customerPOs, 'Customer', 'No orders from your customers yet.')}
+      {loading ? (
+        <Spinner />
+      ) : error ? (
+        <Alert>{error}</Alert>
+      ) : tab === 'supplier' ? (
+        renderTable(supplierPOs, 'Supplier', 'No orders to your supplier yet.')
+      ) : (
+        renderTable(customerPOs, 'Customer', 'No orders from your customers yet.')
+      )}
 
       {showCreate && (
         <CreatePO
@@ -315,7 +345,10 @@ function PoDetails({ po, onClose }: { po: PO; onClose: () => void }) {
         <div className="mb-4 flex items-start justify-between">
           <div>
             <h2 className="text-lg font-bold">{po.number}</h2>
-            <p className="text-xs text-slate-500">{distLabel(po.distributionType)} · {date(po.createdAt)}</p>
+            <p className="text-xs text-slate-500">
+              {distLabel(po.distributionType)} · Ordered {date(po.createdAt)}
+              {po.expectedDeliveryDate ? ` · Expected delivery ${date(po.expectedDeliveryDate)}` : ''}
+            </p>
           </div>
           <div className="text-right"><Badge value={po.status} /></div>
         </div>
@@ -556,6 +589,7 @@ function CreatePO({
   onCreated: () => void;
 }) {
   const [distributionType, setDistributionType] = useState<DistributionType>('TRADE');
+  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
   const [lines, setLines] = useState<Record<string, number>>({});
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -572,6 +606,7 @@ function CreatePO({
     try {
       await api.post('/purchase-orders', {
         distributionType,
+        expectedDeliveryDate: expectedDeliveryDate || undefined,
         items: items.map(([productId, quantity]) => ({ productId, quantity })),
       });
       onCreated();
@@ -604,6 +639,16 @@ function CreatePO({
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="mb-4">
+          <label className="label">Expected delivery date (optional)</label>
+          <input
+            type="date"
+            className="input max-w-xs"
+            value={expectedDeliveryDate}
+            onChange={(e) => setExpectedDeliveryDate(e.target.value)}
+          />
         </div>
 
         <table className="w-full">

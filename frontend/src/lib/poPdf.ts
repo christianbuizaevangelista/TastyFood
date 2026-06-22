@@ -19,6 +19,7 @@ interface PoLike {
   subtotal: number;
   total: number;
   createdAt: string;
+  expectedDeliveryDate?: string | null;
   buyerOrg: Party;
   sellerOrg: Party;
   items: {
@@ -112,9 +113,17 @@ export function exportPoPdf(po: PoLike) {
   // Order meta
   doc.setFontSize(10);
   doc.setTextColor(60, 60, 60);
-  doc.text(`Date: ${new Date(po.createdAt).toLocaleString('en-PH')}`, M, y);
+  doc.text(`Order date: ${new Date(po.createdAt).toLocaleString('en-PH')}`, M, y);
   doc.text(`Distribution: ${distLabel(po.distributionType)}`, M, y + 14);
   doc.text(`Buyer discount: ${(po.discountRate * 100).toFixed(0)}%`, M, y + 28);
+  if (po.expectedDeliveryDate) {
+    doc.text(
+      `Expected delivery: ${new Date(po.expectedDeliveryDate).toLocaleDateString('en-PH')}`,
+      M,
+      y + 42
+    );
+    y += 14;
+  }
   y += 44;
 
   // Items table

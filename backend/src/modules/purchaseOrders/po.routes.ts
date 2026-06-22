@@ -25,6 +25,7 @@ const orgSelect = {
 
 const createSchema = z.object({
   distributionType: z.enum(['TRADE', 'DROP_SHIP']).default('TRADE'),
+  expectedDeliveryDate: z.coerce.date().optional(),
   items: z
     .array(z.object({ productId: z.string(), quantity: z.number().int().positive() }))
     .min(1),
@@ -36,11 +37,23 @@ poRouter.get(
   asyncHandler(async (req, res) => {
     const scope = req.scopeOrgIds!;
     const status = req.query.status as string | undefined;
+
+    // Optional order-date range filter.
+    const createdAt: { gte?: Date; lte?: Date } = {};
+    if (req.query.from) createdAt.gte = new Date(req.query.from as string);
+    if (req.query.to) {
+      const end = new Date(req.query.to as string);
+      end.setHours(23, 59, 59, 999);
+      createdAt.lte = end;
+    }
+    const dateFilter = createdAt.gte || createdAt.lte ? { createdAt } : {};
+
     const orders = await prisma.purchaseOrder.findMany({
       where: {
         AND: [
           { OR: [{ buyerOrgId: { in: scope } }, { sellerOrgId: { in: scope } }] },
           status ? { status: status as any } : {},
+          dateFilter,
         ],
       },
       include: {
@@ -101,6 +114,7 @@ poRouter.post(
         discountRate: buyer.discountRate,
         subtotal: priced.subtotal,
         total: priced.total,
+        expectedDeliveryDate: body.expectedDeliveryDate ?? null,
         createdById: req.auth!.sub,
         items: { create: priced.items },
       },

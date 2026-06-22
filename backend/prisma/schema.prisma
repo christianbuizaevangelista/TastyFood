@@ -216,6 +216,9 @@ model PurchaseOrder {
   subtotal         Float    @default(0) // sum of line SRP * qty
   total            Float    @default(0) // sum of discounted line totals
 
+  // Buyer's target/expected delivery date (optional).
+  expectedDeliveryDate DateTime?
+
   createdById      String
   createdBy        User     @relation("PoCreatedBy", fields: [createdById], references: [id])
 
