@@ -19,7 +19,8 @@ export function createApp() {
   const app = express();
 
   app.use(cors({ origin: env.clientOrigin, credentials: true }));
-  app.use(express.json());
+  // Larger limit to allow base64 file uploads (e.g. proof of payment).
+  app.use(express.json({ limit: '6mb' }));
   if (env.nodeEnv !== 'test') app.use(morgan('dev'));
 
   app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'tasty-food-api' }));

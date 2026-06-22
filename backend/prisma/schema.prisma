@@ -140,6 +140,7 @@ model User {
   createdSales Sale[]          @relation("SaleCreatedBy")
   requestedApprovals Approval[] @relation("ApprovalRequester")
   decidedApprovals   Approval[] @relation("ApprovalDecider")
+  uploadedAttachments PoAttachment[] @relation("AttachmentUploader")
 
   @@index([orgId])
 }
@@ -229,10 +230,29 @@ model PurchaseOrder {
   items            PurchaseOrderItem[]
   approvals        Approval[] @relation("ApprovalPO")
   sale             Sale?      @relation("SaleFromPO")
+  attachments      PoAttachment[]
 
   @@index([buyerOrgId])
   @@index([sellerOrgId])
   @@index([status])
+}
+
+// Buyer-uploaded files attached to a PO (e.g. proof of payment), visible to
+// the buyer and its supplier. Stored as base64 to keep setup serverless-simple.
+model PoAttachment {
+  id           String   @id @default(cuid())
+  poId         String
+  po           PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  kind         String   @default("PROOF_OF_PAYMENT")
+  fileName     String
+  mimeType     String
+  size         Int
+  data         String   // base64-encoded file content
+  uploadedById String
+  uploadedBy   User     @relation("AttachmentUploader", fields: [uploadedById], references: [id])
+  createdAt    DateTime @default(now())
+
+  @@index([poId])
 }
 
 model PurchaseOrderItem {

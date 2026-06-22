@@ -411,6 +411,83 @@ poRouter.post(
   })
 );
 
+// Attachments (proof of payment) ---------------------------------------------
+
+const MAX_UPLOAD_BYTES = 3 * 1024 * 1024; // 3 MB original (stays under platform body limit)
+const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'application/pdf'];
+
+const uploadSchema = z.object({
+  fileName: z.string().min(1).max(200),
+  mimeType: z.string().min(1),
+  dataBase64: z.string().min(1),
+});
+
+// List attachment metadata — visible to anyone in the PO's chain (buyer + supplier).
+poRouter.get(
+  '/:id/attachments',
+  asyncHandler(async (req, res) => {
+    const po = await loadScopedPo(req, req.params.id);
+    const attachments = await prisma.poAttachment.findMany({
+      where: { poId: po.id },
+      select: {
+        id: true,
+        kind: true,
+        fileName: true,
+        mimeType: true,
+        size: true,
+        createdAt: true,
+        uploadedBy: { select: { name: true, orgId: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json({ attachments });
+  })
+);
+
+// Upload proof of payment — only the buyer (customer) may attach.
+poRouter.post(
+  '/:id/attachments',
+  asyncHandler(async (req, res) => {
+    const po = await loadScopedPo(req, req.params.id);
+    requireBuyer(req, po);
+    const body = uploadSchema.parse(req.body);
+
+    if (!ALLOWED_TYPES.includes(body.mimeType.toLowerCase())) {
+      throw badRequest('Only images (PNG/JPG/WEBP) or PDF files are allowed');
+    }
+    const cleaned = body.dataBase64.replace(/^data:[^;]+;base64,/, '');
+    const size = Math.floor((cleaned.length * 3) / 4);
+    if (size > MAX_UPLOAD_BYTES) throw badRequest('File too large (max 3 MB)');
+
+    const att = await prisma.poAttachment.create({
+      data: {
+        poId: po.id,
+        fileName: body.fileName,
+        mimeType: body.mimeType,
+        size,
+        data: cleaned,
+        uploadedById: req.auth!.sub,
+      },
+    });
+    res.status(201).json({ id: att.id, fileName: att.fileName, mimeType: att.mimeType, size: att.size });
+  })
+);
+
+// Stream an attachment's content — visible to anyone in the PO's chain.
+poRouter.get(
+  '/:id/attachments/:attId/content',
+  asyncHandler(async (req, res) => {
+    const po = await loadScopedPo(req, req.params.id);
+    const att = await prisma.poAttachment.findFirst({
+      where: { id: req.params.attId, poId: po.id },
+    });
+    if (!att) throw notFound('Attachment not found');
+    res.setHeader('Content-Type', att.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${att.fileName}"`);
+    res.send(Buffer.from(att.data, 'base64'));
+  })
+);
+
 // Helpers --------------------------------------------------------------------
 
 async function loadScopedPo(req: any, id: string) {

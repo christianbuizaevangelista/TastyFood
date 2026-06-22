@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, ChangeEvent } from 'react';
 import { api, apiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { useFetch } from '../lib/useFetch';
@@ -65,6 +65,7 @@ export default function PurchaseOrders() {
   const products = useFetch<{ products: Product[] }>('/products');
   const [showCreate, setShowCreate] = useState(false);
   const [receivePo, setReceivePo] = useState<PO | null>(null);
+  const [detailsPo, setDetailsPo] = useState<PO | null>(null);
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [tab, setTab] = useState<'supplier' | 'customer'>(
     user!.role === 'PRINCIPAL' ? 'customer' : 'supplier'
@@ -117,7 +118,11 @@ export default function PurchaseOrders() {
             const counterparty = tab === 'supplier' ? po.sellerOrg : po.buyerOrg;
             return (
               <tr key={po.id} className="border-b border-slate-50">
-                <td className="td font-mono text-xs">{po.number}</td>
+                <td className="td font-mono text-xs">
+                  <button onClick={() => setDetailsPo(po)} className="font-semibold text-brand-600 hover:underline">
+                    {po.number}
+                  </button>
+                </td>
                 <td className="td">
                   {counterparty.name}
                   <span className="ml-1 text-xs text-slate-400">({counterparty.type})</span>
@@ -233,8 +238,180 @@ export default function PurchaseOrders() {
           }}
         />
       )}
+
+      {detailsPo && <PoDetails po={detailsPo} onClose={() => setDetailsPo(null)} />}
     </div>
   );
+}
+
+function PoDetails({ po, onClose }: { po: PO; onClose: () => void }) {
+  const { user } = useAuth();
+  const isBuyer = po.buyerOrg.id === user!.org.id;
+  const attachments = useFetch<{ attachments: Attachment[] }>(
+    `/purchase-orders/${po.id}/attachments`
+  );
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  function onFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (file.size > 3 * 1024 * 1024) {
+      setErr('File too large (max 3 MB)');
+      return;
+    }
+    setErr(null);
+    setUploading(true);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        await api.post(`/purchase-orders/${po.id}/attachments`, {
+          fileName: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          dataBase64: reader.result as string,
+        });
+        attachments.refetch();
+      } catch (e2) {
+        setErr(apiError(e2));
+      } finally {
+        setUploading(false);
+      }
+    };
+    reader.onerror = () => {
+      setErr('Could not read file');
+      setUploading(false);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function viewAttachment(attId: string) {
+    try {
+      const res = await api.get(`/purchase-orders/${po.id}/attachments/${attId}/content`, {
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(res.data);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e2) {
+      setErr(apiError(e2));
+    }
+  }
+
+  const party = (p: typeof po.buyerOrg) => (
+    <div className="text-sm text-slate-600">
+      <div className="font-semibold text-slate-800">{p.name}</div>
+      <div className="text-xs text-slate-400">{p.type}</div>
+      {p.contactName && <div>Attn: {p.contactName}</div>}
+      {p.contactEmail && <div>{p.contactEmail}</div>}
+      {p.contactPhone && <div>{p.contactPhone}</div>}
+      {p.address && <div>{p.address}</div>}
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-start justify-between">
+          <div>
+            <h2 className="text-lg font-bold">{po.number}</h2>
+            <p className="text-xs text-slate-500">{distLabel(po.distributionType)} · {date(po.createdAt)}</p>
+          </div>
+          <div className="text-right"><Badge value={po.status} /></div>
+        </div>
+
+        <div className="mb-5 grid grid-cols-2 gap-4">
+          <div>
+            <div className="label">Supplier</div>
+            {party(po.sellerOrg)}
+          </div>
+          <div>
+            <div className="label">Customer</div>
+            {party(po.buyerOrg)}
+          </div>
+        </div>
+
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-slate-100">
+              <th className="th">Product</th>
+              <th className="th text-right">Ordered</th>
+              <th className="th text-right">Received</th>
+              <th className="th text-right">Unit Price</th>
+              <th className="th text-right">Line Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {po.items.map((i) => (
+              <tr key={i.id} className="border-b border-slate-50">
+                <td className="td">{i.product.name}<div className="font-mono text-xs text-slate-400">{i.product.sku}</div></td>
+                <td className="td text-right">{i.quantity}</td>
+                <td className="td text-right">{i.receivedQuantity}</td>
+                <td className="td text-right">{peso(i.unitPrice)}</td>
+                <td className="td text-right">{peso(i.lineTotal)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="mt-3 text-right text-sm">
+          <div className="text-slate-500">Subtotal (SRP): {peso(po.subtotal)}</div>
+          <div className="text-lg font-bold text-brand-600">Total: {peso(po.total)}</div>
+        </div>
+
+        {/* Proof of payment */}
+        <div className="mt-6 border-t border-slate-100 pt-4">
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-700">Proof of Payment</h3>
+            {isBuyer && (
+              <label className={`btn-ghost cursor-pointer text-xs ${uploading ? 'opacity-50' : ''}`}>
+                {uploading ? 'Uploading…' : '+ Upload'}
+                <input type="file" accept="image/png,image/jpeg,image/webp,application/pdf" className="hidden" onChange={onFile} disabled={uploading} />
+              </label>
+            )}
+          </div>
+          {err && <div className="mb-2"><Alert>{err}</Alert></div>}
+
+          {attachments.loading ? (
+            <Spinner />
+          ) : attachments.data && attachments.data.attachments.length > 0 ? (
+            <ul className="divide-y divide-slate-100">
+              {attachments.data.attachments.map((a) => (
+                <li key={a.id} className="flex items-center justify-between py-2 text-sm">
+                  <div>
+                    <div className="font-medium text-slate-700">{a.fileName}</div>
+                    <div className="text-xs text-slate-400">
+                      {(a.size / 1024).toFixed(0)} KB · by {a.uploadedBy.name} · {date(a.createdAt)}
+                    </div>
+                  </div>
+                  <button onClick={() => viewAttachment(a.id)} className="text-xs font-semibold text-brand-600 hover:underline">
+                    View
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-slate-400">
+              {isBuyer ? 'No proof of payment uploaded yet. Upload an image or PDF.' : 'The customer has not uploaded proof of payment yet.'}
+            </p>
+          )}
+        </div>
+
+        <div className="mt-6 flex justify-end gap-2">
+          <button className="btn-ghost" onClick={() => exportPoPdf(po)}>Export PDF</button>
+          <button className="btn-primary" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface Attachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
+  uploadedBy: { name: string; orgId: string };
 }
 
 function ReceivePO({ po, onClose, onDone }: { po: PO; onClose: () => void; onDone: () => void }) {
