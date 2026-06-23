@@ -8,6 +8,7 @@ import { Org, Product } from '../types';
 interface Receipt {
   number: string;
   seller: { name: string; type: string };
+  distributionType?: string;
   customerName?: string;
   discountRate: number;
   subtotal: number;
@@ -31,6 +32,7 @@ export default function POS() {
   const orgs = useFetch<{ orgs: Org[] }>('/orgs');
 
   const [cart, setCart] = useState<Record<string, number>>({});
+  const [distributionType, setDistributionType] = useState<'TRADE' | 'DROP_SHIP'>('TRADE');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Org | null>(null);
   const [showList, setShowList] = useState(false);
@@ -83,6 +85,7 @@ export default function POS() {
     setBusy(true);
     try {
       const { data: r } = await api.post('/pos/sales', {
+        distributionType,
         buyerOrgId: selected?.id, // backend derives the tier discount from this
         customerName: selected ? selected.name : query.trim() || 'Walk-in',
         // For Others/Walk-in, send the manual discount rate (derived from % or amount).
@@ -134,6 +137,25 @@ export default function POS() {
 
         <div className="card h-fit">
           <h2 className="mb-3 text-sm font-semibold text-slate-700">Sale details</h2>
+
+          <label className="label">Distribution</label>
+          <div className="mb-3 flex gap-2">
+            {([
+              { v: 'TRADE', label: 'Regular' },
+              { v: 'DROP_SHIP', label: 'Dropship' },
+            ] as const).map((d) => (
+              <button
+                key={d.v}
+                onClick={() => setDistributionType(d.v)}
+                className={`btn flex-1 ${distributionType === d.v ? 'bg-brand-500 text-white' : 'border border-slate-300 bg-white'}`}
+              >
+                {d.label}
+              </button>
+            ))}
+          </div>
+          <p className="mb-3 text-xs text-slate-400">
+            {distributionType === 'TRADE' ? 'Deducts your inventory.' : 'No stock deducted (fulfilled elsewhere).'}
+          </p>
 
           <label className="label">Customer</label>
           <div className="relative mb-1">
@@ -235,7 +257,9 @@ export default function POS() {
             </div>
             <div className="mb-2 flex items-center justify-between text-xs">
               <span className="font-mono">{receipt.number}</span>
-              <span className="text-slate-500">{Math.round(receipt.discountRate * 100)}% disc.</span>
+              <span className="text-slate-500">
+                {receipt.distributionType === 'DROP_SHIP' ? 'Dropship' : 'Regular'} · {Math.round(receipt.discountRate * 100)}% disc.
+              </span>
             </div>
             <div className="mb-3 text-xs text-slate-500">Customer: {receipt.customerName || 'Walk-in'}</div>
             <table className="w-full text-sm">

@@ -15,7 +15,7 @@ export const NAV: NavItem[] = [
   { to: '/structure', label: 'Org Structure', icon: '🗺️', roles: ALL },
   { to: '/inventory', label: 'Inventory', icon: '📦', roles: ALL },
   { to: '/purchase-orders', label: 'Purchase Orders', icon: '🧾', roles: ALL },
-  { to: '/pos', label: 'Point of Sale', icon: '🛒', roles: ['PROVINCIAL', 'CITY', 'RESELLER'] },
+  { to: '/pos', label: 'Point of Sale', icon: '🛒', roles: ALL },
   { to: '/mana', label: 'Mana Wallet', icon: '✨', roles: ALL },
   { to: '/sales', label: 'Sales Report', icon: '📈', roles: ALL },
   { to: '/kpi', label: 'KPI & Leaderboards', icon: '🏆', roles: ['PRINCIPAL', 'PROVINCIAL', 'CITY'] },
