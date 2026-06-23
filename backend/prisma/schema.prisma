@@ -176,6 +176,9 @@ model Product {
   name        String
   description String?
   category    String?
+  // Free-text variants and sizes (e.g. "Original, Spicy" / "200g, 500g").
+  variants    String?
+  sizes       String?
   // Suggested Retail Price — the basis for all tier pricing.
   srp         Float
   isActive    Boolean  @default(true)

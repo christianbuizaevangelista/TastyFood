@@ -28,7 +28,10 @@ export interface Product {
   id: string;
   sku: string;
   name: string;
-  category?: string;
+  description?: string | null;
+  category?: string | null;
+  variants?: string | null;
+  sizes?: string | null;
   srp: number;
 }
 
