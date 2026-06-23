@@ -24,7 +24,7 @@ export const NAV: NavItem[] = [
   { to: '/crm', label: 'CRM / Accounts', icon: '🤝', roles: ['PRINCIPAL', 'PROVINCIAL', 'CITY'], perm: 'crm' },
   { to: '/approvals', label: 'Approvals', icon: '✅', roles: ['PRINCIPAL', 'PROVINCIAL'], perm: 'approvals' },
   { to: '/products', label: 'Products', icon: '🏷️', roles: ['PRINCIPAL'], perm: 'products' },
-  { to: '/users', label: 'Users & Roles', icon: '🔑', roles: ALL, ownerOnly: true },
+  { to: '/users', label: 'Users & Roles', icon: '🔑', roles: ['PRINCIPAL'], ownerOnly: true },
   { to: '/account', label: 'Account Settings', icon: '👤', roles: ALL },
 ];
 

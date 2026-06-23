@@ -4,14 +4,15 @@ import crypto from 'crypto';
 import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
-import { requireOwner } from '../../middleware/rbac';
+import { requireOwner, requireRole } from '../../middleware/rbac';
 import { badRequest, forbidden, notFound } from '../../lib/errors';
 import { env } from '../../lib/env';
 import { sendInviteEmail } from '../../lib/email';
 
 export const usersRouter = Router();
 usersRouter.use(authenticate);
-usersRouter.use(requireOwner); // only the org owner manages users/roles
+usersRouter.use(requireRole('PRINCIPAL')); // staff/admin management is Principal-only
+usersRouter.use(requireOwner); // and only the Principal owner, not their own staff
 
 // Grantable permission keys (modules a staff user can be given access to).
 export const PERMISSIONS = [
