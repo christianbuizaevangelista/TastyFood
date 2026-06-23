@@ -54,6 +54,20 @@ productsRouter.put(
   })
 );
 
+// POST /products/bulk-delete — soft-delete many products at once.
+productsRouter.post(
+  '/bulk-delete',
+  requireRole('PRINCIPAL'),
+  asyncHandler(async (req, res) => {
+    const { ids } = z.object({ ids: z.array(z.string()).min(1) }).parse(req.body);
+    const result = await prisma.product.updateMany({
+      where: { id: { in: ids } },
+      data: { isActive: false },
+    });
+    res.json({ deleted: result.count });
+  })
+);
+
 // DELETE /products/:id — soft delete (remove from catalog). Historical orders
 // and sales keep their product references intact.
 productsRouter.delete(
