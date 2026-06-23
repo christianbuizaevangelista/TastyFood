@@ -97,8 +97,10 @@ usersRouter.post(
       },
       select: { id: true, name: true, email: true, permissions: true },
     });
-    const result = await sendInviteEmail({ to: email, name: body.name, orgName: owner?.name ?? 'Your team', link: inviteLink(token) });
-    res.status(201).json({ ...user, pending: true, invite: result });
+    const link = inviteLink(token);
+    const result = await sendInviteEmail({ to: email, name: body.name, orgName: owner?.name ?? 'Your team', link });
+    // Return the link too so the owner can share it manually if email isn't set up.
+    res.status(201).json({ ...user, pending: true, invite: result, inviteLink: link });
   })
 );
 
@@ -137,8 +139,20 @@ usersRouter.post(
       where: { id: target.id },
       data: { inviteToken: token, inviteExpires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
     });
-    const result = await sendInviteEmail({ to: target.email, name: target.name, orgName: target.org.name, link: inviteLink(token) });
-    res.json({ ok: true, invite: result });
+    const link = inviteLink(token);
+    const result = await sendInviteEmail({ to: target.email, name: target.name, orgName: target.org.name, link });
+    res.json({ ok: true, invite: result, inviteLink: link });
+  })
+);
+
+// GET /users/:id/invite-link — current invite link for a pending user (to share manually).
+usersRouter.get(
+  '/:id/invite-link',
+  asyncHandler(async (req, res) => {
+    const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!target || target.orgId !== req.auth!.orgId) throw notFound('User not found');
+    if (target.passwordHash || !target.inviteToken) throw badRequest('This user has already set their password');
+    res.json({ inviteLink: inviteLink(target.inviteToken) });
   })
 );
 

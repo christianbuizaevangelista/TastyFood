@@ -31,6 +31,18 @@ export default function Users() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [share, setShare] = useState<{ email: string; link: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function copy(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      prompt('Copy this invite link:', text);
+    }
+  }
 
   // Form state — used for both "add" (no id) and "edit" (id set).
   const [editing, setEditing] = useState<null | { id?: string; name: string; email: string; perms: Set<string>; isActive: boolean }>(null);
@@ -87,8 +99,9 @@ export default function Users() {
         setNotice(
           data.invite?.sent
             ? `Invite emailed to ${editing.email}.`
-            : `User created, but the invite email could not be sent (${data.invite?.reason ?? 'email not configured'}). Use "Resend invite" once email is set up.`
+            : `User created. Email delivery isn't set up yet — copy the invite link below and send it to them.`
         );
+        if (data.inviteLink) setShare({ email: editing.email, link: data.inviteLink });
       }
       setEditing(null);
       load();
@@ -104,7 +117,19 @@ export default function Users() {
     setError(null);
     try {
       const { data } = await api.post(`/users/${u.id}/resend-invite`);
-      setNotice(data.invite?.sent ? `Invite re-sent to ${u.email}.` : `Could not send invite (${data.invite?.reason ?? 'email not configured'}).`);
+      setNotice(data.invite?.sent ? `Invite re-sent to ${u.email}.` : `Email not set up — copy the invite link below and send it manually.`);
+      if (data.inviteLink) setShare({ email: u.email, link: data.inviteLink });
+    } catch (err) {
+      setError(apiError(err));
+    }
+  }
+
+  async function copyInviteLink(u: StaffUser) {
+    setError(null);
+    try {
+      const { data } = await api.get(`/users/${u.id}/invite-link`);
+      setShare({ email: u.email, link: data.inviteLink });
+      copy(data.inviteLink);
     } catch (err) {
       setError(apiError(err));
     }
@@ -136,6 +161,19 @@ export default function Users() {
 
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
       {notice && <div className="mb-4"><Alert kind="success">{notice}</Alert></div>}
+      {share && (
+        <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3">
+          <div className="mb-1 text-xs font-semibold text-sky-700">Invite link for {share.email}</div>
+          <div className="flex items-center gap-2">
+            <input className="input flex-1 font-mono text-xs" readOnly value={share.link} onFocus={(e) => e.target.select()} />
+            <button type="button" className="btn-primary text-xs" onClick={() => copy(share.link)}>
+              {copied ? 'Copied!' : 'Copy'}
+            </button>
+            <button type="button" className="btn-ghost text-xs" onClick={() => setShare(null)}>Dismiss</button>
+          </div>
+          <div className="mt-1 text-xs text-sky-600">Send this to the staff member so they can set their password. Expires in 7 days.</div>
+        </div>
+      )}
 
       {loading ? (
         <Spinner />
@@ -195,7 +233,10 @@ export default function Users() {
                       <div className="flex justify-end gap-2">
                         <button className="btn-ghost text-xs" onClick={() => openEdit(u)}>Edit</button>
                         {u.pending && (
-                          <button className="btn-ghost text-xs" onClick={() => resend(u)}>Resend invite</button>
+                          <>
+                            <button className="btn-ghost text-xs" onClick={() => copyInviteLink(u)}>Copy link</button>
+                            <button className="btn-ghost text-xs" onClick={() => resend(u)}>Resend email</button>
+                          </>
                         )}
                         <button className="text-xs text-red-600 hover:underline" onClick={() => remove(u)}>Delete</button>
                       </div>
