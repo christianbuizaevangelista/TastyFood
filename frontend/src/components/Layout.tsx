@@ -1,13 +1,13 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { ReactNode } from 'react';
 import { useAuth } from '../auth/AuthContext';
-import { navForRole, ROLE_LABEL } from '../lib/nav';
+import { navForUser, ROLE_LABEL } from '../lib/nav';
 
 export default function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const location = useLocation();
   if (!user) return null;
-  const items = navForRole(user.role);
+  const items = navForUser(user);
 
   return (
     <div className="flex min-h-screen">

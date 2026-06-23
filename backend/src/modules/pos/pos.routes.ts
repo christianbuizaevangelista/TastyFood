@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
+import { requirePermission } from '../../middleware/rbac';
 import { badRequest, forbidden, notFound } from '../../lib/errors';
 import { priceLines } from '../../lib/pricing';
 import { saleNumber } from '../../lib/numbering';
@@ -10,6 +11,7 @@ import { applyStockMovement, notifyLowStock } from '../inventory/inventory.servi
 
 export const posRouter = Router();
 posRouter.use(authenticate);
+posRouter.use(requirePermission('pos'));
 
 const saleSchema = z.object({
   distributionType: z.enum(['TRADE', 'DROP_SHIP']).default('TRADE'),

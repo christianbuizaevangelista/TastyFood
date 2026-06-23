@@ -182,6 +182,51 @@ export async function sendLowStockEmail(p: {
   }
 }
 
+export async function sendInviteEmail(p: {
+  to: string;
+  name: string;
+  orgName: string;
+  link: string;
+}): Promise<{ sent: boolean; reason?: string }> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM || 'Tasty Food <onboarding@resend.dev>';
+  if (!p.to) return { sent: false, reason: 'no recipient email' };
+  if (!apiKey) {
+    console.log(`[email] RESEND_API_KEY not set — invite for ${p.to}: ${p.link}`);
+    return { sent: false, reason: 'RESEND_API_KEY not configured' };
+  }
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto">
+      <div style="background:#e8521d;color:#fff;padding:14px 18px;border-radius:8px 8px 0 0">
+        <strong style="font-size:16px">Juan Palaman · Tasty Food Mfg. Inc.</strong>
+      </div>
+      <div style="border:1px solid #eee;border-top:none;padding:18px;border-radius:0 0 8px 8px">
+        <h2 style="margin:0 0 8px">You've been invited 🎉</h2>
+        <p>Hi ${p.name}, ${p.orgName} has created an account for you on the distribution portal.</p>
+        <p>Click below to set your password and get started:</p>
+        <p style="text-align:center;margin:18px 0">
+          <a href="${p.link}" style="background:#e8521d;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:bold">Set your password</a>
+        </p>
+        <p style="color:#888;font-size:12px">Or paste this link: ${p.link}</p>
+      </div>
+    </div>`;
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: [p.to], subject: `You're invited to ${p.orgName}`, html }),
+    });
+    if (!res.ok) {
+      console.error('[email] Resend error', res.status, await res.text());
+      return { sent: false, reason: `Resend responded ${res.status}` };
+    }
+    return { sent: true };
+  } catch (err: any) {
+    console.error('[email] invite send failed', err?.message);
+    return { sent: false, reason: err?.message ?? 'send failed' };
+  }
+}
+
 export interface PoSubmittedEmail {
   to: string;
   supplierName: string;

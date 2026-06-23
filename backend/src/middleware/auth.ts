@@ -13,6 +13,10 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
     }
     const token = header.slice('Bearer '.length).trim();
     const payload = verifyToken(token);
+    // Legacy tokens (issued before staff roles existed) lack these fields —
+    // treat them as the org owner so existing sessions aren't locked out.
+    if (payload.isOwner === undefined) payload.isOwner = true;
+    if (payload.permissions === undefined) payload.permissions = [];
     req.auth = payload;
     req.scopeOrgIds = await getDescendantOrgIds(payload.orgId);
     next();

@@ -3,11 +3,13 @@ import { z } from 'zod';
 import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
+import { requirePermission } from '../../middleware/rbac';
 import { badRequest, forbidden, notFound, conflict } from '../../lib/errors';
 import { canApproveOrgOnboarding } from './approvals.service';
 
 export const approvalsRouter = Router();
 approvalsRouter.use(authenticate);
+approvalsRouter.use(requirePermission('approvals'));
 
 // GET /approvals — pending items the requester can act on.
 approvalsRouter.get(

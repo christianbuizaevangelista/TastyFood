@@ -4,12 +4,14 @@ import { z } from 'zod';
 import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
+import { requirePermission } from '../../middleware/rbac';
 import { forbidden, notFound, badRequest } from '../../lib/errors';
 import { sendSaleReceiptEmail } from '../../lib/email';
 import { applyStockMovement } from '../inventory/inventory.service';
 
 export const salesRouter = Router();
 salesRouter.use(authenticate);
+salesRouter.use(requirePermission('sales'));
 
 // Load a sale scoped to the requester (its seller must be in the chain).
 async function loadScopedSale(req: any, id: string) {

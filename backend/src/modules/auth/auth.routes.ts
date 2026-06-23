@@ -21,7 +21,9 @@ authRouter.post(
       where: { email: email.toLowerCase() },
       include: { org: true },
     });
-    if (!user || !(await verifyPassword(password, user.passwordHash))) {
+    if (!user) throw unauthorized('Invalid email or password');
+    if (!user.passwordHash) throw forbidden('Please set your password using your invite link first');
+    if (!(await verifyPassword(password, user.passwordHash))) {
       throw unauthorized('Invalid email or password');
     }
     if (user.org.archivedAt) throw forbidden('This account no longer exists');
@@ -36,6 +38,8 @@ authRouter.post(
       role: user.role,
       name: user.name,
       email: user.email,
+      isOwner: user.isOwner,
+      permissions: user.permissions,
     });
 
     res.json({
@@ -45,6 +49,8 @@ authRouter.post(
         name: user.name,
         email: user.email,
         role: user.role,
+        isOwner: user.isOwner,
+        permissions: user.permissions,
         org: {
           id: user.org.id,
           name: user.org.name,
@@ -70,6 +76,8 @@ authRouter.get(
       name: user.name,
       email: user.email,
       role: user.role,
+      isOwner: user.isOwner,
+      permissions: user.permissions,
       org: {
         id: user.org.id,
         name: user.org.name,
@@ -78,5 +86,45 @@ authRouter.get(
         parentId: user.org.parentId,
       },
     });
+  })
+);
+
+// GET /auth/invite/:token — invite info for the set-password page (public).
+authRouter.get(
+  '/invite/:token',
+  asyncHandler(async (req, res) => {
+    const user = await prisma.user.findUnique({
+      where: { inviteToken: req.params.token },
+      include: { org: { select: { name: true } } },
+    });
+    if (!user || !user.inviteExpires || user.inviteExpires < new Date()) {
+      throw forbidden('This invite link is invalid or has expired');
+    }
+    res.json({ name: user.name, email: user.email, orgName: user.org.name });
+  })
+);
+
+// POST /auth/accept-invite — staff sets their own password to activate.
+authRouter.post(
+  '/accept-invite',
+  asyncHandler(async (req, res) => {
+    const { token, password } = z
+      .object({ token: z.string().min(1), password: z.string().min(6) })
+      .parse(req.body);
+    const user = await prisma.user.findUnique({ where: { inviteToken: token } });
+    if (!user || !user.inviteExpires || user.inviteExpires < new Date()) {
+      throw forbidden('This invite link is invalid or has expired');
+    }
+    const { hashPassword } = await import('../../lib/auth');
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: await hashPassword(password),
+        isActive: true,
+        inviteToken: null,
+        inviteExpires: null,
+      },
+    });
+    res.json({ ok: true });
   })
 );

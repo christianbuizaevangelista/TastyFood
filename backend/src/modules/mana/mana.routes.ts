@@ -3,13 +3,14 @@ import { z } from 'zod';
 import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
-import { requireRole } from '../../middleware/rbac';
+import { requireRole, requirePermission } from '../../middleware/rbac';
 import { badRequest, notFound, forbidden, conflict } from '../../lib/errors';
 import { adjustMana } from './mana.service';
 import { sendManaPurchaseEmail } from '../../lib/email';
 
 export const manaRouter = Router();
 manaRouter.use(authenticate);
+manaRouter.use(requirePermission('mana'));
 
 const MAX_PROOF = 3 * 1024 * 1024;
 const ALLOWED = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'application/pdf'];

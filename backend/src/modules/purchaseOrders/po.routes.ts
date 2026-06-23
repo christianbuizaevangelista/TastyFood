@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
+import { requirePermission } from '../../middleware/rbac';
 import { badRequest, forbidden, notFound, conflict } from '../../lib/errors';
 import { priceLines } from '../../lib/pricing';
 import { poNumber, saleNumber } from '../../lib/numbering';
@@ -12,6 +13,7 @@ import { sendPoSubmittedEmail } from '../../lib/email';
 
 export const poRouter = Router();
 poRouter.use(authenticate);
+poRouter.use(requirePermission('purchase-orders'));
 
 // Org fields exposed on a PO so documents (e.g. PDF) can show full party details.
 const orgSelect = {

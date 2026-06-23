@@ -98,6 +98,7 @@ async function main() {
         passwordHash: hash,
         role: opts.type as any,
         orgId: org.id,
+        isOwner: true,
       },
     });
     return org;

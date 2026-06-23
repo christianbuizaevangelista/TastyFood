@@ -2,10 +2,12 @@ import { Router } from 'express';
 import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
+import { requirePermission } from '../../middleware/rbac';
 import { computeOrgKpis, parseWindow } from './kpi.service';
 
 export const kpiRouter = Router();
 kpiRouter.use(authenticate);
+kpiRouter.use(requirePermission('kpi'));
 
 // GET /kpi/leaderboard — ranked KPIs for downstream orgs in scope.
 // Optional ?tier=PROVINCIAL|CITY|RESELLER to focus a tier.

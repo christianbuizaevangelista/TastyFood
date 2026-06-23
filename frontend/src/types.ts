@@ -15,6 +15,8 @@ export interface AuthUser {
   name: string;
   email: string;
   role: Role;
+  isOwner: boolean;
+  permissions: string[];
   org: {
     id: string;
     name: string;

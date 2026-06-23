@@ -154,12 +154,18 @@ model Organization {
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
-  passwordHash String
+  passwordHash String?  // null until an invited staff sets their password
   name         String
   role         UserRole
   orgId        String
   org          Organization @relation(fields: [orgId], references: [id])
   isActive     Boolean  @default(true)
+  // The org's owner has full control; staff users get specific permissions.
+  isOwner      Boolean  @default(false)
+  permissions  String[] @default([])
+  // Invite flow for staff to set their own password.
+  inviteToken   String?  @unique
+  inviteExpires DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

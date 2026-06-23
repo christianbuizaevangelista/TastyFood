@@ -1,11 +1,12 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { ReactNode } from 'react';
 import { useAuth } from './auth/AuthContext';
-import { Role } from './types';
+import { canAccessPath } from './lib/nav';
 import Layout from './components/Layout';
 import { Spinner } from './components/ui';
 
 import Login from './pages/Login';
+import SetPassword from './pages/SetPassword';
 import Dashboard from './pages/Dashboard';
 import Inventory from './pages/Inventory';
 import PurchaseOrders from './pages/PurchaseOrders';
@@ -18,12 +19,14 @@ import Products from './pages/Products';
 import Account from './pages/Account';
 import Structure from './pages/Structure';
 import Mana from './pages/Mana';
+import Users from './pages/Users';
 
-function Protected({ children, roles }: { children: ReactNode; roles?: Role[] }) {
+// Guards a route by the user's role + permissions (path matched against NAV).
+function Protected({ children, path }: { children: ReactNode; path: string }) {
   const { user, loading } = useAuth();
   if (loading) return <Spinner />;
   if (!user) return <Navigate to="/login" replace />;
-  if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
+  if (!canAccessPath(user, path)) return <Navigate to="/" replace />;
   return <Layout>{children}</Layout>;
 }
 
@@ -31,46 +34,20 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/" element={<Protected><Dashboard /></Protected>} />
-      <Route path="/inventory" element={<Protected><Inventory /></Protected>} />
-      <Route path="/purchase-orders" element={<Protected><PurchaseOrders /></Protected>} />
-      <Route path="/pos" element={<Protected><POS /></Protected>} />
-      <Route path="/sales" element={<Protected><SalesReport /></Protected>} />
-      <Route
-        path="/kpi"
-        element={
-          <Protected roles={['PRINCIPAL', 'PROVINCIAL', 'CITY']}>
-            <Kpi />
-          </Protected>
-        }
-      />
-      <Route
-        path="/crm"
-        element={
-          <Protected roles={['PRINCIPAL', 'PROVINCIAL', 'CITY']}>
-            <Crm />
-          </Protected>
-        }
-      />
-      <Route
-        path="/approvals"
-        element={
-          <Protected roles={['PRINCIPAL', 'PROVINCIAL']}>
-            <Approvals />
-          </Protected>
-        }
-      />
-      <Route
-        path="/products"
-        element={
-          <Protected roles={['PRINCIPAL']}>
-            <Products />
-          </Protected>
-        }
-      />
-      <Route path="/account" element={<Protected><Account /></Protected>} />
-      <Route path="/structure" element={<Protected><Structure /></Protected>} />
-      <Route path="/mana" element={<Protected><Mana /></Protected>} />
+      <Route path="/set-password" element={<SetPassword />} />
+      <Route path="/" element={<Protected path="/"><Dashboard /></Protected>} />
+      <Route path="/inventory" element={<Protected path="/inventory"><Inventory /></Protected>} />
+      <Route path="/purchase-orders" element={<Protected path="/purchase-orders"><PurchaseOrders /></Protected>} />
+      <Route path="/pos" element={<Protected path="/pos"><POS /></Protected>} />
+      <Route path="/sales" element={<Protected path="/sales"><SalesReport /></Protected>} />
+      <Route path="/kpi" element={<Protected path="/kpi"><Kpi /></Protected>} />
+      <Route path="/crm" element={<Protected path="/crm"><Crm /></Protected>} />
+      <Route path="/approvals" element={<Protected path="/approvals"><Approvals /></Protected>} />
+      <Route path="/products" element={<Protected path="/products"><Products /></Protected>} />
+      <Route path="/structure" element={<Protected path="/structure"><Structure /></Protected>} />
+      <Route path="/mana" element={<Protected path="/mana"><Mana /></Protected>} />
+      <Route path="/users" element={<Protected path="/users"><Users /></Protected>} />
+      <Route path="/account" element={<Protected path="/account"><Account /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

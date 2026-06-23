@@ -4,7 +4,7 @@ import { OrgType } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
-import { assertInScope } from '../../middleware/rbac';
+import { assertInScope, requirePermission } from '../../middleware/rbac';
 import { badRequest, forbidden, notFound, conflict } from '../../lib/errors';
 import { TIER_DISCOUNT, PARENT_TYPE } from '../../lib/pricing';
 import { hashPassword, verifyPassword } from '../../lib/auth';
@@ -13,6 +13,7 @@ import { LEVEL_FOR_TYPE } from '../territories/territories.routes';
 
 export const orgsRouter = Router();
 orgsRouter.use(authenticate);
+orgsRouter.use(requirePermission('crm'));
 
 // GET /orgs — downstream accounts (members) within the requester's chain.
 orgsRouter.get(
@@ -160,6 +161,7 @@ orgsRouter.post(
           passwordHash: await hashPassword(body.admin.password),
           role: body.type as any,
           orgId: created.id,
+          isOwner: true,
         },
       });
       await tx.approval.create({
@@ -238,7 +240,7 @@ orgsRouter.delete(
 
     const { password } = z.object({ password: z.string().min(1) }).parse(req.body);
     const me = await prisma.user.findUnique({ where: { id: req.auth.sub } });
-    if (!me || !(await verifyPassword(password, me.passwordHash))) {
+    if (!me || !me.passwordHash || !(await verifyPassword(password, me.passwordHash))) {
       throw forbidden('Incorrect password');
     }
 

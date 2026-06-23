@@ -3,12 +3,13 @@ import { z } from 'zod';
 import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
-import { assertInScope } from '../../middleware/rbac';
+import { assertInScope, requirePermission } from '../../middleware/rbac';
 import { badRequest, notFound } from '../../lib/errors';
 import { applyStockMovement } from './inventory.service';
 
 export const inventoryRouter = Router();
 inventoryRouter.use(authenticate);
+inventoryRouter.use(requirePermission('inventory'));
 
 // Resolve which org's inventory to read. Defaults to the requester's own org;
 // an upstream role may pass ?orgId= for any org in its scope chain.

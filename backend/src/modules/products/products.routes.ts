@@ -3,11 +3,12 @@ import { z } from 'zod';
 import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
-import { requireRole } from '../../middleware/rbac';
+import { requireRole, requirePermission } from '../../middleware/rbac';
 import { notFound } from '../../lib/errors';
 
 export const productsRouter = Router();
 productsRouter.use(authenticate);
+productsRouter.use(requirePermission('products'));
 
 // Anyone authenticated can read the catalog (SRP is the pricing basis).
 productsRouter.get(

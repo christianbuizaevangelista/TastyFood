@@ -4,11 +4,12 @@ import { OrgType, TerritoryLevel } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
-import { requireRole } from '../../middleware/rbac';
+import { requireRole, requirePermission } from '../../middleware/rbac';
 import { badRequest, notFound, conflict } from '../../lib/errors';
 
 export const territoriesRouter = Router();
 territoriesRouter.use(authenticate);
+territoriesRouter.use(requirePermission('structure'));
 
 // Required parent level for each territory level.
 const PARENT_LEVEL: Record<TerritoryLevel, TerritoryLevel | null> = {

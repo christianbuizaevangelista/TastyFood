@@ -9,6 +9,8 @@ export interface JwtPayload {
   role: UserRole;
   name: string;
   email: string;
+  isOwner: boolean;
+  permissions: string[];
 }
 
 export function hashPassword(plain: string): Promise<string> {
