@@ -80,19 +80,19 @@ export default function Crm() {
           <tbody>
             {downstream.map((o) => (
               <tr key={o.id} className="border-b border-slate-50">
-                <td className="td font-medium">
-                  <button className="text-left font-medium text-brand-700 hover:underline" onClick={() => setEditTarget(o)}>
-                    {o.name}
+                <td className="td">
+                  <button className="text-left" onClick={() => setEditTarget(o)}>
+                    <div className="font-medium text-brand-700 hover:underline">{o.contactName || o.name}</div>
+                    <div className="text-xs font-normal text-slate-400">
+                      {o.name}{o.territory ? ` · 📍 ${o.territory.name}` : ''}
+                    </div>
                   </button>
-                  <div className="text-xs font-normal text-slate-400">
-                    {o.territory ? `📍 ${o.territory.name}` : 'No territory'}
-                  </div>
                 </td>
                 <td className="td text-xs">{o.type}</td>
                 <td className="td text-xs text-slate-500">{o.parent?.name ?? '—'}</td>
                 <td className="td text-xs">
-                  {o.contactName}
-                  {o.contactPhone && <div className="text-slate-400">{o.contactPhone}</div>}
+                  {o.contactPhone && <div>{o.contactPhone}</div>}
+                  {o.contactEmail && <div className="text-slate-400">{o.contactEmail}</div>}
                 </td>
                 <td className="td text-right">{peso(o.salesTarget)}</td>
                 <td className="td">
@@ -162,6 +162,16 @@ export default function Crm() {
   );
 }
 
+interface OrderRow {
+  id: string;
+  number: string;
+  status?: string;
+  channel?: string;
+  total: number;
+  distributionType: string;
+  createdAt: string;
+}
+
 function EditAccount({
   org,
   canManage,
@@ -173,8 +183,14 @@ function EditAccount({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [name, setName] = useState(org.name);
-  const [territoryId, setTerritoryId] = useState(org.territory?.id ?? '');
+  const [form, setForm] = useState({
+    name: org.name,
+    contactName: org.contactName ?? '',
+    contactPhone: org.contactPhone ?? '',
+    contactEmail: org.contactEmail ?? '',
+    address: org.address ?? '',
+    territoryId: org.territory?.id ?? '',
+  });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
@@ -184,12 +200,22 @@ function EditAccount({
   const vacant = useFetch<{ vacant: { id: string; name: string; level: string; parentName: string | null }[] }>(
     `/territories/vacant?level=${level}`
   );
+  const orders = useFetch<{ purchases: OrderRow[]; sales: OrderRow[] }>(`/orgs/${org.id}/orders`);
+
+  const set = (k: keyof typeof form) => (e: any) => setForm({ ...form, [k]: e.target.value });
 
   async function save() {
     setErr(null);
     setBusy(true);
     try {
-      await api.patch(`/orgs/${org.id}`, { name, territoryId: territoryId || null });
+      await api.patch(`/orgs/${org.id}`, {
+        name: form.name,
+        contactName: form.contactName || undefined,
+        contactPhone: form.contactPhone || undefined,
+        contactEmail: form.contactEmail || undefined,
+        address: form.address || undefined,
+        territoryId: form.territoryId || null,
+      });
       onSaved();
     } catch (e) {
       setErr(apiError(e));
@@ -209,45 +235,97 @@ function EditAccount({
     }
   }
 
+  const history = [
+    ...(orders.data?.purchases ?? []).map((p) => ({ ...p, kind: 'Purchase' })),
+    ...(orders.data?.sales ?? []).map((s) => ({ ...s, kind: 'Sale' })),
+  ].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h2 className="mb-1 text-lg font-bold">Edit account</h2>
-        <p className="mb-4 text-xs text-slate-500">{org.type} · reports to {org.parent?.name ?? '—'}</p>
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-bold">{form.contactName || form.name}</h2>
+        <p className="mb-4 text-xs text-slate-500">
+          {org.name} · {org.type} · reports to {org.parent?.name ?? '—'}
+        </p>
         {err && <div className="mb-3"><Alert>{err}</Alert></div>}
 
-        <div className="space-y-3">
-          <div>
-            <label className="label">Business name</label>
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} disabled={!canManage} />
-          </div>
-          <div>
-            <label className="label">Territory ({level})</label>
-            <select className="input" value={territoryId} onChange={(e) => setTerritoryId(e.target.value)} disabled={!canManage}>
-              <option value="">Unassigned</option>
-              {org.territory && <option value={org.territory.id}>{org.territory.name} (current)</option>}
-              {vacant.data?.vacant.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}{t.parentName ? ` — ${t.parentName}` : ''}</option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-slate-400">Assigning a territory adds this account to the Org Structure map automatically.</p>
+        <div className="grid gap-4 md:grid-cols-2">
+          {/* Customer details (editable) */}
+          <div className="space-y-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Customer details</div>
+            <div>
+              <label className="label">Contact person</label>
+              <input className="input" value={form.contactName} onChange={set('contactName')} disabled={!canManage} />
+            </div>
+            <div>
+              <label className="label">Business name</label>
+              <input className="input" value={form.name} onChange={set('name')} disabled={!canManage} />
+            </div>
+            <div>
+              <label className="label">Cellphone number</label>
+              <input className="input" value={form.contactPhone} onChange={set('contactPhone')} disabled={!canManage} />
+            </div>
+            <div>
+              <label className="label">Email address</label>
+              <input className="input" type="email" value={form.contactEmail} onChange={set('contactEmail')} disabled={!canManage} />
+            </div>
+            <div>
+              <label className="label">Address</label>
+              <input className="input" value={form.address} onChange={set('address')} disabled={!canManage} />
+            </div>
+            <div>
+              <label className="label">Territory ({level})</label>
+              <select className="input" value={form.territoryId} onChange={set('territoryId')} disabled={!canManage}>
+                <option value="">Unassigned</option>
+                {org.territory && <option value={org.territory.id}>{org.territory.name} (current)</option>}
+                {vacant.data?.vacant.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}{t.parentName ? ` — ${t.parentName}` : ''}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-400">Assigning a territory adds this account to the Org Structure map.</p>
+            </div>
+
+            {org.pendingInvite && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <div className="mb-1 text-xs font-semibold text-amber-700">Admin hasn't set their password yet</div>
+                <button type="button" className="btn-ghost text-xs" onClick={getInviteLink}>
+                  {copied ? 'Link copied!' : 'Copy invite link'}
+                </button>
+                {link && <input className="input mt-2 font-mono text-xs" readOnly value={link} onFocus={(e) => e.target.select()} />}
+              </div>
+            )}
           </div>
 
-          {org.pendingInvite && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-              <div className="mb-1 text-xs font-semibold text-amber-700">This admin hasn't set their password yet</div>
-              <button type="button" className="btn-ghost text-xs" onClick={getInviteLink}>
-                {copied ? 'Link copied!' : 'Copy invite link'}
-              </button>
-              {link && <input className="input mt-2 font-mono text-xs" readOnly value={link} onFocus={(e) => e.target.select()} />}
-            </div>
-          )}
+          {/* Purchase history */}
+          <div>
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Purchase history</div>
+            {orders.loading ? (
+              <div className="text-sm text-slate-400">Loading…</div>
+            ) : history.length === 0 ? (
+              <div className="rounded-lg border border-slate-100 p-3 text-sm text-slate-400">No orders yet.</div>
+            ) : (
+              <div className="max-h-[60vh] space-y-2 overflow-y-auto pr-1">
+                {history.map((h) => (
+                  <div key={`${h.kind}-${h.id}`} className="rounded-lg border border-slate-100 p-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs">{h.number}</span>
+                      <span className="font-semibold">{peso(h.total)}</span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
+                      <span>{new Date(h.createdAt).toLocaleDateString()} · {h.kind}</span>
+                      {h.status && <Badge value={h.status} />}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="mt-5 flex justify-end gap-2">
           <button className="btn-ghost" onClick={onClose}>Close</button>
           {canManage && (
-            <button className="btn-primary" disabled={busy || !name} onClick={save}>{busy ? 'Saving…' : 'Save changes'}</button>
+            <button className="btn-primary" disabled={busy || !form.name} onClick={save}>{busy ? 'Saving…' : 'Save changes'}</button>
           )}
         </div>
       </div>
