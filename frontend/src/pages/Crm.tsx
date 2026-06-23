@@ -14,6 +14,7 @@ export default function Crm() {
   const { data, loading, error, refetch } = useFetch<{ orgs: Org[] }>('/orgs?includeSelf=true');
   const [showOnboard, setShowOnboard] = useState(false);
   const [actionErr, setActionErr] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Org | null>(null);
 
   const downstream = useMemo(
     () => (data?.orgs ?? []).filter((o) => o.id !== user!.org.id),
@@ -79,14 +80,19 @@ export default function Crm() {
                 <td className="td"><Badge value={o.status} /></td>
                 <td className="td"><Badge value={o.isActive ? 'ACTIVE' : 'INACTIVE'} /></td>
                 <td className="td text-right">
-                  {user!.role === 'PRINCIPAL' ? (
-                    <button
-                      className={`text-xs font-semibold ${o.isActive ? 'text-red-600' : 'text-green-600'} hover:underline`}
-                      onClick={() => toggleActive(o)}
-                    >
-                      {o.isActive ? 'Deactivate' : 'Activate'}
-                    </button>
-                  ) : null}
+                  {user!.role === 'PRINCIPAL' && (
+                    <span className="flex justify-end gap-3">
+                      <button
+                        className={`text-xs font-semibold ${o.isActive ? 'text-red-600' : 'text-green-600'} hover:underline`}
+                        onClick={() => toggleActive(o)}
+                      >
+                        {o.isActive ? 'Deactivate' : 'Activate'}
+                      </button>
+                      <button className="text-xs font-semibold text-red-700 hover:underline" onClick={() => setDeleteTarget(o)}>
+                        Delete
+                      </button>
+                    </span>
+                  )}
                 </td>
               </tr>
             ))}
@@ -108,6 +114,63 @@ export default function Crm() {
           }}
         />
       )}
+
+      {deleteTarget && (
+        <DeleteAccount
+          org={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onDeleted={() => {
+            setDeleteTarget(null);
+            refetch();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function DeleteAccount({ org, onClose, onDeleted }: { org: Org; onClose: () => void; onDeleted: () => void }) {
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function confirm() {
+    setErr(null);
+    setBusy(true);
+    try {
+      await api.delete(`/orgs/${org.id}`, { data: { password } });
+      onDeleted();
+    } catch (e) {
+      setErr(apiError(e));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="mb-1 text-lg font-bold text-red-700">Delete account</h2>
+        <p className="mb-3 text-sm text-slate-600">
+          Permanently delete <span className="font-semibold">{org.name}</span> and its login. This cannot be undone.
+          Enter your account password to confirm.
+        </p>
+        {err && <div className="mb-3"><Alert>{err}</Alert></div>}
+        <label className="label">Your password</label>
+        <input
+          className="input"
+          type="password"
+          autoFocus
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && password && confirm()}
+        />
+        <div className="mt-5 flex justify-end gap-2">
+          <button className="btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn-primary bg-red-600 hover:bg-red-700" disabled={busy || !password} onClick={confirm}>
+            {busy ? 'Deleting…' : 'Delete account'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

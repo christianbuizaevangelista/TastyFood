@@ -5,9 +5,9 @@ import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
 import { assertInScope } from '../../middleware/rbac';
-import { badRequest, forbidden, notFound } from '../../lib/errors';
+import { badRequest, forbidden, notFound, conflict } from '../../lib/errors';
 import { TIER_DISCOUNT, PARENT_TYPE } from '../../lib/pricing';
-import { hashPassword } from '../../lib/auth';
+import { hashPassword, verifyPassword } from '../../lib/auth';
 import { canApproveOrgOnboarding } from './approvals.service';
 import { LEVEL_FOR_TYPE } from '../territories/territories.routes';
 
@@ -224,3 +224,48 @@ function setActive(active: boolean) {
 
 orgsRouter.post('/:id/activate', setActive(true));
 orgsRouter.post('/:id/deactivate', setActive(false));
+
+// DELETE /orgs/:id — permanently delete an account. Principal only, confirmed
+// with the Principal's own password. Blocked if the account has downstream
+// accounts or any order/sales history (deactivate those instead).
+orgsRouter.delete(
+  '/:id',
+  asyncHandler(async (req: any, res) => {
+    if (req.auth.role !== 'PRINCIPAL') throw forbidden('Only the Principal can delete accounts');
+    assertInScope(req, req.params.id);
+    if (req.params.id === req.auth.orgId) throw badRequest('You cannot delete your own organization');
+
+    const { password } = z.object({ password: z.string().min(1) }).parse(req.body);
+    const me = await prisma.user.findUnique({ where: { id: req.auth.sub } });
+    if (!me || !(await verifyPassword(password, me.passwordHash))) {
+      throw forbidden('Incorrect password');
+    }
+
+    const org = await prisma.organization.findUnique({
+      where: { id: req.params.id },
+      include: {
+        _count: {
+          select: { children: true, poAsBuyer: true, poAsSeller: true, salesAsSeller: true, salesAsBuyer: true },
+        },
+      },
+    });
+    if (!org) throw notFound('Organization not found');
+    if (org._count.children > 0) throw conflict('Remove its downstream accounts first');
+    if (org._count.poAsBuyer || org._count.poAsSeller || org._count.salesAsSeller || org._count.salesAsBuyer) {
+      throw conflict('Cannot delete an account with order/sales history — deactivate it instead');
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.territory.updateMany({ where: { assignedOrgId: org.id }, data: { assignedOrgId: null } });
+      await tx.approval.deleteMany({ where: { orgId: org.id } });
+      await tx.manaTxn.deleteMany({ where: { orgId: org.id } });
+      await tx.manaPurchase.deleteMany({ where: { orgId: org.id } });
+      await tx.kPIRecord.deleteMany({ where: { orgId: org.id } });
+      await tx.stockLedger.deleteMany({ where: { orgId: org.id } });
+      await tx.inventory.deleteMany({ where: { orgId: org.id } });
+      await tx.user.deleteMany({ where: { orgId: org.id } });
+      await tx.organization.delete({ where: { id: org.id } });
+    });
+    res.json({ ok: true });
+  })
+);
