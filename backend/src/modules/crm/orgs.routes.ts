@@ -212,8 +212,8 @@ function setActive(active: boolean) {
     if (req.params.id === req.auth.orgId) throw badRequest('You cannot change your own activation');
     const org = await prisma.organization.findUnique({ where: { id: req.params.id } });
     if (!org) throw notFound('Organization not found');
-    // Only upstream roles may toggle membership.
-    if (req.auth.role === 'RESELLER') throw forbidden('Resellers cannot change membership');
+    // Only the Principal may activate/deactivate accounts.
+    if (req.auth.role !== 'PRINCIPAL') throw forbidden('Only the Principal can activate or deactivate accounts');
     const updated = await prisma.organization.update({
       where: { id: req.params.id },
       data: { isActive: active },

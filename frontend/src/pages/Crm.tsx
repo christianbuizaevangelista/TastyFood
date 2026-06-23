@@ -79,7 +79,7 @@ export default function Crm() {
                 <td className="td"><Badge value={o.status} /></td>
                 <td className="td"><Badge value={o.isActive ? 'ACTIVE' : 'INACTIVE'} /></td>
                 <td className="td text-right">
-                  {user!.role !== 'CITY' || o.type === 'RESELLER' ? (
+                  {user!.role === 'PRINCIPAL' ? (
                     <button
                       className={`text-xs font-semibold ${o.isActive ? 'text-red-600' : 'text-green-600'} hover:underline`}
                       onClick={() => toggleActive(o)}
