@@ -364,7 +364,7 @@ export default function Structure() {
 }
 
 function AddMember({ modal, onClose, onDone }: { modal: MemberModal; onClose: () => void; onDone: () => void }) {
-  const [form, setForm] = useState({ name: '', contactName: '', contactPhone: '', contactEmail: '', adminName: '', adminEmail: '', adminPassword: '' });
+  const [form, setForm] = useState({ name: '', contactName: '', contactPhone: '', contactEmail: '', adminName: '', adminEmail: '' });
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const roleLabel = LEVEL_META[modal.node.level].role;
@@ -381,7 +381,7 @@ function AddMember({ modal, onClose, onDone }: { modal: MemberModal; onClose: ()
         contactName: form.contactName || undefined,
         contactPhone: form.contactPhone || undefined,
         contactEmail: form.contactEmail || undefined,
-        admin: { name: form.adminName, email: form.adminEmail, password: form.adminPassword },
+        admin: { name: form.adminName, email: form.adminEmail },
       });
       onDone();
     } catch (e) {
@@ -405,11 +405,11 @@ function AddMember({ modal, onClose, onDone }: { modal: MemberModal; onClose: ()
           <div className="col-span-2 mt-2 border-t border-slate-100 pt-3 text-xs font-semibold uppercase text-slate-400">Login for the member admin</div>
           <div><label className="label">Admin name</label><input className="input" value={form.adminName} onChange={(e) => setForm({ ...form, adminName: e.target.value })} /></div>
           <div><label className="label">Admin email</label><input className="input" type="email" value={form.adminEmail} onChange={(e) => setForm({ ...form, adminEmail: e.target.value })} /></div>
-          <div className="col-span-2"><label className="label">Temp password (min 6)</label><input className="input" value={form.adminPassword} onChange={(e) => setForm({ ...form, adminPassword: e.target.value })} /></div>
+          <div className="col-span-2 text-xs text-slate-400">The admin will get an email invite to set their own password. (Copy the link later from CRM → click the name, if email doesn't arrive.)</div>
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <button className="btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn-primary" disabled={busy || !form.name || !form.adminEmail || !form.adminPassword} onClick={submit}>{busy ? 'Creating…' : 'Add member'}</button>
+          <button className="btn-primary" disabled={busy || !form.name || !form.adminName || !form.adminEmail} onClick={submit}>{busy ? 'Creating…' : 'Add member'}</button>
         </div>
       </div>
     </div>

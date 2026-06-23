@@ -9,12 +9,23 @@ import { Org, OrgType } from '../types';
 const PARENT_OF: Record<string, OrgType> = { PROVINCIAL: 'PRINCIPAL', CITY: 'PROVINCIAL', RESELLER: 'CITY' };
 const LEVEL_OF: Record<string, string> = { PROVINCIAL: 'PROVINCE', CITY: 'CITY', RESELLER: 'BARANGAY' };
 
+async function copyToClipboard(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    prompt('Copy this link:', text);
+    return false;
+  }
+}
+
 export default function Crm() {
   const { user } = useAuth();
   const { data, loading, error, refetch } = useFetch<{ orgs: Org[] }>('/orgs?includeSelf=true');
   const [showOnboard, setShowOnboard] = useState(false);
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Org | null>(null);
+  const [editTarget, setEditTarget] = useState<Org | null>(null);
 
   const downstream = useMemo(
     () => (data?.orgs ?? []).filter((o) => o.id !== user!.org.id),
@@ -69,7 +80,14 @@ export default function Crm() {
           <tbody>
             {downstream.map((o) => (
               <tr key={o.id} className="border-b border-slate-50">
-                <td className="td font-medium">{o.name}</td>
+                <td className="td font-medium">
+                  <button className="text-left font-medium text-brand-700 hover:underline" onClick={() => setEditTarget(o)}>
+                    {o.name}
+                  </button>
+                  <div className="text-xs font-normal text-slate-400">
+                    {o.territory ? `📍 ${o.territory.name}` : 'No territory'}
+                  </div>
+                </td>
                 <td className="td text-xs">{o.type}</td>
                 <td className="td text-xs text-slate-500">{o.parent?.name ?? '—'}</td>
                 <td className="td text-xs">
@@ -77,7 +95,10 @@ export default function Crm() {
                   {o.contactPhone && <div className="text-slate-400">{o.contactPhone}</div>}
                 </td>
                 <td className="td text-right">{peso(o.salesTarget)}</td>
-                <td className="td"><Badge value={o.status} /></td>
+                <td className="td">
+                  <Badge value={o.status} />
+                  {o.pendingInvite && <div className="mt-1"><span className="badge bg-amber-100 text-amber-700">Pending password</span></div>}
+                </td>
                 <td className="td"><Badge value={o.isActive ? 'ACTIVE' : 'INACTIVE'} /></td>
                 <td className="td text-right">
                   {user!.role === 'PRINCIPAL' && (
@@ -115,6 +136,18 @@ export default function Crm() {
         />
       )}
 
+      {editTarget && (
+        <EditAccount
+          org={editTarget}
+          canManage={user!.role === 'PRINCIPAL'}
+          onClose={() => setEditTarget(null)}
+          onSaved={() => {
+            setEditTarget(null);
+            refetch();
+          }}
+        />
+      )}
+
       {deleteTarget && (
         <DeleteAccount
           org={deleteTarget}
@@ -125,6 +158,99 @@ export default function Crm() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+function EditAccount({
+  org,
+  canManage,
+  onClose,
+  onSaved,
+}: {
+  org: Org;
+  canManage: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(org.name);
+  const [territoryId, setTerritoryId] = useState(org.territory?.id ?? '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [link, setLink] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const level = LEVEL_OF[org.type];
+  const vacant = useFetch<{ vacant: { id: string; name: string; level: string; parentName: string | null }[] }>(
+    `/territories/vacant?level=${level}`
+  );
+
+  async function save() {
+    setErr(null);
+    setBusy(true);
+    try {
+      await api.patch(`/orgs/${org.id}`, { name, territoryId: territoryId || null });
+      onSaved();
+    } catch (e) {
+      setErr(apiError(e));
+      setBusy(false);
+    }
+  }
+
+  async function getInviteLink() {
+    setErr(null);
+    try {
+      const { data } = await api.get(`/orgs/${org.id}/invite-link`);
+      setLink(data.inviteLink);
+      const ok = await copyToClipboard(data.inviteLink);
+      if (ok) { setCopied(true); setTimeout(() => setCopied(false), 1500); }
+    } catch (e) {
+      setErr(apiError(e));
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="mb-1 text-lg font-bold">Edit account</h2>
+        <p className="mb-4 text-xs text-slate-500">{org.type} · reports to {org.parent?.name ?? '—'}</p>
+        {err && <div className="mb-3"><Alert>{err}</Alert></div>}
+
+        <div className="space-y-3">
+          <div>
+            <label className="label">Business name</label>
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} disabled={!canManage} />
+          </div>
+          <div>
+            <label className="label">Territory ({level})</label>
+            <select className="input" value={territoryId} onChange={(e) => setTerritoryId(e.target.value)} disabled={!canManage}>
+              <option value="">Unassigned</option>
+              {org.territory && <option value={org.territory.id}>{org.territory.name} (current)</option>}
+              {vacant.data?.vacant.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}{t.parentName ? ` — ${t.parentName}` : ''}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-400">Assigning a territory adds this account to the Org Structure map automatically.</p>
+          </div>
+
+          {org.pendingInvite && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <div className="mb-1 text-xs font-semibold text-amber-700">This admin hasn't set their password yet</div>
+              <button type="button" className="btn-ghost text-xs" onClick={getInviteLink}>
+                {copied ? 'Link copied!' : 'Copy invite link'}
+              </button>
+              {link && <input className="input mt-2 font-mono text-xs" readOnly value={link} onFocus={(e) => e.target.select()} />}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button className="btn-ghost" onClick={onClose}>Close</button>
+          {canManage && (
+            <button className="btn-primary" disabled={busy || !name} onClick={save}>{busy ? 'Saving…' : 'Save changes'}</button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -198,10 +324,11 @@ function Onboard({
     salesTarget: '',
     adminName: '',
     adminEmail: '',
-    adminPassword: '',
   });
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [created, setCreated] = useState<{ inviteLink: string | null } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Vacant territories of the level this position occupies, within scope.
   const vacant = useFetch<{ vacant: { id: string; name: string; level: string; parentName: string | null }[] }>(
@@ -220,7 +347,7 @@ function Onboard({
     setErr(null);
     setBusy(true);
     try {
-      await api.post('/orgs', {
+      const { data } = await api.post('/orgs', {
         name: form.name,
         type,
         parentId: form.parentId,
@@ -229,9 +356,10 @@ function Onboard({
         contactPhone: form.contactPhone || undefined,
         address: form.address || undefined,
         salesTarget: form.salesTarget ? Number(form.salesTarget) : undefined,
-        admin: { name: form.adminName, email: form.adminEmail, password: form.adminPassword },
+        // No password — the admin gets an email invite to set their own.
+        admin: { name: form.adminName, email: form.adminEmail },
       });
-      onCreated();
+      setCreated({ inviteLink: data.inviteLink ?? null });
     } catch (e) {
       setErr(apiError(e));
     } finally {
@@ -243,9 +371,10 @@ function Onboard({
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
       <div className="max-h-[88vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h2 className="mb-1 text-lg font-bold">Onboard account</h2>
-        <p className="mb-4 text-xs text-slate-500">New accounts start as PENDING and require approval before they can transact.</p>
+        <p className="mb-4 text-xs text-slate-500">New accounts start as PENDING and require approval. The admin gets an email invite to set their own password.</p>
         {err && <div className="mb-3"><Alert>{err}</Alert></div>}
 
+        {!created && (
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="label">Tier</label>
@@ -304,15 +433,46 @@ function Onboard({
             <label className="label">Admin email</label>
             <input className="input" type="email" value={form.adminEmail} onChange={(e) => setForm({ ...form, adminEmail: e.target.value })} />
           </div>
-          <div className="col-span-2">
-            <label className="label">Temp password (min 6 chars)</label>
-            <input className="input" type="text" value={form.adminPassword} onChange={(e) => setForm({ ...form, adminPassword: e.target.value })} />
-          </div>
         </div>
+        )}
+
+        {created && (
+          <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+            <div className="text-sm font-semibold text-green-800">Account created 🎉</div>
+            <p className="mt-1 text-xs text-green-700">
+              An email invite was sent to {form.adminEmail} so they can set their own password.
+              If it doesn't arrive, copy the link below and send it to them.
+            </p>
+            {created.inviteLink && (
+              <div className="mt-3 flex items-center gap-2">
+                <input className="input flex-1 font-mono text-xs" readOnly value={created.inviteLink} onFocus={(e) => e.target.select()} />
+                <button
+                  type="button"
+                  className="btn-primary text-xs"
+                  onClick={async () => { const ok = await copyToClipboard(created.inviteLink!); if (ok) { setCopied(true); setTimeout(() => setCopied(false), 1500); } }}
+                >
+                  {copied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="mt-5 flex justify-end gap-2">
-          <button className="btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn-primary" disabled={busy} onClick={submit}>{busy ? 'Creating…' : 'Create account'}</button>
+          {created ? (
+            <button className="btn-primary" onClick={onCreated}>Done</button>
+          ) : (
+            <>
+              <button className="btn-ghost" onClick={onClose}>Cancel</button>
+              <button
+                className="btn-primary"
+                disabled={busy || !form.name || !form.parentId || !form.adminName || !form.adminEmail}
+                onClick={submit}
+              >
+                {busy ? 'Creating…' : 'Create account'}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

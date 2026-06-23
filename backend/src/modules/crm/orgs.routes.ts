@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import crypto from 'crypto';
 import { OrgType } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
@@ -10,6 +11,13 @@ import { TIER_DISCOUNT, PARENT_TYPE } from '../../lib/pricing';
 import { hashPassword, verifyPassword } from '../../lib/auth';
 import { canApproveOrgOnboarding } from './approvals.service';
 import { LEVEL_FOR_TYPE } from '../territories/territories.routes';
+import { env } from '../../lib/env';
+import { sendInviteEmail } from '../../lib/email';
+
+// Shared helper: build the set-password link from an invite token.
+function inviteLink(token: string) {
+  return `${env.clientOrigin.replace(/\/$/, '')}/set-password?token=${token}`;
+}
 
 export const orgsRouter = Router();
 orgsRouter.use(authenticate);
@@ -30,11 +38,18 @@ orgsRouter.get(
       },
       include: {
         parent: { select: { id: true, name: true, type: true } },
+        territory: { select: { id: true, name: true, level: true } },
+        users: { where: { isOwner: true }, select: { passwordHash: true } },
         _count: { select: { children: true, users: true } },
       },
       orderBy: [{ type: 'asc' }, { name: 'asc' }],
     });
-    res.json({ orgs });
+    // Surface a "pending invite" flag (admin hasn't set a password) without leaking hashes.
+    const shaped = orgs.map(({ users, ...o }) => ({
+      ...o,
+      pendingInvite: users.length > 0 && users.some((u) => !u.passwordHash),
+    }));
+    res.json({ orgs: shaped });
   })
 );
 
@@ -93,7 +108,8 @@ const createSchema = z.object({
   admin: z.object({
     name: z.string().min(1),
     email: z.string().email(),
-    password: z.string().min(6),
+    // Optional: if omitted, the admin gets an email invite to set their own password.
+    password: z.string().min(6).optional(),
   }),
 });
 
@@ -138,6 +154,10 @@ orgsRouter.post(
       }
     }
 
+    // If no password is supplied, the admin gets an email invite to set their own.
+    const wantsInvite = !body.admin.password;
+    const inviteToken = wantsInvite ? crypto.randomBytes(24).toString('hex') : null;
+
     const org = await prisma.$transaction(async (tx) => {
       const created = await tx.organization.create({
         data: {
@@ -158,10 +178,13 @@ orgsRouter.post(
         data: {
           name: body.admin.name,
           email: body.admin.email.toLowerCase(),
-          passwordHash: await hashPassword(body.admin.password),
+          passwordHash: wantsInvite ? null : await hashPassword(body.admin.password!),
           role: body.type as any,
           orgId: created.id,
           isOwner: true,
+          isActive: !wantsInvite, // activated once they accept the invite
+          inviteToken,
+          inviteExpires: wantsInvite ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) : null,
         },
       });
       await tx.approval.create({
@@ -181,30 +204,87 @@ orgsRouter.post(
       return created;
     });
 
-    res.status(201).json(org);
+    // Email the admin an invite to set their own password (best-effort; the
+    // returned link lets the owner share it manually if email isn't delivering).
+    let link: string | null = null;
+    if (wantsInvite && inviteToken) {
+      link = inviteLink(inviteToken);
+      await sendInviteEmail({ to: body.admin.email.toLowerCase(), name: body.admin.name, orgName: body.name, link });
+    }
+
+    res.status(201).json({ ...org, inviteLink: link });
   })
 );
 
 const updateSchema = z.object({
+  name: z.string().min(1).optional(),
   contactName: z.string().optional(),
   contactEmail: z.string().email().optional(),
   contactPhone: z.string().optional(),
   address: z.string().optional(),
   notes: z.string().optional(),
   salesTarget: z.number().min(0).optional(),
+  // Assign/move this account to a geographic territory ('' or null = unassign).
+  // Once assigned, the account automatically appears on the Org Structure map.
+  territoryId: z.string().nullable().optional(),
 });
 
-// PATCH /orgs/:id — update CRM details (contact, notes, target).
+// PATCH /orgs/:id — update CRM details (name, contact, notes, target, territory).
 orgsRouter.patch(
   '/:id',
   asyncHandler(async (req, res) => {
     assertInScope(req, req.params.id);
-    if (req.params.id === req.auth!.orgId && req.auth!.role !== 'PRINCIPAL') {
-      // allow editing own contact details
+    const { territoryId, ...fields } = updateSchema.parse(req.body);
+    const target = await prisma.organization.findUnique({ where: { id: req.params.id } });
+    if (!target) throw notFound('Organization not found');
+
+    // Handle a territory (re)assignment if requested.
+    if (territoryId !== undefined) {
+      const current = await prisma.territory.findFirst({ where: { assignedOrgId: target.id } });
+      if (territoryId) {
+        if (current?.id !== territoryId) {
+          const terr = await prisma.territory.findUnique({ where: { id: territoryId } });
+          if (!terr) throw notFound('Territory not found');
+          if (terr.assignedOrgId) throw badRequest('That territory is already occupied');
+          if (terr.level !== LEVEL_FOR_TYPE[target.type]) {
+            throw badRequest(`A ${target.type} must occupy a ${LEVEL_FOR_TYPE[target.type]} territory`);
+          }
+          await prisma.$transaction(async (tx) => {
+            if (current) await tx.territory.update({ where: { id: current.id }, data: { assignedOrgId: null } });
+            await tx.territory.update({ where: { id: territoryId }, data: { assignedOrgId: target.id } });
+          });
+        }
+      } else if (current) {
+        await prisma.territory.update({ where: { id: current.id }, data: { assignedOrgId: null } });
+      }
     }
-    const body = updateSchema.parse(req.body);
-    const org = await prisma.organization.update({ where: { id: req.params.id }, data: body });
+
+    const org = await prisma.organization.update({ where: { id: req.params.id }, data: fields });
     res.json(org);
+  })
+);
+
+// GET /orgs/:id/invite-link — copy/regenerate the admin's set-password link
+// (only while their password hasn't been set). Principal/in-scope.
+orgsRouter.get(
+  '/:id/invite-link',
+  asyncHandler(async (req, res) => {
+    assertInScope(req, req.params.id);
+    const admin = await prisma.user.findFirst({
+      where: { orgId: req.params.id, isOwner: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!admin) throw notFound('Account admin not found');
+    if (admin.passwordHash) throw badRequest('This account has already set its password');
+    let token = admin.inviteToken;
+    if (!token) {
+      token = crypto.randomBytes(24).toString('hex');
+      await prisma.user.update({
+        where: { id: admin.id },
+        data: { inviteToken: token, inviteExpires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+      });
+    }
+    res.json({ inviteLink: inviteLink(token), email: admin.email });
   })
 );
 

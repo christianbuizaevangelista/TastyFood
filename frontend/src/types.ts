@@ -66,5 +66,7 @@ export interface Org {
   notes?: string;
   salesTarget: number;
   parent?: { id: string; name: string; type: OrgType } | null;
+  territory?: { id: string; name: string; level: string } | null;
+  pendingInvite?: boolean;
   _count?: { children: number; users: number };
 }
