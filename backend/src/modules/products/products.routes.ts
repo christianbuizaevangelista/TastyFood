@@ -26,8 +26,7 @@ const productSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   category: z.string().optional(),
-  variants: z.string().optional(),
-  sizes: z.string().optional(),
+  size: z.string().optional(),
   srp: z.number().positive(),
 });
 

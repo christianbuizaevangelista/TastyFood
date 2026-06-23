@@ -7,7 +7,7 @@ import { Product } from '../types';
 
 export default function Products() {
   const { data, loading, error, refetch } = useFetch<{ products: Product[] }>('/products');
-  const [form, setForm] = useState({ sku: '', name: '', category: '', variants: '', sizes: '', srp: '' });
+  const [form, setForm] = useState({ sku: '', name: '', category: '', size: '', srp: '' });
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [editing, setEditing] = useState<Product | null>(null);
@@ -52,11 +52,10 @@ export default function Products() {
         sku: form.sku,
         name: form.name,
         category: form.category || undefined,
-        variants: form.variants || undefined,
-        sizes: form.sizes || undefined,
+        size: form.size || undefined,
         srp: Number(form.srp),
       });
-      setForm({ sku: '', name: '', category: '', variants: '', sizes: '', srp: '' });
+      setForm({ sku: '', name: '', category: '', size: '', srp: '' });
       setMsg('Product added');
       refetch();
     } catch (e) {
@@ -88,15 +87,9 @@ export default function Products() {
             <label className="label">Category</label>
             <input className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="label">Variants</label>
-              <input className="input" placeholder="Original, Spicy" value={form.variants} onChange={(e) => setForm({ ...form, variants: e.target.value })} />
-            </div>
-            <div>
-              <label className="label">Sizes</label>
-              <input className="input" placeholder="200g, 500g" value={form.sizes} onChange={(e) => setForm({ ...form, sizes: e.target.value })} />
-            </div>
+          <div>
+            <label className="label">Size</label>
+            <input className="input" placeholder="e.g. 200g" value={form.size} onChange={(e) => setForm({ ...form, size: e.target.value })} />
           </div>
           <div>
             <label className="label">SRP (₱)</label>
@@ -126,8 +119,7 @@ export default function Products() {
                 <th className="th">SKU</th>
                 <th className="th">Name</th>
                 <th className="th">Category</th>
-                <th className="th">Variants</th>
-                <th className="th">Sizes</th>
+                <th className="th">Size</th>
                 <th className="th text-right">SRP</th>
               </tr>
             </thead>
@@ -140,8 +132,7 @@ export default function Products() {
                   <td className="td cursor-pointer font-mono text-xs" onClick={() => setEditing(p)}>{p.sku}</td>
                   <td className="td cursor-pointer font-medium text-brand-600 hover:underline" onClick={() => setEditing(p)}>{p.name}</td>
                   <td className="td cursor-pointer text-slate-500" onClick={() => setEditing(p)}>{p.category || '—'}</td>
-                  <td className="td cursor-pointer text-xs text-slate-500" onClick={() => setEditing(p)}>{p.variants || '—'}</td>
-                  <td className="td cursor-pointer text-xs text-slate-500" onClick={() => setEditing(p)}>{p.sizes || '—'}</td>
+                  <td className="td cursor-pointer text-xs text-slate-500" onClick={() => setEditing(p)}>{p.size || '—'}</td>
                   <td className="td cursor-pointer text-right" onClick={() => setEditing(p)}>{peso(p.srp)}</td>
                 </tr>
               ))}
@@ -169,8 +160,7 @@ function EditProduct({ product, onClose, onSaved }: { product: Product; onClose:
     sku: product.sku,
     name: product.name,
     category: product.category ?? '',
-    variants: product.variants ?? '',
-    sizes: product.sizes ?? '',
+    size: product.size ?? '',
     srp: String(product.srp),
   });
   const [err, setErr] = useState<string | null>(null);
@@ -197,8 +187,7 @@ function EditProduct({ product, onClose, onSaved }: { product: Product; onClose:
         sku: form.sku,
         name: form.name,
         category: form.category || undefined,
-        variants: form.variants || undefined,
-        sizes: form.sizes || undefined,
+        size: form.size || undefined,
         srp: Number(form.srp),
       });
       onSaved();
@@ -231,13 +220,9 @@ function EditProduct({ product, onClose, onSaved }: { product: Product; onClose:
             <label className="label">Category</label>
             <input className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
           </div>
-          <div>
-            <label className="label">Variants</label>
-            <input className="input" placeholder="Original, Spicy" value={form.variants} onChange={(e) => setForm({ ...form, variants: e.target.value })} />
-          </div>
-          <div>
-            <label className="label">Sizes</label>
-            <input className="input" placeholder="200g, 500g" value={form.sizes} onChange={(e) => setForm({ ...form, sizes: e.target.value })} />
+          <div className="col-span-2">
+            <label className="label">Size</label>
+            <input className="input" placeholder="e.g. 200g" value={form.size} onChange={(e) => setForm({ ...form, size: e.target.value })} />
           </div>
         </div>
         <div className="mt-5 flex items-center justify-between gap-2">

@@ -30,8 +30,7 @@ export interface Product {
   name: string;
   description?: string | null;
   category?: string | null;
-  variants?: string | null;
-  sizes?: string | null;
+  size?: string | null;
   srp: number;
 }
 
