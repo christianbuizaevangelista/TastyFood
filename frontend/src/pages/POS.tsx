@@ -237,9 +237,19 @@ export default function POS() {
             </div>
           )}
 
-          <div className="mb-3 flex items-center justify-between text-sm">
-            <span className="text-slate-500">{lines.length} item(s)</span>
-            <span className="text-lg font-bold text-brand-600">{peso(total)}</span>
+          <div className="mb-3 space-y-1 border-t border-slate-100 pt-3 text-sm">
+            <div className="flex justify-between text-slate-500">
+              <span>Subtotal ({lines.length} item{lines.length === 1 ? '' : 's'})</span>
+              <span>{peso(subtotalSRP)}</span>
+            </div>
+            <div className="flex justify-between text-slate-500">
+              <span>Less: Discount ({Math.round(discountRate * 100)}%)</span>
+              <span>- {peso(subtotalSRP - total)}</span>
+            </div>
+            <div className="flex justify-between border-t border-slate-100 pt-1 text-base font-bold text-brand-600">
+              <span>Net Sales</span>
+              <span>{peso(total)}</span>
+            </div>
           </div>
           <button className="btn-primary w-full" disabled={busy || lines.length === 0} onClick={checkout}>
             {busy ? 'Recording…' : 'Record sale'}
