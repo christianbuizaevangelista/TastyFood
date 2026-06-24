@@ -4,6 +4,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useFetch } from '../lib/useFetch';
 import { PageHeader, Spinner, Alert, EmptyState } from '../components/ui';
 import { peso, dateTime } from '../lib/format';
+import AddressPicker from '../components/AddressPicker';
 import { Customer } from '../types';
 
 export default function Customers() {
@@ -24,7 +25,7 @@ export default function Customers() {
   const mine = (c: Customer) => c.owner?.id === user!.org.id;
 
   async function remove(c: Customer) {
-    if (!confirm(`Tanggalin si ${c.name}?`)) return;
+    if (!confirm(`Remove ${c.name}?`)) return;
     try {
       await api.delete(`/customers/${c.id}`);
       refetch();
@@ -37,14 +38,19 @@ export default function Customers() {
     <div>
       <PageHeader
         title="Customers"
-        subtitle="Mga suki / customer na sinusuplayan — pangalan, contact, at lugar."
-        action={<button className="btn-primary" onClick={() => setEditing({})}>+ Bagong customer</button>}
+        subtitle="The customers you supply — name, contact, and location."
+        action={<button className="btn-primary" onClick={() => setEditing({})}>+ New customer</button>}
       />
 
       {err && <div className="mb-4"><Alert>{err}</Alert></div>}
 
+      <div className="card mb-4 max-w-[200px]">
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total Customers</div>
+        <div className="mt-1 text-2xl font-bold text-brand-600">{list.length}</div>
+      </div>
+
       <div className="mb-3">
-        <input className="input max-w-sm" placeholder="🔍 Hanapin (pangalan / lugar)…" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <input className="input max-w-sm" placeholder="🔍 Search (name / location)…" value={query} onChange={(e) => setQuery(e.target.value)} />
       </div>
 
       {loading ? (
@@ -52,13 +58,13 @@ export default function Customers() {
       ) : error ? (
         <Alert>{error}</Alert>
       ) : filtered.length === 0 ? (
-        <EmptyState>{list.length ? 'Walang tugma sa hinanap.' : 'Wala pang customer. I-tap ang “+ Bagong customer”.'}</EmptyState>
+        <EmptyState>{list.length ? 'No customers match your search.' : 'No customers yet. Tap “+ New customer”.'}</EmptyState>
       ) : (
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="td">Pangalan</th>
+                <th className="td">Name</th>
                 <th className="td">Cellphone</th>
                 <th className="td">Address</th>
                 <th className="td">Supplier</th>
@@ -191,7 +197,7 @@ export function CustomerForm({
 
   async function save(e: FormEvent) {
     e.preventDefault();
-    if (!form.name.trim()) return setErr('Ilagay ang pangalan.');
+    if (!form.name.trim()) return setErr('Enter a name.');
     setBusy(true);
     setErr(null);
     try {
@@ -209,11 +215,11 @@ export function CustomerForm({
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <form onSubmit={save} className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h2 className="mb-4 text-lg font-bold">{editingId ? 'I-edit ang customer' : 'Bagong customer'}</h2>
+        <h2 className="mb-4 text-lg font-bold">{editingId ? 'Edit customer' : 'New customer'}</h2>
         {err && <div className="mb-3"><Alert>{err}</Alert></div>}
         <div className="space-y-3">
           <div>
-            <label className="label">Pangalan *</label>
+            <label className="label">Name *</label>
             <input className="input" autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div>
@@ -221,8 +227,11 @@ export function CustomerForm({
             <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
           </div>
           <div>
-            <label className="label">Address / Lugar</label>
-            <input className="input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+            <label className="label">Address</label>
+            {editingId && form.address && (
+              <p className="mb-1 text-xs text-slate-400">Current: {form.address}</p>
+            )}
+            <AddressPicker onChange={(a) => { if (a) setForm((f) => ({ ...f, address: a })); }} />
           </div>
         </div>
         <div className="mt-5 flex justify-end gap-2">

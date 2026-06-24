@@ -34,14 +34,14 @@ export default function ResellerSale() {
 
   async function save() {
     setErr(null);
-    if (!customerId) return setErr('Pumili o magdagdag ng customer.');
+    if (!customerId) return setErr('Select or add a customer.');
     const items = Object.entries(cart).filter(([, q]) => q > 0).map(([productId, quantity]) => ({ productId, quantity }));
-    if (items.length === 0) return setErr('Magdagdag ng kahit isang produkto.');
+    if (items.length === 0) return setErr('Add at least one product.');
     setBusy(true);
     try {
       await api.post('/pos/sales', { distributionType: 'TRADE', discountRate: 0, customerId, items });
       const name = myCustomers.find((c) => c.id === customerId)?.name ?? 'customer';
-      setDone(`Nai-record ang benta kay ${name}! 🎉`);
+      setDone(`Sale recorded for ${name}! 🎉`);
       setCart({});
       setCustomerId('');
     } catch (e) {
@@ -55,7 +55,7 @@ export default function ResellerSale() {
 
   return (
     <div className="mx-auto max-w-xl">
-      <PageHeader title="Mag-record ng Benta" subtitle="Pumili ng customer, ilagay ang binili, tapos i-save." />
+      <PageHeader title="Record a Sale" subtitle="Pick a customer, set what they bought, then save." />
 
       {done && <div className="mb-4"><Alert kind="success">{done}</Alert></div>}
       {err && <div className="mb-4"><Alert>{err}</Alert></div>}
@@ -65,18 +65,18 @@ export default function ResellerSale() {
         <label className="label">Customer</label>
         <div className="flex gap-2">
           <select className="input flex-1" value={customerId} onChange={(e) => { setCustomerId(e.target.value); setDone(null); }}>
-            <option value="">— Pumili ng customer —</option>
+            <option value="">— Select a customer —</option>
             {myCustomers.map((c) => (
               <option key={c.id} value={c.id}>{c.name}{c.address ? ` · ${c.address}` : ''}</option>
             ))}
           </select>
-          <button className="btn-ghost whitespace-nowrap" onClick={() => setAddingCustomer(true)}>+ Bago</button>
+          <button className="btn-ghost whitespace-nowrap" onClick={() => setAddingCustomer(true)}>+ New</button>
         </div>
       </div>
 
       {/* Products with big steppers */}
       <div className="card mb-4">
-        <label className="label">Mga binili</label>
+        <label className="label">Items bought</label>
         <div className="space-y-2">
           {list.map((p) => {
             const qty = cart[p.id] ?? 0;
@@ -104,7 +104,7 @@ export default function ResellerSale() {
           <span className="text-brand-600">{peso(total)}</span>
         </div>
         <button className="btn-primary w-full py-3 text-base" disabled={busy} onClick={save}>
-          {busy ? 'Sini-save…' : 'I-save ang benta'}
+          {busy ? 'Saving…' : 'Save sale'}
         </button>
       </div>
 
