@@ -29,10 +29,22 @@ export default function Crm() {
   const [editTarget, setEditTarget] = useState<Org | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<Org | null>(null);
 
+  const [query, setQuery] = useState('');
+
   const downstream = useMemo(
     () => (data?.orgs ?? []).filter((o) => o.id !== user!.org.id),
     [data, user]
   );
+
+  // Quick search across person/business name, territory/area, tier, and parent.
+  const filtered = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return downstream;
+    return downstream.filter((o) =>
+      [o.contactName, o.name, o.territory?.name, o.type, o.parent?.name]
+        .some((v) => v && v.toLowerCase().includes(term))
+    );
+  }, [downstream, query]);
 
   // Deactivating needs the Principal's password; activating is direct.
   async function toggleActive(org: Org) {
@@ -70,6 +82,18 @@ export default function Crm() {
 
       {actionErr && <div className="mb-4"><Alert>{actionErr}</Alert></div>}
 
+      <div className="mb-3 flex items-center gap-2">
+        <input
+          className="input max-w-sm"
+          placeholder="🔍 Search name or territory…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {query && (
+          <span className="text-xs text-slate-400">{filtered.length} result{filtered.length === 1 ? '' : 's'}</span>
+        )}
+      </div>
+
       <div className="card overflow-x-auto">
         <table className="w-full">
           <thead>
@@ -85,7 +109,7 @@ export default function Crm() {
             </tr>
           </thead>
           <tbody>
-            {downstream.map((o) => (
+            {filtered.map((o) => (
               <tr key={o.id} className="border-b border-slate-50">
                 <td className="td">
                   <button className="text-left" onClick={() => setEditTarget(o)}>
@@ -124,8 +148,10 @@ export default function Crm() {
                 </td>
               </tr>
             ))}
-            {!downstream.length && (
-              <tr><td className="td text-slate-400" colSpan={8}>No downstream accounts yet.</td></tr>
+            {!filtered.length && (
+              <tr><td className="td text-slate-400" colSpan={8}>
+                {downstream.length ? 'No accounts match your search.' : 'No downstream accounts yet.'}
+              </td></tr>
             )}
           </tbody>
         </table>
