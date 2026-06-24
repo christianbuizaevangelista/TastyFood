@@ -15,7 +15,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       <aside className="flex w-64 flex-col bg-brand-700 text-white">
         <div className="flex items-center gap-3 px-5 py-5">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white p-1">
-            <img src="/tasty-food-logo.svg" alt="Tasty Food" className="h-full w-full object-contain" />
+            <img src="/tasty-food-logo.png" alt="Tasty Food" className="h-full w-full object-contain" />
           </div>
           <div className="leading-tight">
             <div className="text-sm font-bold">Tasty Food Manufacturing Inc.</div>
