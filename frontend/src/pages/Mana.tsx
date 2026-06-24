@@ -23,7 +23,7 @@ export default function Mana() {
   const { user } = useAuth();
   const isPrincipal = user!.role === 'PRINCIPAL';
   // Only Provincial and City distributors may buy Mana.
-  const canBuy = user!.role === 'PROVINCIAL' || user!.role === 'CITY';
+  const canBuy = user!.role === 'PROVINCIAL' || user!.role === 'CITY' || user!.role === 'RESELLER';
   const wallet = useFetch<Wallet>('/mana/wallet');
   const purchases = useFetch<{ purchases: Purchase[] }>('/mana/purchases');
 

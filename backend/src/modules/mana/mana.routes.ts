@@ -70,8 +70,8 @@ const buySchema = z.object({
 manaRouter.post(
   '/purchases',
   asyncHandler(async (req, res) => {
-    if (req.auth!.role !== 'PROVINCIAL' && req.auth!.role !== 'CITY') {
-      throw forbidden('Only Provincial and City distributors can buy Mana');
+    if (req.auth!.role === 'PRINCIPAL') {
+      throw forbidden('The Principal does not buy Mana');
     }
     const body = buySchema.parse(req.body);
     if (!ALLOWED.includes(body.mimeType.toLowerCase())) {
