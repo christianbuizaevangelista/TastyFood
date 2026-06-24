@@ -3,6 +3,7 @@ import { api, apiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { useFetch } from '../lib/useFetch';
 import { PageHeader, Spinner, Alert, EmptyState } from '../components/ui';
+import { peso, dateTime } from '../lib/format';
 import { Customer } from '../types';
 
 export default function Customers() {
@@ -10,6 +11,7 @@ export default function Customers() {
   const { data, loading, error, refetch } = useFetch<{ customers: Customer[] }>('/customers');
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<null | Partial<Customer>>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const list = data?.customers ?? [];
@@ -61,17 +63,23 @@ export default function Customers() {
                 <th className="td">Address</th>
                 <th className="td">Supplier</th>
                 <th className="td text-right">Orders</th>
+                <th className="td text-right">Amount</th>
                 <th className="td text-right"></th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((c) => (
                 <tr key={c.id} className="border-b border-slate-50">
-                  <td className="td font-medium">{c.name}</td>
+                  <td className="td">
+                    <button className="text-left font-medium text-brand-700 hover:underline" onClick={() => setDetailId(c.id)}>
+                      {c.name}
+                    </button>
+                  </td>
                   <td className="td">{c.phone || '—'}</td>
                   <td className="td text-slate-500">{c.address || '—'}</td>
                   <td className="td text-xs text-slate-400">{c.owner?.name}</td>
                   <td className="td text-right">{c.salesCount ?? 0}</td>
+                  <td className="td text-right font-semibold">{peso(c.totalAmount ?? 0)}</td>
                   <td className="td text-right">
                     {mine(c) && (
                       <span className="flex justify-end gap-2">
@@ -94,6 +102,70 @@ export default function Customers() {
           onSaved={() => { setEditing(null); refetch(); }}
         />
       )}
+
+      {detailId && <CustomerDetail id={detailId} onClose={() => setDetailId(null)} />}
+    </div>
+  );
+}
+
+interface CustomerDetailData {
+  id: string;
+  name: string;
+  phone?: string | null;
+  address?: string | null;
+  owner?: { name: string };
+  totalAmount: number;
+  sales: { id: string; number: string; total: number; createdAt: string; items: { name: string; quantity: number; lineTotal: number }[] }[];
+}
+
+function CustomerDetail({ id, onClose }: { id: string; onClose: () => void }) {
+  const { data, loading, error } = useFetch<CustomerDetailData>(`/customers/${id}`);
+  return (
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        {loading ? (
+          <Spinner />
+        ) : error || !data ? (
+          <Alert>{error || 'Not found'}</Alert>
+        ) : (
+          <>
+            <h2 className="text-lg font-bold">{data.name}</h2>
+            <p className="text-xs text-slate-500">
+              {[data.phone, data.address].filter(Boolean).join(' · ') || '—'}
+              {data.owner ? ` · Supplier: ${data.owner.name}` : ''}
+            </p>
+
+            <div className="mt-3 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm">
+              <span className="text-slate-500">{data.sales.length} order{data.sales.length === 1 ? '' : 's'}</span>
+              <span className="font-bold text-brand-600">Total: {peso(data.totalAmount)}</span>
+            </div>
+
+            <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Purchase history</div>
+            {data.sales.length === 0 ? (
+              <div className="mt-2 rounded-lg border border-slate-100 p-3 text-sm text-slate-400">Wala pang order.</div>
+            ) : (
+              <div className="mt-2 space-y-2">
+                {data.sales.map((s) => (
+                  <div key={s.id} className="rounded-lg border border-slate-100 p-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs">{s.number}</span>
+                      <span className="font-semibold">{peso(s.total)}</span>
+                    </div>
+                    <div className="text-xs text-slate-400">{dateTime(s.createdAt)}</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {s.items.map((i) => `${i.name} ×${i.quantity}`).join(', ')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-5 flex justify-end">
+              <button className="btn-ghost" onClick={onClose}>Close</button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

@@ -21,10 +21,11 @@ customersRouter.get(
       where: { ownerOrgId: { in: scope } },
       include: {
         ownerOrg: { select: { id: true, name: true, type: true } },
-        _count: { select: { sales: true } },
+        sales: { select: { total: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
+    const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
     const data = customers
       .filter((c) => !search || [c.name, c.phone, c.address].some((v) => v && v.toLowerCase().includes(search)))
       .map((c) => ({
@@ -34,10 +35,47 @@ customersRouter.get(
         address: c.address,
         note: c.note,
         owner: c.ownerOrg,
-        salesCount: c._count.sales,
+        salesCount: c.sales.length,
+        totalAmount: r2(c.sales.reduce((s, x) => s + x.total, 0)),
         createdAt: c.createdAt,
       }));
     res.json({ customers: data });
+  })
+);
+
+// GET /customers/:id — customer detail + purchase history (scope-checked).
+customersRouter.get(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const c = await prisma.customer.findUnique({
+      where: { id: req.params.id },
+      include: {
+        ownerOrg: { select: { id: true, name: true, type: true } },
+        sales: {
+          orderBy: { createdAt: 'desc' },
+          include: { items: { include: { product: { select: { name: true, sku: true } } } } },
+        },
+      },
+    });
+    if (!c) throw notFound('Customer not found');
+    if (!req.scopeOrgIds!.includes(c.ownerOrgId)) throw forbidden('Customer is outside your network');
+    const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+    res.json({
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+      address: c.address,
+      note: c.note,
+      owner: c.ownerOrg,
+      totalAmount: r2(c.sales.reduce((s, x) => s + x.total, 0)),
+      sales: c.sales.map((s) => ({
+        id: s.id,
+        number: s.number,
+        total: s.total,
+        createdAt: s.createdAt,
+        items: s.items.map((i) => ({ name: i.product.name, sku: i.product.sku, quantity: i.quantity, lineTotal: i.lineTotal })),
+      })),
+    });
   })
 );
 

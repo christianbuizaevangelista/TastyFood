@@ -78,8 +78,8 @@ export default function Crm() {
   return (
     <div>
       <PageHeader
-        title="CRM / Accounts"
-        subtitle="Manage your downstream distribution accounts"
+        title="Distribution Network"
+        subtitle="Manage your downstream distributors and resellers"
         action={
           onboardTiers.length > 0 ? (
             <button className="btn-primary" onClick={() => setShowOnboard(true)}>+ Onboard account</button>

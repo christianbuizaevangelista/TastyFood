@@ -35,6 +35,7 @@ export interface Customer {
   note?: string | null;
   owner?: { id: string; name: string; type: OrgType };
   salesCount?: number;
+  totalAmount?: number;
   createdAt?: string;
 }
 
