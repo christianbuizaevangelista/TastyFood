@@ -35,7 +35,11 @@ export default function POS() {
   const [distributionType, setDistributionType] = useState<'TRADE' | 'DROP_SHIP'>('TRADE');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Org | null>(null);
+  // Unofficial Reseller = a walk-in buyer given the standard 8% reseller discount,
+  // without being a registered account.
+  const [unofficial, setUnofficial] = useState(false);
   const [showList, setShowList] = useState(false);
+  const UNOFFICIAL_RATE = 0.08;
   // Manual discount for Others/Walk-in: by percentage or by peso amount.
   const [discMode, setDiscMode] = useState<'percent' | 'amount'>('percent');
   const [discValue, setDiscValue] = useState(0);
@@ -60,9 +64,11 @@ export default function POS() {
 
   const lines = Object.entries(cart).filter(([, q]) => q > 0);
   const subtotalSRP = lines.reduce((s, [pid, q]) => s + (products.find((x) => x.id === pid)?.srp ?? 0) * q, 0);
-  // Tier customer -> their fixed discount; Others -> manual % or amount.
+  // Tier customer -> their fixed discount; Unofficial Reseller -> 8%; Others -> manual.
   const discountRate = selected
     ? selected.discountRate
+    : unofficial
+    ? UNOFFICIAL_RATE
     : discMode === 'percent'
     ? Math.min(Math.max(discValue, 0), 100) / 100
     : subtotalSRP > 0
@@ -72,11 +78,19 @@ export default function POS() {
 
   function pick(o: Org) {
     setSelected(o);
+    setUnofficial(false);
     setQuery(o.name);
     setShowList(false);
   }
   function pickOthers() {
     setSelected(null);
+    setUnofficial(false);
+    setShowList(false);
+  }
+  function pickUnofficial() {
+    setSelected(null);
+    setUnofficial(true);
+    setQuery('Unofficial Reseller');
     setShowList(false);
   }
 
@@ -87,8 +101,8 @@ export default function POS() {
       const { data: r } = await api.post('/pos/sales', {
         distributionType,
         buyerOrgId: selected?.id, // backend derives the tier discount from this
-        customerName: selected ? selected.name : query.trim() || 'Walk-in',
-        // For Others/Walk-in, send the manual discount rate (derived from % or amount).
+        customerName: selected ? selected.name : unofficial ? 'Unofficial Reseller' : query.trim() || 'Walk-in',
+        // For Unofficial Reseller / Others / Walk-in, send the discount rate explicitly.
         discountRate: selected ? undefined : discountRate,
         items: lines.map(([productId, quantity]) => ({ productId, quantity })),
       });
@@ -96,6 +110,7 @@ export default function POS() {
       setCart({});
       setQuery('');
       setSelected(null);
+      setUnofficial(false);
       setDiscValue(0);
     } catch (e) {
       setErr(apiError(e));
@@ -166,6 +181,7 @@ export default function POS() {
               onChange={(e) => {
                 setQuery(e.target.value);
                 setSelected(null);
+                setUnofficial(false);
                 setShowList(true);
               }}
               onFocus={() => setShowList(true)}
@@ -189,6 +205,13 @@ export default function POS() {
                   <div className="px-3 py-2 text-xs text-slate-400">No matching account in your network.</div>
                 )}
                 <button
+                  onMouseDown={pickUnofficial}
+                  className="flex w-full items-center justify-between border-t border-slate-100 px-3 py-2 text-left text-sm hover:bg-slate-50"
+                >
+                  <span className="font-medium text-slate-700">Unofficial Reseller</span>
+                  <span className="text-xs text-slate-400">8% discount</span>
+                </button>
+                <button
                   onMouseDown={pickOthers}
                   className="flex w-full items-center justify-between border-t border-slate-100 px-3 py-2 text-left text-sm hover:bg-slate-50"
                 >
@@ -204,6 +227,11 @@ export default function POS() {
             <div className="mb-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
               Type: <span className="font-semibold">{TIER[selected.type]?.label ?? selected.type}</span> ·{' '}
               <span className="font-semibold text-brand-600">{Math.round(selected.discountRate * 100)}% discount</span>
+            </div>
+          ) : unofficial ? (
+            <div className="mb-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Type: <span className="font-semibold">Unofficial Reseller</span> ·{' '}
+              <span className="font-semibold text-brand-600">8% discount</span>
             </div>
           ) : (
             <div className="mb-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
@@ -261,8 +289,8 @@ export default function POS() {
         <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" onClick={() => setReceipt(null)}>
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 text-center">
-              <div className="text-lg font-black text-brand-600">Juan Palaman</div>
-              <div className="text-xs text-slate-400">{receipt.seller.name}</div>
+              <div className="text-lg font-black text-brand-600">{receipt.seller.name}</div>
+              <div className="text-xs text-slate-400">Tasty Food Manufacturing Inc.</div>
               <div className="mt-1 text-xs text-slate-400">{dateTime(receipt.createdAt)}</div>
             </div>
             <div className="mb-2 flex items-center justify-between text-xs">
