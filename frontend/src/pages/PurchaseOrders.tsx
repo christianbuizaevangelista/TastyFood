@@ -117,6 +117,8 @@ export default function PurchaseOrders() {
   }, [dateFilter]);
   const { data, loading, error, refetch } = useFetch<{ orders: PO[] }>(url, [url]);
   const products = useFetch<{ products: Product[] }>('/products');
+  // Inventory cost per product (used to value a Principal stock-in at cost).
+  const inventory = useFetch<{ items: { productId: string; cost: number | null }[] }>('/inventory');
   const [showCreate, setShowCreate] = useState(false);
   const [receivePo, setReceivePo] = useState<PO | null>(null);
   const [detailsPo, setDetailsPo] = useState<PO | null>(null);
@@ -328,6 +330,7 @@ export default function PurchaseOrders() {
           products={products.data?.products ?? []}
           discountRate={user!.org.discountRate}
           isStockIn={isPrincipal}
+          costByProduct={Object.fromEntries((inventory.data?.items ?? []).map((i) => [i.productId, i.cost]))}
           onClose={() => setShowCreate(false)}
           onCreated={() => {
             setShowCreate(false);
@@ -723,15 +726,20 @@ function CreatePO({
   products,
   discountRate,
   isStockIn = false,
+  costByProduct = {},
   onClose,
   onCreated,
 }: {
   products: Product[];
   discountRate: number;
   isStockIn?: boolean;
+  costByProduct?: Record<string, number | null>;
   onClose: () => void;
   onCreated: () => void;
 }) {
+  // Unit value per product: stock-in uses the inventory cost (fallback SRP);
+  // a regular PO uses the buyer's tier price (SRP minus discount).
+  const unitFor = (p: Product) => (isStockIn ? costByProduct[p.id] ?? p.srp : p.srp * (1 - discountRate));
   const [distributionType, setDistributionType] = useState<DistributionType>('TRADE');
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MANA'>('CASH');
   const wallet = useFetch<{ balance: number }>('/mana/wallet');
@@ -750,7 +758,7 @@ function CreatePO({
   const items = Object.entries(lines).filter(([, q]) => q > 0);
   const estTotal = items.reduce((sum, [pid, q]) => {
     const p = products.find((x) => x.id === pid);
-    return sum + (p ? p.srp * (1 - discountRate) * q : 0);
+    return sum + (p ? unitFor(p) * q : 0);
   }, 0);
 
   function fileToDataUrl(file: File): Promise<string> {
@@ -955,7 +963,7 @@ function CreatePO({
             <tr className="border-b border-slate-100">
               <th className="th">Product</th>
               <th className="th text-right">SRP</th>
-              <th className="th text-right">Your price</th>
+              <th className="th text-right">{isStockIn ? 'Cost' : 'Your price'}</th>
               <th className="th text-right">Qty</th>
             </tr>
           </thead>
@@ -964,7 +972,7 @@ function CreatePO({
               <tr key={p.id} className="border-b border-slate-50">
                 <td className="td">{p.name}{p.size ? <span className="ml-1 text-xs text-slate-400">({p.size})</span> : ''}</td>
                 <td className="td text-right">{peso(p.srp)}</td>
-                <td className="td text-right text-brand-600">{peso(p.srp * (1 - discountRate))}</td>
+                <td className="td text-right text-brand-600">{peso(unitFor(p))}</td>
                 <td className="td text-right">
                   <input
                     type="number"

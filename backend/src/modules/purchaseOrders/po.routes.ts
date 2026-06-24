@@ -5,7 +5,7 @@ import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
 import { requirePermission } from '../../middleware/rbac';
 import { badRequest, forbidden, notFound, conflict } from '../../lib/errors';
-import { priceLines } from '../../lib/pricing';
+import { priceLines, round2 } from '../../lib/pricing';
 import { poNumber, saleNumber } from '../../lib/numbering';
 import { applyStockMovement, notifyLowStock } from '../inventory/inventory.service';
 import { adjustMana } from '../mana/mana.service';
@@ -165,14 +165,35 @@ poRouter.post(
       }
     }
 
-    const priced = priceLines(
-      body.items.map((i) => ({
-        productId: i.productId,
-        quantity: i.quantity,
-        srp: srpById.get(i.productId)!,
-      })),
-      buyer.discountRate
-    );
+    let priced;
+    if (isStockIn) {
+      // Stock-in = production restock: value lines at the Principal's inventory
+      // cost (manually-set production cost), falling back to SRP if none set.
+      const invs = await prisma.inventory.findMany({
+        where: { orgId: buyer.id, productId: { in: body.items.map((i) => i.productId) } },
+        select: { productId: true, cost: true },
+      });
+      const costByProduct = new Map(invs.map((i) => [i.productId, i.cost]));
+      const items = body.items.map((i) => {
+        const srp = srpById.get(i.productId)!;
+        const unitPrice = round2(costByProduct.get(i.productId) ?? srp);
+        return { productId: i.productId, quantity: i.quantity, unitSrp: srp, unitPrice, lineTotal: round2(unitPrice * i.quantity) };
+      });
+      priced = {
+        items,
+        subtotal: round2(items.reduce((s, it) => s + it.unitSrp * it.quantity, 0)),
+        total: round2(items.reduce((s, it) => s + it.lineTotal, 0)),
+      };
+    } else {
+      priced = priceLines(
+        body.items.map((i) => ({
+          productId: i.productId,
+          quantity: i.quantity,
+          srp: srpById.get(i.productId)!,
+        })),
+        buyer.discountRate
+      );
+    }
 
     const po = await prisma.$transaction(async (tx) => {
       const created = await tx.purchaseOrder.create({
