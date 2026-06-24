@@ -4,6 +4,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useFetch } from '../lib/useFetch';
 import { PageHeader, Spinner, Alert, Badge } from '../components/ui';
 import { peso } from '../lib/format';
+import { DATE_PRESETS, presetRange, DatePreset } from '../lib/datePresets';
 import { exportPoPdf, exportSaleReceiptPdf } from '../lib/poPdf';
 import { Org, OrgType } from '../types';
 
@@ -310,7 +311,20 @@ function EditAccount({
   const vacant = useFetch<{ vacant: { id: string; name: string; level: string; parentName: string | null }[] }>(
     `/territories/vacant?level=${level}`
   );
-  const orders = useFetch<{ purchases: OrderRow[]; sales: OrderRow[] }>(`/orgs/${org.id}/orders`);
+  // Total Sales date filter.
+  const [preset, setPreset] = useState<DatePreset>('all');
+  const [range, setRange] = useState({ from: '', to: '' });
+  const ordersUrl =
+    `/orgs/${org.id}/orders` + (range.from || range.to ? `?from=${range.from}&to=${range.to}` : '');
+  const orders = useFetch<{ purchases: OrderRow[]; sales: OrderRow[]; salesTotal: number; salesCount: number }>(
+    ordersUrl,
+    [ordersUrl]
+  );
+  function applyPreset(p: DatePreset) {
+    setPreset(p);
+    const r = presetRange(p);
+    if (r) setRange(r);
+  }
 
   const set = (k: keyof typeof form) => (e: any) => setForm({ ...form, [k]: e.target.value });
 
@@ -427,9 +441,27 @@ function EditAccount({
             )}
           </div>
 
-          {/* Purchase history */}
+          {/* Right column: Total Sales + Purchase history */}
           <div>
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Purchase history</div>
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Total Sales</div>
+            <div className="rounded-lg bg-slate-50 p-3">
+              <div className="flex items-baseline justify-between">
+                <span className="text-2xl font-bold text-brand-600">{peso(orders.data?.salesTotal ?? 0)}</span>
+                <span className="text-xs text-slate-400">{orders.data?.salesCount ?? 0} sale{(orders.data?.salesCount ?? 0) === 1 ? '' : 's'}</span>
+              </div>
+              <select className="input mt-2 text-sm" value={preset} onChange={(e) => applyPreset(e.target.value as DatePreset)}>
+                {DATE_PRESETS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+              </select>
+              {preset === 'custom' && (
+                <div className="mt-2 flex items-center gap-2">
+                  <input type="date" className="input text-xs" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} />
+                  <span className="text-xs text-slate-400">to</span>
+                  <input type="date" className="input text-xs" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} />
+                </div>
+              )}
+            </div>
+
+            <div className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">Purchase history</div>
             {orders.loading ? (
               <div className="text-sm text-slate-400">Loading…</div>
             ) : history.length === 0 ? (

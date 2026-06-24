@@ -72,26 +72,46 @@ orgsRouter.get(
   })
 );
 
-// GET /orgs/:id/orders — combined order history (POs as buyer + sales as seller).
+// GET /orgs/:id/orders — combined order history (POs as buyer + sales as seller),
+// plus a Total Sales figure. Optional ?from&to (YYYY-MM-DD) date range.
 orgsRouter.get(
   '/:id/orders',
   asyncHandler(async (req, res) => {
     assertInScope(req, req.params.id);
-    const [purchases, sales] = await Promise.all([
+    const createdAt: { gte?: Date; lte?: Date } = {};
+    if (req.query.from) createdAt.gte = new Date(req.query.from as string);
+    if (req.query.to) {
+      const end = new Date(req.query.to as string);
+      end.setHours(23, 59, 59, 999);
+      createdAt.lte = end;
+    }
+    const range = createdAt.gte || createdAt.lte ? { createdAt } : {};
+
+    const [purchases, sales, salesAgg] = await Promise.all([
       prisma.purchaseOrder.findMany({
-        where: { buyerOrgId: req.params.id },
+        where: { buyerOrgId: req.params.id, ...range },
         select: { id: true, number: true, status: true, total: true, distributionType: true, createdAt: true },
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
       prisma.sale.findMany({
-        where: { sellerOrgId: req.params.id },
+        where: { sellerOrgId: req.params.id, ...range },
         select: { id: true, number: true, channel: true, total: true, distributionType: true, createdAt: true },
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
+      prisma.sale.aggregate({
+        where: { sellerOrgId: req.params.id, ...range },
+        _sum: { total: true },
+        _count: true,
+      }),
     ]);
-    res.json({ purchases, sales });
+    res.json({
+      purchases,
+      sales,
+      salesTotal: Math.round(((salesAgg._sum.total ?? 0) + Number.EPSILON) * 100) / 100,
+      salesCount: salesAgg._count,
+    });
   })
 );
 
