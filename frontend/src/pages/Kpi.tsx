@@ -1,7 +1,22 @@
 import { useState } from 'react';
 import { useFetch } from '../lib/useFetch';
+import { useAuth } from '../auth/AuthContext';
 import { PageHeader, Spinner, Alert } from '../components/ui';
 import { peso, num, pct } from '../lib/format';
+
+// Tiers each role may view — only those strictly below them in the hierarchy.
+const TIERS_BELOW: Record<string, { value: string; label: string }[]> = {
+  PRINCIPAL: [
+    { value: 'PROVINCIAL', label: 'Provincial' },
+    { value: 'CITY', label: 'City' },
+    { value: 'RESELLER', label: 'Reseller' },
+  ],
+  PROVINCIAL: [
+    { value: 'CITY', label: 'City' },
+    { value: 'RESELLER', label: 'Reseller' },
+  ],
+  CITY: [{ value: 'RESELLER', label: 'Reseller' }],
+};
 
 interface OrgKpi {
   orgId: string;
@@ -76,6 +91,8 @@ function Leaderboard({
 }
 
 export default function Kpi() {
+  const { user } = useAuth();
+  const tierOptions = TIERS_BELOW[user!.role] ?? [];
   const [tier, setTier] = useState('');
   const { data, loading, error } = useFetch<LeaderboardResponse>(
     `/kpi/leaderboard${tier ? `?tier=${tier}` : ''}`,
@@ -95,10 +112,10 @@ export default function Kpi() {
         subtitle="Two rankings of your downstream network this month"
         action={
           <select className="input w-48" value={tier} onChange={(e) => setTier(e.target.value)}>
-            <option value="">All tiers</option>
-            <option value="PROVINCIAL">Provincial</option>
-            <option value="CITY">City</option>
-            <option value="RESELLER">Reseller</option>
+            <option value="">All tiers below me</option>
+            {tierOptions.map((t) => (
+              <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
           </select>
         }
       />
