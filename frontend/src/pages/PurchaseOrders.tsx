@@ -738,6 +738,8 @@ function CreatePO({
   const [lines, setLines] = useState<Record<string, number>>({});
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { user } = useAuth();
+  const isReseller = user?.role === 'RESELLER'; // resellers order Regular only (no drop-ship)
 
   const isDropship = distributionType === 'DROP_SHIP';
   const items = Object.entries(lines).filter(([, q]) => q > 0);
@@ -813,7 +815,7 @@ function CreatePO({
         </p>
         {err && <div className="mb-3"><Alert>{err}</Alert></div>}
 
-        {!isStockIn && (
+        {!isStockIn && !isReseller && (
           <div className="mb-4">
             <label className="label">Distribution type</label>
             <div className="flex gap-2">
