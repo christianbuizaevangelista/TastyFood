@@ -767,15 +767,15 @@ function CreatePO({
         setErr('Drop-ship requires a proof of payment, or pay with Mana.');
         return;
       }
-      if (proofFile && proofFile.size > 3 * 1024 * 1024) {
-        setErr('Proof of payment is too large (max 3 MB).');
-        return;
-      }
+    }
+    if (proofFile && proofFile.size > 3 * 1024 * 1024) {
+      setErr('Proof of payment is too large (max 3 MB).');
+      return;
     }
     setBusy(true);
     try {
       let proofOfPayment;
-      if (isDropship && proofFile) {
+      if (proofFile) {
         proofOfPayment = {
           fileName: proofFile.name,
           mimeType: proofFile.type || 'application/octet-stream',
@@ -856,18 +856,6 @@ function CreatePO({
                 <label className="label">Landmark</label>
                 <input className="input" value={recipient.landmark} onChange={(e) => setRecipient({ ...recipient, landmark: e.target.value })} />
               </div>
-              <div className="sm:col-span-2">
-                <label className="label">
-                  Proof of Payment (image/PDF) {paymentMethod === 'MANA' ? '(optional — paying via Mana)' : '*'}
-                </label>
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,application/pdf"
-                  className="text-xs"
-                  onChange={(e) => setProofFile(e.target.files?.[0] ?? null)}
-                />
-                {proofFile && <span className="ml-2 text-xs text-green-600">✓ {proofFile.name}</span>}
-              </div>
             </div>
           </div>
         )}
@@ -895,6 +883,28 @@ function CreatePO({
                   : ' Transfers to the supplier on approval.'}
               </p>
             )}
+          </div>
+        )}
+
+        {/* Proof of payment — available for any supplier order. Required for
+            drop-ship cash; optional otherwise (you can also upload it later). */}
+        {!isStockIn && (
+          <div className="mb-4">
+            <label className="label">
+              Proof of Payment (image/PDF){' '}
+              {paymentMethod === 'MANA'
+                ? '(optional — paying via Mana)'
+                : isDropship
+                ? '*'
+                : '(optional)'}
+            </label>
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp,application/pdf"
+              className="text-xs"
+              onChange={(e) => setProofFile(e.target.files?.[0] ?? null)}
+            />
+            {proofFile && <span className="ml-2 text-xs text-green-600">✓ {proofFile.name}</span>}
           </div>
         )}
 

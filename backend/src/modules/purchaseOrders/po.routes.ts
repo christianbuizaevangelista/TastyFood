@@ -150,14 +150,16 @@ poRouter.post(
       if (body.paymentMethod !== 'MANA' && !body.proofOfPayment) {
         throw badRequest('Drop-ship orders require an attached proof of payment (or pay with Mana)');
       }
-      if (body.proofOfPayment) {
-        if (!ALLOWED_TYPES.includes(body.proofOfPayment.mimeType.toLowerCase())) {
-          throw badRequest('Proof of payment must be an image (PNG/JPG/WEBP) or PDF');
-        }
-        proofData = body.proofOfPayment.dataBase64.replace(/^data:[^;]+;base64,/, '');
-        if (Math.floor((proofData.length * 3) / 4) > MAX_UPLOAD_BYTES) {
-          throw badRequest('Proof of payment is too large (max 3 MB)');
-        }
+    }
+    // Proof of payment may be attached to ANY supplier order (e.g. Regular + Cash),
+    // not just drop-ship. Validate/parse it whenever one is provided.
+    if (body.proofOfPayment) {
+      if (!ALLOWED_TYPES.includes(body.proofOfPayment.mimeType.toLowerCase())) {
+        throw badRequest('Proof of payment must be an image (PNG/JPG/WEBP) or PDF');
+      }
+      proofData = body.proofOfPayment.dataBase64.replace(/^data:[^;]+;base64,/, '');
+      if (Math.floor((proofData.length * 3) / 4) > MAX_UPLOAD_BYTES) {
+        throw badRequest('Proof of payment is too large (max 3 MB)');
       }
     }
 
@@ -193,7 +195,7 @@ poRouter.post(
         },
         include: { items: true },
       });
-      if (isDropship && body.proofOfPayment && proofData) {
+      if (body.proofOfPayment && proofData) {
         await tx.poAttachment.create({
           data: {
             poId: created.id,
