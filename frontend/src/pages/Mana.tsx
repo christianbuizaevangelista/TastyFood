@@ -111,6 +111,15 @@ export default function Mana() {
         {canBuy && (
           <div className="card">
             <h2 className="mb-3 text-sm font-semibold text-slate-700">Buy Mana</h2>
+            <div className="mb-3 rounded-lg border border-brand-200 bg-brand-50 p-3 text-xs">
+              <div className="mb-1 font-semibold text-brand-700">Transfer your payment to:</div>
+              <div className="grid grid-cols-[auto,1fr] gap-x-2 gap-y-0.5 text-slate-700">
+                <span className="text-slate-400">Bank</span><span className="font-medium">Rizal Commercial Banking Corporation (RCBC)</span>
+                <span className="text-slate-400">Account Name</span><span className="font-medium">Tasty Food Manufacturing Inc.</span>
+                <span className="text-slate-400">Account No.</span><span className="font-mono font-semibold">7590681790</span>
+              </div>
+              <div className="mt-2 text-slate-400">Then upload your proof of payment below.</div>
+            </div>
             <label className="label">Amount (₱ = Mana)</label>
             <input className="input mb-1" type="number" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 10000" />
             <p className="mb-3 text-xs text-green-600">
