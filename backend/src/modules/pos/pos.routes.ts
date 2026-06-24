@@ -50,11 +50,14 @@ posRouter.post(
       discountRate = buyer.discountRate; // tier discount: PROVINCIAL 20%, CITY 15%, RESELLER 8%
     }
 
-    // Optional saved end-customer (Reseller's customer database).
+    // Optional saved end-customer (the customer database). The seller may sell to
+    // any end-customer within their chain (their own, or a downline's).
     let customerName = body.customerName;
     if (body.customerId) {
       const cust = await prisma.customer.findUnique({ where: { id: body.customerId } });
-      if (!cust || cust.ownerOrgId !== seller.id) throw badRequest('Customer not found in your records');
+      if (!cust || !req.scopeOrgIds!.includes(cust.ownerOrgId)) {
+        throw badRequest('Customer is outside your network');
+      }
       customerName = customerName || cust.name;
     }
 

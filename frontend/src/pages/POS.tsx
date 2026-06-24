@@ -3,7 +3,7 @@ import { api, apiError } from '../api/client';
 import { useFetch } from '../lib/useFetch';
 import { PageHeader, Spinner, Alert } from '../components/ui';
 import { peso, dateTime } from '../lib/format';
-import { Org, Product } from '../types';
+import { Customer, Org, Product } from '../types';
 
 interface Receipt {
   number: string;
@@ -30,11 +30,15 @@ export default function POS() {
   const { data, loading, error } = useFetch<{ products: Product[] }>('/products');
   // Downstream accounts the seller can sell to (their network).
   const orgs = useFetch<{ orgs: Org[] }>('/orgs');
+  // End-customers in the chain (the reseller customer database).
+  const customersF = useFetch<{ customers: Customer[] }>('/customers');
 
   const [cart, setCart] = useState<Record<string, number>>({});
   const [distributionType, setDistributionType] = useState<'TRADE' | 'DROP_SHIP'>('TRADE');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Org | null>(null);
+  // A saved end-customer (from the customer database) — sold to at SRP/manual disc.
+  const [customer, setCustomer] = useState<Customer | null>(null);
   // Unofficial Reseller = a walk-in buyer given the standard 8% reseller discount,
   // without being a registered account.
   const [unofficial, setUnofficial] = useState(false);
@@ -57,6 +61,12 @@ export default function POS() {
     const list = q ? customers.filter((o) => o.name.toLowerCase().includes(q)) : customers;
     return list.slice(0, 8);
   }, [customers, query]);
+  // End-customers (customer database) matching the search.
+  const custMatches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const list = customersF.data?.customers ?? [];
+    return (q ? list.filter((c) => [c.name, c.address, c.phone].some((v) => v && v.toLowerCase().includes(q))) : list).slice(0, 6);
+  }, [customersF.data, query]);
 
   if (loading) return <Spinner />;
   if (error) return <Alert>{error}</Alert>;
@@ -78,17 +88,27 @@ export default function POS() {
 
   function pick(o: Org) {
     setSelected(o);
+    setCustomer(null);
     setUnofficial(false);
     setQuery(o.name);
     setShowList(false);
   }
+  function pickCustomer(c: Customer) {
+    setSelected(null);
+    setCustomer(c);
+    setUnofficial(false);
+    setQuery(c.name);
+    setShowList(false);
+  }
   function pickOthers() {
     setSelected(null);
+    setCustomer(null);
     setUnofficial(false);
     setShowList(false);
   }
   function pickUnofficial() {
     setSelected(null);
+    setCustomer(null);
     setUnofficial(true);
     setQuery('Unofficial Reseller');
     setShowList(false);
@@ -101,8 +121,9 @@ export default function POS() {
       const { data: r } = await api.post('/pos/sales', {
         distributionType,
         buyerOrgId: selected?.id, // backend derives the tier discount from this
-        customerName: selected ? selected.name : unofficial ? 'Unofficial Reseller' : query.trim() || 'Walk-in',
-        // For Unofficial Reseller / Others / Walk-in, send the discount rate explicitly.
+        customerId: customer?.id, // saved end-customer (from the customer database)
+        customerName: selected ? selected.name : customer ? customer.name : unofficial ? 'Unofficial Reseller' : query.trim() || 'Walk-in',
+        // For Unofficial Reseller / Customer / Others / Walk-in, send the discount rate explicitly.
         discountRate: selected ? undefined : discountRate,
         items: lines.map(([productId, quantity]) => ({ productId, quantity })),
       });
@@ -110,6 +131,7 @@ export default function POS() {
       setCart({});
       setQuery('');
       setSelected(null);
+      setCustomer(null);
       setUnofficial(false);
       setDiscValue(0);
     } catch (e) {
@@ -181,6 +203,7 @@ export default function POS() {
               onChange={(e) => {
                 setQuery(e.target.value);
                 setSelected(null);
+                setCustomer(null);
                 setUnofficial(false);
                 setShowList(true);
               }}
@@ -203,6 +226,21 @@ export default function POS() {
                 ))}
                 {matches.length === 0 && (
                   <div className="px-3 py-2 text-xs text-slate-400">No matching account in your network.</div>
+                )}
+                {custMatches.length > 0 && (
+                  <>
+                    <div className="border-t border-slate-100 bg-slate-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Customers</div>
+                    {custMatches.map((c) => (
+                      <button
+                        key={c.id}
+                        onMouseDown={() => pickCustomer(c)}
+                        className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50"
+                      >
+                        <span className="font-medium text-slate-700">{c.name}</span>
+                        <span className="text-xs text-slate-400">{c.address || c.owner?.name || 'Customer'}</span>
+                      </button>
+                    ))}
+                  </>
                 )}
                 <button
                   onMouseDown={pickUnofficial}
@@ -236,7 +274,7 @@ export default function POS() {
           ) : (
             <div className="mb-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
               <div className="mb-2">
-                Type: <span className="font-semibold">Others / Walk-in</span> — apply a discount:
+                {customer ? <>Customer: <span className="font-semibold">{customer.name}</span></> : <>Type: <span className="font-semibold">Others / Walk-in</span></>} — apply a discount:
               </div>
               <div className="flex items-center gap-2">
                 <div className="flex overflow-hidden rounded-md border border-slate-300">
