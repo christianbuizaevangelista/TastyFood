@@ -66,8 +66,8 @@ inventoryRouter.get(
     res.json({
       orgId,
       items: data,
-      // Only the Principal can edit cost, and only on its own inventory.
-      costEditable: isPrincipalOrg && orgId === req.auth!.orgId,
+      // Only the Principal OWNER can edit cost (staff see it read-only), and only on its own inventory.
+      costEditable: isPrincipalOrg && orgId === req.auth!.orgId && !!req.auth!.isOwner,
       totalValue: r2(data.reduce((s, d) => s + d.stockValue, 0)),
       lowStockCount: data.filter((d) => d.lowStock).length,
     });
@@ -111,8 +111,9 @@ inventoryRouter.patch(
     const orgId = req.auth!.orgId;
     const data: { cost?: number | null; reorderLevel?: number | null } = {};
     if (body.cost !== undefined) {
-      // Only the Principal sets cost; distributors' cost is derived from discount.
+      // Only the Principal OWNER sets cost; staff are read-only, distributors' cost is derived.
       if (req.auth!.role !== 'PRINCIPAL') throw badRequest('Only the Principal can set cost');
+      if (!req.auth!.isOwner) throw badRequest('Only the owner can set cost');
       data.cost = body.cost;
     }
     if (body.reorderLevel !== undefined) data.reorderLevel = body.reorderLevel;
