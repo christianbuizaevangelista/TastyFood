@@ -54,9 +54,9 @@ export default function Dashboard() {
   if (!data) return null;
 
   const c = data.cards;
-  // "Downline" = trade sales flowing down the distribution chain; "Dropship" = drop-ship sales.
+  // "Regular" = trade sales flowing down the distribution chain; "Dropship" = drop-ship sales.
   const pieData = [
-    { name: 'Downline', value: data.charts.byDistributionType.trade },
+    { name: 'Regular', value: data.charts.byDistributionType.trade },
     { name: 'Dropship', value: data.charts.byDistributionType.dropShip },
   ];
 
@@ -159,7 +159,7 @@ export default function Dashboard() {
         </div>
 
         <div className="card">
-          <h2 className="mb-4 text-sm font-semibold text-slate-700">Downline vs Dropship</h2>
+          <h2 className="mb-4 text-sm font-semibold text-slate-700">Regular vs Dropship</h2>
           <ResponsiveContainer width="100%" height={260}>
             <PieChart>
               <Pie data={pieData} dataKey="value" nameKey="name" outerRadius={90} label>
