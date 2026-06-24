@@ -14,7 +14,7 @@ const LEVEL_OF: Record<string, string> = { PROVINCIAL: 'PROVINCE', CITY: 'CITY',
 const ALLOWED_PARENT_TYPES: Record<string, OrgType[]> = {
   PROVINCIAL: ['PRINCIPAL'],
   CITY: ['PROVINCIAL', 'PRINCIPAL'],
-  RESELLER: ['CITY'],
+  RESELLER: ['CITY', 'PROVINCIAL', 'PRINCIPAL'],
 };
 
 async function copyToClipboard(text: string) {
@@ -71,9 +71,10 @@ export default function Crm() {
   if (loading) return <Spinner />;
   if (error) return <Alert>{error}</Alert>;
 
-  // Which tiers can this role onboard?
+  // Which tiers can this role onboard? Principal can onboard any tier directly
+  // (e.g. a Reseller with no City/Provincial in the area yet).
   const onboardTiers: OrgType[] =
-    user!.role === 'PRINCIPAL' ? ['PROVINCIAL', 'CITY'] : user!.role === 'PROVINCIAL' ? ['RESELLER'] : [];
+    user!.role === 'PRINCIPAL' ? ['PROVINCIAL', 'CITY', 'RESELLER'] : user!.role === 'PROVINCIAL' ? ['RESELLER'] : [];
 
   return (
     <div>
@@ -294,9 +295,11 @@ function EditAccount({
     parentId: org.parent?.id ?? '',
   });
 
-  // A City's supplier can be the Principal (direct) or a Provincial.
-  const canReassign = canManage && org.type === 'CITY';
-  const supplierOptions = orgs.filter((o) => o.type === 'PROVINCIAL' || o.type === 'PRINCIPAL');
+  // Any downstream account's supplier can be reassigned up the allowed chain
+  // (e.g. a Reseller → City, or Provincial, or directly the Principal).
+  const allowedParents = ALLOWED_PARENT_TYPES[org.type] ?? [];
+  const canReassign = canManage && allowedParents.length > 0;
+  const supplierOptions = orgs.filter((o) => allowedParents.includes(o.type));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
@@ -389,11 +392,11 @@ function EditAccount({
                 <select className="input" value={form.parentId} onChange={set('parentId')}>
                   {supplierOptions.map((o) => (
                     <option key={o.id} value={o.id}>
-                      {o.name}{o.type === 'PRINCIPAL' ? ' (direct — no Provincial)' : ` (${o.type})`}
+                      {o.name}{o.type === 'PRINCIPAL' ? ' (direct)' : ` (${o.type})`}
                     </option>
                   ))}
                 </select>
-                <p className="mt-1 text-xs text-slate-400">Their purchase orders go to whoever is set here. Switch to a Provincial once one is available.</p>
+                <p className="mt-1 text-xs text-slate-400">Their purchase orders &amp; email notifications go to whoever is set here. If no City/Provincial yet, point them higher (up to the Principal).</p>
               </div>
             )}
             <div>
@@ -681,7 +684,7 @@ function Onboard({
             <select className="input" value={form.parentId} onChange={(e) => setForm({ ...form, parentId: e.target.value })}>
               <option value="">Select…</option>
               {parentOptions.map((o) => (
-                <option key={o.id} value={o.id}>{o.name}{o.type === 'PRINCIPAL' ? ' (direct — no Provincial)' : ` (${o.type})`}</option>
+                <option key={o.id} value={o.id}>{o.name}{o.type === 'PRINCIPAL' ? ' (direct)' : ` (${o.type})`}</option>
               ))}
             </select>
           </div>

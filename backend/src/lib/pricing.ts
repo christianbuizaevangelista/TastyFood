@@ -23,7 +23,7 @@ export const ALLOWED_PARENTS: Record<OrgType, OrgType[]> = {
   PRINCIPAL: [],
   PROVINCIAL: ['PRINCIPAL'],
   CITY: ['PROVINCIAL', 'PRINCIPAL'],
-  RESELLER: ['CITY'],
+  RESELLER: ['CITY', 'PROVINCIAL', 'PRINCIPAL'],
 };
 
 export function round2(n: number): number {
