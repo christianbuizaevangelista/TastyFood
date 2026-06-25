@@ -186,3 +186,5 @@ docker-compose.yml
 `Product` (sku, srp) · `Inventory` · `StockLedger` · `PurchaseOrder` + `PurchaseOrderItem`
 (distributionType, status) · `Sale` + `SaleItem` (distributionType, channel) ·
 `Approval` (ORG_ONBOARDING / PO_APPROVAL) · `KPIRecord`.
+
+<!-- auto-deploy test: connected to TastyFood -->
