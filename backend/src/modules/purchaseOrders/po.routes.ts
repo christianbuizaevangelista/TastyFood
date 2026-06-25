@@ -9,8 +9,25 @@ import { priceLines, round2 } from '../../lib/pricing';
 import { poNumber, saleNumber } from '../../lib/numbering';
 import { applyStockMovement, notifyLowStock } from '../inventory/inventory.service';
 import { adjustMana } from '../mana/mana.service';
-import { sendPoSubmittedEmail, sendStockRequestEmail } from '../../lib/email';
+import { sendPoSubmittedEmail, sendStockRequestEmail, sendPoStatusEmail } from '../../lib/email';
 import { notifyRecipients } from '../../lib/notify';
+
+// Email the buyer (owner + active staff with 'purchase-orders') that their PO
+// changed status. Skips internal stock-in POs (buyer == seller). Best-effort.
+async function notifyBuyerPoStatus(
+  po: { buyerOrgId: string; sellerOrgId: string; number: string; total: number; buyerOrg: { name: string }; sellerOrg: { name: string } },
+  status: string
+) {
+  if (po.buyerOrgId === po.sellerOrgId) return;
+  try {
+    const recipients = await notifyRecipients(po.buyerOrgId, 'purchase-orders');
+    for (const to of recipients) {
+      await sendPoStatusEmail({ to, poNumber: po.number, buyerName: po.buyerOrg.name, sellerName: po.sellerOrg.name, status, total: po.total });
+    }
+  } catch (err) {
+    console.error('[po.status] notification failed', err);
+  }
+}
 
 export const poRouter = Router();
 poRouter.use(authenticate);
@@ -339,6 +356,7 @@ poRouter.post(
         });
         return u;
       });
+      await notifyBuyerPoStatus(po, 'APPROVED');
       res.json(updated);
     } catch (err: any) {
       if (typeof err?.message === 'string' && err.message.startsWith('Insufficient Mana')) {
@@ -367,6 +385,7 @@ poRouter.post(
       });
       return u;
     });
+    await notifyBuyerPoStatus(po, 'CANCELLED');
     res.json(updated);
   })
 );
@@ -432,6 +451,7 @@ poRouter.post(
       if (po.distributionType === 'TRADE' && !isStockIn) {
         await notifyLowStock(po.sellerOrgId, po.items.map((i) => i.productId));
       }
+      await notifyBuyerPoStatus(po, 'FULFILLED');
       res.json(updated);
     } catch (err: any) {
       if (typeof err?.message === 'string' && err.message.startsWith('Insufficient stock')) {

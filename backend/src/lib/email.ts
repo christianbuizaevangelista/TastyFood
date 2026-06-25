@@ -291,6 +291,107 @@ export async function sendStaffInviteEmail(p: {
   }
 }
 
+// Notify the buyer when their purchase order changes status (approved / rejected / fulfilled).
+const PO_STATUS: Record<string, { label: string; emoji: string; msg: string }> = {
+  APPROVED: { label: 'Approved', emoji: '✅', msg: 'has been approved by your supplier and is being prepared.' },
+  CANCELLED: { label: 'Rejected', emoji: '❌', msg: 'was rejected by your supplier. Please contact them for details.' },
+  FULFILLED: { label: 'Fulfilled', emoji: '📦', msg: 'has been fulfilled and is on its way. You can mark it received in the app.' },
+};
+export async function sendPoStatusEmail(p: {
+  to: string;
+  poNumber: string;
+  buyerName: string;
+  sellerName: string;
+  status: string;
+  total: number;
+}): Promise<{ sent: boolean; reason?: string }> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM || 'Tasty Food <onboarding@resend.dev>';
+  if (!p.to) return { sent: false, reason: 'no recipient email' };
+  const s = PO_STATUS[p.status];
+  if (!s) return { sent: false, reason: `no email for status ${p.status}` };
+  if (!apiKey) {
+    console.log(`[email] RESEND_API_KEY not set — PO ${p.poNumber} ${p.status} for ${p.to}`);
+    return { sent: false, reason: 'RESEND_API_KEY not configured' };
+  }
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#333;line-height:1.55">
+      <div style="background:#0b9444;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
+        <strong style="font-size:16px">Tasty Food Manufacturing Inc.</strong>
+        <div style="font-size:11px;opacity:.9">Purchase Order Update</div>
+      </div>
+      <div style="border:1px solid #eee;border-top:none;padding:22px;border-radius:0 0 8px 8px">
+        <h2 style="margin:0 0 8px">${s.emoji} Purchase order ${s.label}</h2>
+        <p>Hi ${p.buyerName}, your purchase order <strong>${p.poNumber}</strong> (${peso(p.total)}) ${s.msg}</p>
+        <p style="color:#888;font-size:13px">Supplier: ${p.sellerName}</p>
+      </div>
+    </div>`;
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: [p.to], subject: `PO ${p.poNumber} — ${s.label}`, html }),
+    });
+    if (!res.ok) {
+      console.error('[email] Resend error', res.status, await res.text());
+      return { sent: false, reason: `Resend responded ${res.status}` };
+    }
+    return { sent: true };
+  } catch (err: any) {
+    console.error('[email] PO status send failed', err?.message);
+    return { sent: false, reason: err?.message ?? 'send failed' };
+  }
+}
+
+// Notify the buyer that their Mana purchase was approved and credited.
+export async function sendManaApprovedEmail(p: {
+  to: string;
+  orgName: string;
+  amount: number;
+  newBalance?: number;
+}): Promise<{ sent: boolean; reason?: string }> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM || 'Tasty Food <onboarding@resend.dev>';
+  if (!p.to) return { sent: false, reason: 'no recipient email' };
+  if (!apiKey) {
+    console.log(`[email] RESEND_API_KEY not set — Mana approved for ${p.to}`);
+    return { sent: false, reason: 'RESEND_API_KEY not configured' };
+  }
+  const balanceLine =
+    typeof p.newBalance === 'number'
+      ? `<p style="color:#888;font-size:13px">New Mana balance: <strong>${peso(p.newBalance)}</strong> (${p.newBalance.toLocaleString()} ✨)</p>`
+      : '';
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#333;line-height:1.55">
+      <div style="background:#0b9444;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
+        <strong style="font-size:16px">Tasty Food Manufacturing Inc.</strong>
+        <div style="font-size:11px;opacity:.9">Mana Wallet</div>
+      </div>
+      <div style="border:1px solid #eee;border-top:none;padding:22px;border-radius:0 0 8px 8px">
+        <h2 style="margin:0 0 8px">✨ Mana purchase approved</h2>
+        <p>Hi ${p.orgName}, your purchase of <strong>${peso(p.amount)}</strong> worth of Mana
+        (${p.amount.toLocaleString()} ✨) has been approved and credited to your wallet.</p>
+        ${balanceLine}
+        <p>You can now use it to pay for purchase orders.</p>
+      </div>
+    </div>`;
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: [p.to], subject: `Your Mana purchase was approved ✨`, html }),
+    });
+    if (!res.ok) {
+      console.error('[email] Resend error', res.status, await res.text());
+      return { sent: false, reason: `Resend responded ${res.status}` };
+    }
+    return { sent: true };
+  } catch (err: any) {
+    console.error('[email] mana approved send failed', err?.message);
+    return { sent: false, reason: err?.message ?? 'send failed' };
+  }
+}
+
 export async function sendStockRequestEmail(p: {
   to: string;
   poNumber: string;

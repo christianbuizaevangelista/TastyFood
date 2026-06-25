@@ -6,7 +6,7 @@ import { authenticate } from '../../middleware/auth';
 import { requireRole, requirePermission } from '../../middleware/rbac';
 import { badRequest, notFound, forbidden, conflict } from '../../lib/errors';
 import { adjustMana } from './mana.service';
-import { sendManaPurchaseEmail } from '../../lib/email';
+import { sendManaPurchaseEmail, sendManaApprovedEmail } from '../../lib/email';
 import { notifyRecipients } from '../../lib/notify';
 
 export const manaRouter = Router();
@@ -162,6 +162,20 @@ manaRouter.post(
         }
       }
     });
+
+    // Notify the buyer that their Mana purchase was approved (owner + active
+    // staff with 'mana'). Best-effort.
+    if (body.status === 'APPROVED') {
+      try {
+        const org = await prisma.organization.findUnique({ where: { id: p.orgId }, select: { name: true, manaBalance: true } });
+        const recipients = await notifyRecipients(p.orgId, 'mana');
+        for (const to of recipients) {
+          await sendManaApprovedEmail({ to, orgName: org?.name ?? 'Distributor', amount: p.amount, newBalance: org?.manaBalance ?? undefined });
+        }
+      } catch (err) {
+        console.error('[mana.decide] notification failed', err);
+      }
+    }
     res.json({ ok: true });
   })
 );
