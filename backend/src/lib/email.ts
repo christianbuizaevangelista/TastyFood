@@ -222,7 +222,7 @@ export async function sendInviteEmail(p: {
         <p>Should you have any questions, please do not hesitate to reach out. We are here to ensure your partnership with us is a success.</p>
         <p>Once again, welcome aboard. We look forward to a successful and long-lasting relationship.</p>
         <p style="margin:18px 0 0">Regards,</p>
-        <img src="${sigUrl}" alt="Christian Evangelista" width="240" style="display:block;height:auto;max-width:240px;margin:4px 0 2px" />
+        <img src="${sigUrl}" alt="Christian Evangelista" width="280" style="display:block;height:auto;max-width:280px;margin:4px 0 -24px" />
         <div style="font-weight:bold;color:#222">Christian Evangelista</div>
         <div style="color:#555;font-size:13px">President and CEO</div>
         <div style="color:#555;font-size:13px">Tasty Food Manufacturing Inc.</div>
