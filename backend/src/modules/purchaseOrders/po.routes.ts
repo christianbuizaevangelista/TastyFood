@@ -10,6 +10,7 @@ import { poNumber, saleNumber } from '../../lib/numbering';
 import { applyStockMovement, notifyLowStock } from '../inventory/inventory.service';
 import { adjustMana } from '../mana/mana.service';
 import { sendPoSubmittedEmail, sendStockRequestEmail } from '../../lib/email';
+import { notifyRecipients } from '../../lib/notify';
 
 export const poRouter = Router();
 poRouter.use(authenticate);
@@ -287,24 +288,23 @@ poRouter.post(
       return u;
     });
 
-    // Notify the supplier (the tier directly above) by email — best effort,
-    // never blocks the submission.
+    // Notify the supplier (the tier directly above) by email — the owner and any
+    // active staff granted the 'purchase-orders' permission. Best effort, never
+    // blocks the submission.
     let notification: { sent: boolean; reason?: string } = { sent: false };
     try {
-      const seller = await prisma.organization.findUnique({
-        where: { id: po.sellerOrgId },
-        include: { users: { take: 1, orderBy: { createdAt: 'asc' }, select: { email: true } } },
-      });
-      const to = seller?.contactEmail || seller?.users[0]?.email || '';
-      notification = await sendPoSubmittedEmail({
-        to,
-        supplierName: po.sellerOrg.name,
-        poNumber: po.number,
-        buyerName: po.buyerOrg.name,
-        total: po.total,
-        distributionType: po.distributionType,
-        itemsCount: po.items.length,
-      });
+      const recipients = await notifyRecipients(po.sellerOrgId, 'purchase-orders');
+      for (const to of recipients) {
+        notification = await sendPoSubmittedEmail({
+          to,
+          supplierName: po.sellerOrg.name,
+          poNumber: po.number,
+          buyerName: po.buyerOrg.name,
+          total: po.total,
+          distributionType: po.distributionType,
+          itemsCount: po.items.length,
+        });
+      }
     } catch (err) {
       console.error('[po.submit] notification failed', err);
     }

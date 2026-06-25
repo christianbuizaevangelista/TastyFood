@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { sendLowStockEmail } from '../../lib/email';
+import { notifyRecipients } from '../../lib/notify';
 
 /**
  * Applies a stock movement for one org/product inside a transaction and writes
@@ -79,16 +80,12 @@ export async function notifyLowStock(orgId: string, productIds: string[]): Promi
     }
 
     if (newlyLow.length) {
-      const org = await prisma.organization.findUnique({
-        where: { id: orgId },
-        include: { users: { take: 1, orderBy: { createdAt: 'asc' }, select: { email: true } } },
-      });
-      const to = org?.contactEmail || org?.users[0]?.email || '';
-      await sendLowStockEmail({
-        to,
-        orgName: org?.name ?? 'Distributor',
-        items: newlyLow.map((r) => ({ name: r.product.name, sku: r.product.sku, quantity: r.quantity, reorderLevel: r.reorderLevel! })),
-      });
+      const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } });
+      const recipients = await notifyRecipients(orgId, 'inventory');
+      const items = newlyLow.map((r) => ({ name: r.product.name, sku: r.product.sku, quantity: r.quantity, reorderLevel: r.reorderLevel! }));
+      for (const to of recipients) {
+        await sendLowStockEmail({ to, orgName: org?.name ?? 'Distributor', items });
+      }
     }
   } catch (err) {
     console.error('[notifyLowStock]', err);

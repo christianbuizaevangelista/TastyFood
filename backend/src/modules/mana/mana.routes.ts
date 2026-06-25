@@ -7,6 +7,7 @@ import { requireRole, requirePermission } from '../../middleware/rbac';
 import { badRequest, notFound, forbidden, conflict } from '../../lib/errors';
 import { adjustMana } from './mana.service';
 import { sendManaPurchaseEmail } from '../../lib/email';
+import { notifyRecipients } from '../../lib/notify';
 
 export const manaRouter = Router();
 manaRouter.use(authenticate);
@@ -97,22 +98,10 @@ manaRouter.post(
     // Notify everyone at the Principal who can act on Mana — the owner and any
     // active staff granted the 'mana' permission (best-effort).
     try {
-      const principal = await prisma.organization.findFirst({
-        where: { type: 'PRINCIPAL' },
-        include: {
-          users: {
-            where: { isActive: true, OR: [{ isOwner: true }, { permissions: { has: 'mana' } }] },
-            select: { email: true },
-          },
-        },
-      });
+      const principal = await prisma.organization.findFirst({ where: { type: 'PRINCIPAL' }, select: { id: true } });
       const buyer = await prisma.organization.findUnique({ where: { id: req.auth!.orgId }, select: { name: true } });
-      const recipients = [
-        ...(principal?.contactEmail ? [principal.contactEmail] : []),
-        ...(principal?.users.map((u) => u.email) ?? []),
-      ];
-      const unique = [...new Set(recipients.filter(Boolean).map((e) => e.toLowerCase()))];
-      for (const to of unique) {
+      const recipients = principal ? await notifyRecipients(principal.id, 'mana') : [];
+      for (const to of recipients) {
         await sendManaPurchaseEmail({ to, orgName: buyer?.name ?? 'A distributor', amount: body.amount });
       }
     } catch (err) {
