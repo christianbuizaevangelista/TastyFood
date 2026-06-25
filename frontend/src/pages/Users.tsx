@@ -32,18 +32,6 @@ export default function Users() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [share, setShare] = useState<{ email: string; link: string } | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  async function copy(text: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      prompt('Copy this invite link:', text);
-    }
-  }
 
   // Form state — used for both "add" (no id) and "edit" (id set).
   const [editing, setEditing] = useState<null | { id?: string; name: string; email: string; perms: Set<string>; isActive: boolean }>(null);
@@ -97,8 +85,11 @@ export default function Users() {
           email: editing.email,
           permissions: [...editing.perms],
         });
-        setNotice('Staff created — copy the invite link below and send it to them.');
-        if (data.inviteLink) setShare({ email: editing.email, link: data.inviteLink });
+        setNotice(
+          data.invite?.sent
+            ? `Invite emailed to ${editing.email}. They'll set their own password from the email.`
+            : `Staff created, but the invite email failed (${data.invite?.reason ?? 'unknown'}). Use "Resend email" to try again.`
+        );
       }
       setEditing(null);
       load();
@@ -109,12 +100,12 @@ export default function Users() {
     }
   }
 
-  async function copyInviteLink(u: StaffUser) {
+  async function resendInvite(u: StaffUser) {
     setError(null);
+    setNotice(null);
     try {
-      const { data } = await api.get(`/users/${u.id}/invite-link`);
-      setShare({ email: u.email, link: data.inviteLink });
-      copy(data.inviteLink);
+      const { data } = await api.post(`/users/${u.id}/resend`);
+      setNotice(data.invite?.sent ? `Invite re-emailed to ${u.email}.` : `Could not email invite (${data.invite?.reason ?? 'unknown'}).`);
     } catch (err) {
       setError(apiError(err));
     }
@@ -146,19 +137,6 @@ export default function Users() {
 
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
       {notice && <div className="mb-4"><Alert kind="success">{notice}</Alert></div>}
-      {share && (
-        <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3">
-          <div className="mb-1 text-xs font-semibold text-sky-700">Invite link for {share.email}</div>
-          <div className="flex items-center gap-2">
-            <input className="input flex-1 font-mono text-xs" readOnly value={share.link} onFocus={(e) => e.target.select()} />
-            <button type="button" className="btn-primary text-xs" onClick={() => copy(share.link)}>
-              {copied ? 'Copied!' : 'Copy'}
-            </button>
-            <button type="button" className="btn-ghost text-xs" onClick={() => setShare(null)}>Dismiss</button>
-          </div>
-          <div className="mt-1 text-xs text-sky-600">Send this to the staff member so they can set their password. Expires in 7 days.</div>
-        </div>
-      )}
 
       {loading ? (
         <Spinner />
@@ -218,7 +196,7 @@ export default function Users() {
                       <div className="flex justify-end gap-2">
                         <button className="btn-ghost text-xs" onClick={() => openEdit(u)}>Edit</button>
                         {u.pending && (
-                          <button className="btn-ghost text-xs" onClick={() => copyInviteLink(u)}>Copy invite link</button>
+                          <button className="btn-ghost text-xs" onClick={() => resendInvite(u)}>Resend email</button>
                         )}
                         <button className="text-xs text-red-600 hover:underline" onClick={() => remove(u)}>Delete</button>
                       </div>
@@ -253,7 +231,7 @@ export default function Users() {
                   required
                 />
                 {!editing.id && (
-                  <p className="mt-1 text-xs text-slate-400">You'll get a link to share so they can set their own password.</p>
+                  <p className="mt-1 text-xs text-slate-400">We'll email them a link to set their own password.</p>
                 )}
               </div>
               <div>
@@ -278,7 +256,7 @@ export default function Users() {
             <div className="mt-6 flex justify-end gap-2">
               <button type="button" className="btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
               <button className="btn-primary" disabled={busy}>
-                {busy ? 'Saving…' : editing.id ? 'Save changes' : 'Create & get link'}
+                {busy ? 'Saving…' : editing.id ? 'Save changes' : 'Create & email invite'}
               </button>
             </div>
           </form>

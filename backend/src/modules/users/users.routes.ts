@@ -7,6 +7,7 @@ import { authenticate } from '../../middleware/auth';
 import { requireOwner, requireRole } from '../../middleware/rbac';
 import { badRequest, forbidden, notFound } from '../../lib/errors';
 import { env } from '../../lib/env';
+import { sendStaffInviteEmail } from '../../lib/email';
 
 export const usersRouter = Router();
 usersRouter.use(authenticate);
@@ -98,8 +99,10 @@ usersRouter.post(
       },
       select: { id: true, name: true, email: true, permissions: true },
     });
-    // Onboarding is link-based: the owner copies this link and shares it.
-    res.status(201).json({ ...user, pending: true, inviteLink: inviteLink(token) });
+    // Email the staff their set-password invite.
+    const owner = await prisma.organization.findUnique({ where: { id: req.auth!.orgId }, select: { name: true } });
+    const invite = await sendStaffInviteEmail({ to: email, name: body.name, orgName: owner?.name ?? 'Your team', link: inviteLink(token) });
+    res.status(201).json({ ...user, pending: true, invite });
   })
 );
 
@@ -126,23 +129,23 @@ usersRouter.patch(
   })
 );
 
-// GET /users/:id/invite-link — current invite link for a pending user (to share).
-// Regenerates the token if one is missing so the owner can always get a fresh link.
-usersRouter.get(
-  '/:id/invite-link',
+// POST /users/:id/resend — re-email the set-password invite to a pending staff.
+usersRouter.post(
+  '/:id/resend',
   asyncHandler(async (req, res) => {
-    const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+    const target = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      include: { org: { select: { name: true } } },
+    });
     if (!target || target.orgId !== req.auth!.orgId) throw notFound('User not found');
     if (target.passwordHash) throw badRequest('This user has already set their password');
-    let token = target.inviteToken;
-    if (!token) {
-      token = crypto.randomBytes(24).toString('hex');
-      await prisma.user.update({
-        where: { id: target.id },
-        data: { inviteToken: token, inviteExpires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
-      });
-    }
-    res.json({ inviteLink: inviteLink(token) });
+    const token = crypto.randomBytes(24).toString('hex');
+    await prisma.user.update({
+      where: { id: target.id },
+      data: { inviteToken: token, inviteExpires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+    });
+    const invite = await sendStaffInviteEmail({ to: target.email, name: target.name, orgName: target.org.name, link: inviteLink(token) });
+    res.json({ ok: true, invite });
   })
 );
 

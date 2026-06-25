@@ -243,6 +243,54 @@ export async function sendInviteEmail(p: {
   }
 }
 
+// Internal staff (Users & Roles) invite — simpler than the distributor welcome.
+export async function sendStaffInviteEmail(p: {
+  to: string;
+  name: string;
+  orgName: string;
+  link: string;
+}): Promise<{ sent: boolean; reason?: string }> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM || 'Tasty Food <onboarding@resend.dev>';
+  if (!p.to) return { sent: false, reason: 'no recipient email' };
+  if (!apiKey) {
+    console.log(`[email] RESEND_API_KEY not set — staff invite for ${p.to}: ${p.link}`);
+    return { sent: false, reason: 'RESEND_API_KEY not configured' };
+  }
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#333;line-height:1.55">
+      <div style="background:#0b9444;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
+        <strong style="font-size:17px">${p.orgName}</strong>
+        <div style="font-size:11px;opacity:.9">Distribution Management System</div>
+      </div>
+      <div style="border:1px solid #eee;border-top:none;padding:22px;border-radius:0 0 8px 8px">
+        <h2 style="margin:0 0 8px">You've been added to the team 👋</h2>
+        <p>Hi ${p.name}, you have been given staff access to the <strong>${p.orgName}</strong> Distribution Management System.</p>
+        <p>Set your password to sign in:</p>
+        <p style="text-align:center;margin:20px 0">
+          <a href="${p.link}" style="background:#0b9444;color:#fff;text-decoration:none;padding:11px 22px;border-radius:8px;font-weight:bold;display:inline-block">Set your password</a>
+        </p>
+        <p style="color:#999;font-size:12px">Or paste this link into your browser: ${p.link}</p>
+        <p style="color:#999;font-size:12px">This link expires in 7 days.</p>
+      </div>
+    </div>`;
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: [p.to], subject: `Your ${p.orgName} staff access`, html }),
+    });
+    if (!res.ok) {
+      console.error('[email] Resend error', res.status, await res.text());
+      return { sent: false, reason: `Resend responded ${res.status}` };
+    }
+    return { sent: true };
+  } catch (err: any) {
+    console.error('[email] staff invite send failed', err?.message);
+    return { sent: false, reason: err?.message ?? 'send failed' };
+  }
+}
+
 export async function sendStockRequestEmail(p: {
   to: string;
   poNumber: string;
