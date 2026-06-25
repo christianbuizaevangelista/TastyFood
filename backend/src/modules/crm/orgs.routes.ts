@@ -116,7 +116,8 @@ orgsRouter.get(
 );
 
 const createSchema = z.object({
-  name: z.string().min(1),
+  // Optional — falls back to the contact person or admin name if left blank.
+  name: z.string().optional(),
   type: z.enum(['PROVINCIAL', 'CITY', 'RESELLER']),
   parentId: z.string(),
   // Optional geographic territory to assign this account to.
@@ -162,10 +163,26 @@ orgsRouter.post(
       throw forbidden('You are not authorized to onboard this tier');
     }
 
+    const email = body.admin.email.toLowerCase();
     const existingUser = await prisma.user.findUnique({
-      where: { email: body.admin.email.toLowerCase() },
+      where: { email },
+      include: { org: { select: { archivedAt: true } } },
     });
-    if (existingUser) throw badRequest('A user with that email already exists');
+    if (existingUser) {
+      // If the previous account using this email was deleted (archived), free up
+      // the address by tombstoning the old login, then allow re-registration.
+      if (existingUser.org?.archivedAt) {
+        await prisma.user.update({
+          where: { id: existingUser.id },
+          data: { email: `${email}.deleted.${existingUser.id}`, inviteToken: null },
+        });
+      } else {
+        throw badRequest('A user with that email already exists');
+      }
+    }
+
+    // Business name is optional — fall back to the contact person or admin name.
+    const orgName = (body.name?.trim() || body.contactName?.trim() || body.admin.name.trim());
 
     // If assigning a territory, validate it is vacant and the right level.
     if (body.territoryId) {
@@ -184,7 +201,7 @@ orgsRouter.post(
     const org = await prisma.$transaction(async (tx) => {
       const created = await tx.organization.create({
         data: {
-          name: body.name,
+          name: orgName,
           type: body.type as OrgType,
           parentId: body.parentId,
           discountRate: TIER_DISCOUNT[body.type as OrgType],
@@ -200,7 +217,7 @@ orgsRouter.post(
       await tx.user.create({
         data: {
           name: body.admin.name,
-          email: body.admin.email.toLowerCase(),
+          email,
           passwordHash: wantsInvite ? null : await hashPassword(body.admin.password!),
           role: body.type as any,
           orgId: created.id,
@@ -224,7 +241,7 @@ orgsRouter.post(
     let link: string | null = null;
     if (wantsInvite && inviteToken) {
       link = inviteLink(inviteToken);
-      await sendInviteEmail({ to: body.admin.email.toLowerCase(), name: body.admin.name, orgName: body.name, link });
+      await sendInviteEmail({ to: email, name: body.admin.name, orgName, link });
     }
 
     res.status(201).json({ ...org, inviteLink: link });

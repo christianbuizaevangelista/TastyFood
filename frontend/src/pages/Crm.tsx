@@ -783,8 +783,18 @@ function Onboard({
   });
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [created, setCreated] = useState<{ inviteLink: string | null } | null>(null);
+  const [created, setCreated] = useState<{ inviteLink: string | null; docCount: number } | null>(null);
   const [copied, setCopied] = useState(false);
+  // Documents queued to attach right after the account is created.
+  const [docType, setDocType] = useState('VALID_ID');
+  const [docs, setDocs] = useState<{ type: string; file: File }[]>([]);
+
+  function addDoc(file: File | null) {
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) { setErr('Each file must be 4 MB or smaller.'); return; }
+    setErr(null);
+    setDocs((d) => [...d, { type: docType, file }]);
+  }
 
   // Vacant territories of the level this position occupies, within scope.
   const vacant = useFetch<{ vacant: { id: string; name: string; level: string; parentName: string | null }[] }>(
@@ -806,7 +816,7 @@ function Onboard({
     setBusy(true);
     try {
       const { data } = await api.post('/orgs', {
-        name: form.name,
+        name: form.name || undefined,
         type,
         parentId: form.parentId,
         territoryId: form.territoryId || undefined,
@@ -817,7 +827,21 @@ function Onboard({
         // No password — the admin gets an email invite to set their own.
         admin: { name: form.adminName, email: form.adminEmail },
       });
-      setCreated({ inviteLink: data.inviteLink ?? null });
+      // Upload any queued documents to the new account (best-effort per file).
+      for (const d of docs) {
+        try {
+          await api.post(`/orgs/${data.id}/documents`, {
+            type: d.type,
+            fileName: d.file.name,
+            mimeType: d.file.type || 'application/octet-stream',
+            dataBase64: await fileToDataUrl(d.file),
+          });
+        } catch (e) {
+          // keep going; the owner can re-upload from the account later
+          console.error('doc upload failed', e);
+        }
+      }
+      setCreated({ inviteLink: data.inviteLink ?? null, docCount: docs.length });
     } catch (e) {
       setErr(apiError(e));
     } finally {
@@ -864,8 +888,8 @@ function Onboard({
             )}
           </div>
           <div className="col-span-2">
-            <label className="label">Business name</label>
-            <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <label className="label">Business name <span className="font-normal text-slate-400">(optional)</span></label>
+            <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Leave blank to use the contact/admin name" />
           </div>
           <div>
             <label className="label">Contact name</label>
@@ -893,6 +917,27 @@ function Onboard({
             <label className="label">Admin email</label>
             <input className="input" type="email" value={form.adminEmail} onChange={(e) => setForm({ ...form, adminEmail: e.target.value })} />
           </div>
+
+          <div className="col-span-2 mt-2 border-t border-slate-100 pt-3">
+            <div className="text-xs font-semibold uppercase text-slate-400">Documents <span className="font-normal normal-case text-slate-300">(optional)</span></div>
+            <p className="mb-2 text-xs text-slate-400">Attach Valid ID, Application Form, Agreement, etc. — visible to Tasty Food only.</p>
+            <div className="flex flex-wrap items-end gap-2">
+              <select className="input text-sm" value={docType} onChange={(e) => setDocType(e.target.value)}>
+                {DOC_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+              </select>
+              <input type="file" className="text-xs" onChange={(e) => { addDoc(e.target.files?.[0] ?? null); e.target.value = ''; }} />
+            </div>
+            {docs.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {docs.map((d, i) => (
+                  <div key={i} className="flex items-center justify-between rounded border border-slate-100 px-2 py-1 text-xs">
+                    <span className="truncate">{DOC_TYPES.find((t) => t.key === d.type)?.label}: {d.file.name}</span>
+                    <button type="button" className="text-red-600 hover:underline" onClick={() => setDocs(docs.filter((_, j) => j !== i))}>Remove</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         )}
 
@@ -902,6 +947,7 @@ function Onboard({
             <p className="mt-1 text-xs text-green-700">
               An email invite was sent to {form.adminEmail} so they can set their own password.
               If it doesn't arrive, copy the link below and send it to them.
+              {created.docCount > 0 && ` ${created.docCount} document(s) attached.`}
             </p>
             {created.inviteLink && (
               <div className="mt-3 flex items-center gap-2">
@@ -926,10 +972,10 @@ function Onboard({
               <button className="btn-ghost" onClick={onClose}>Cancel</button>
               <button
                 className="btn-primary"
-                disabled={busy || !form.name || !form.parentId || !form.adminName || !form.adminEmail}
+                disabled={busy || !form.parentId || !form.adminName || !form.adminEmail}
                 onClick={submit}
               >
-                {busy ? 'Creating…' : 'Create account'}
+                {busy ? (docs.length ? 'Creating & uploading…' : 'Creating…') : 'Create account'}
               </button>
             </>
           )}
