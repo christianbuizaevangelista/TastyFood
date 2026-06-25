@@ -88,6 +88,14 @@ enum TerritoryLevel {
   BARANGAY
 }
 
+// Confidential account paperwork the Principal keeps on file per distributor.
+enum OrgDocumentType {
+  VALID_ID
+  AGREEMENT
+  APPLICATION_FORM
+  OTHER
+}
+
 // ---------------------------------------------------------------------------
 // Core entities
 // ---------------------------------------------------------------------------
@@ -147,6 +155,10 @@ model Organization {
   manaPurchases ManaPurchase[]
   manaTxns      ManaTxn[]
   customers     Customer[] @relation("OrgCustomers")
+
+  documents     OrgDocument[]
+  referralsSent     Referral[] @relation("ReferralFrom")
+  referralsReceived Referral[] @relation("ReferralTo")
 
   @@index([parentId])
   @@index([type])
@@ -506,6 +518,43 @@ model ManaTxn {
   createdAt DateTime @default(now())
 
   @@index([orgId])
+}
+
+// Confidential paperwork (Valid ID, signed agreement, application form, …) the
+// Principal uploads against a distributor/reseller account. Visible ONLY to the
+// Principal and its staff — never to the account itself. Stored inline as base64.
+model OrgDocument {
+  id           String   @id @default(cuid())
+  orgId        String
+  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  type         OrgDocumentType @default(OTHER)
+  fileName     String
+  mimeType     String
+  size         Int
+  data         String   // base64-encoded file content
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  @@index([orgId])
+}
+
+// A lead/customer the Principal refers down to a distributor or reseller. The
+// recipient org is notified by email and can see it in their Referrals page.
+model Referral {
+  id          String   @id @default(cuid())
+  fromOrgId   String   // the Principal making the referral
+  fromOrg     Organization @relation("ReferralFrom", fields: [fromOrgId], references: [id])
+  toOrgId     String   // the distributor/reseller the lead is referred to
+  toOrg       Organization @relation("ReferralTo", fields: [toOrgId], references: [id])
+  name        String
+  address     String
+  cpNumber    String
+  note        String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([toOrgId])
+  @@index([fromOrgId])
 }
 
 model KPIRecord {

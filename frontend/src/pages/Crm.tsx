@@ -28,6 +28,133 @@ async function copyToClipboard(text: string) {
   }
 }
 
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error('Could not read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+const DOC_TYPES: { key: string; label: string }[] = [
+  { key: 'VALID_ID', label: 'Valid ID' },
+  { key: 'AGREEMENT', label: 'Agreement' },
+  { key: 'APPLICATION_FORM', label: 'Application Form' },
+  { key: 'OTHER', label: 'Other' },
+];
+
+interface OrgDoc {
+  id: string;
+  type: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
+}
+
+// Confidential paperwork the Principal keeps per account. The account itself
+// never sees this — it's only rendered for Principal users in the CRM.
+function OrgDocuments({ orgId }: { orgId: string }) {
+  const { data, loading, error, refetch } = useFetch<{ documents: OrgDoc[] }>(`/orgs/${orgId}/documents`);
+  const [type, setType] = useState('VALID_ID');
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function upload() {
+    setErr(null);
+    if (!file) return setErr('Choose a file.');
+    if (file.size > 4 * 1024 * 1024) return setErr('File too large (max 4 MB).');
+    setBusy(true);
+    try {
+      await api.post(`/orgs/${orgId}/documents`, {
+        type,
+        fileName: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        dataBase64: await fileToDataUrl(file),
+      });
+      setFile(null);
+      refetch();
+    } catch (e) {
+      setErr(apiError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function view(d: OrgDoc) {
+    setErr(null);
+    try {
+      const res = await api.get(`/orgs/${orgId}/documents/${d.id}`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      setErr(apiError(e));
+    }
+  }
+
+  async function remove(d: OrgDoc) {
+    if (!confirm(`Delete "${d.fileName}"?`)) return;
+    setErr(null);
+    try {
+      await api.delete(`/orgs/${orgId}/documents/${d.id}`);
+      refetch();
+    } catch (e) {
+      setErr(apiError(e));
+    }
+  }
+
+  const labelOf = (t: string) => DOC_TYPES.find((x) => x.key === t)?.label ?? t;
+  const docs = data?.documents ?? [];
+
+  return (
+    <div className="mt-5 border-t border-slate-100 pt-4">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+        Documents <span className="font-normal normal-case text-slate-300">· confidential — visible to Tasty Food only</span>
+      </div>
+      {err && <div className="mb-3"><Alert>{err}</Alert></div>}
+
+      <div className="mb-3 flex flex-wrap items-end gap-2">
+        <div>
+          <label className="label">Type</label>
+          <select className="input text-sm" value={type} onChange={(e) => setType(e.target.value)}>
+            {DOC_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+          </select>
+        </div>
+        <input type="file" className="text-xs" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        <button className="btn-primary text-xs" disabled={busy || !file} onClick={upload}>
+          {busy ? 'Uploading…' : 'Upload'}
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="text-sm text-slate-400">Loading…</div>
+      ) : error ? (
+        <Alert>{error}</Alert>
+      ) : docs.length === 0 ? (
+        <div className="rounded-lg border border-slate-100 p-3 text-sm text-slate-400">No documents uploaded yet.</div>
+      ) : (
+        <div className="space-y-2">
+          {docs.map((d) => (
+            <div key={d.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-100 p-2 text-sm">
+              <div className="min-w-0">
+                <div className="truncate font-medium text-slate-700">{d.fileName}</div>
+                <div className="text-xs text-slate-400">{labelOf(d.type)} · {new Date(d.createdAt).toLocaleDateString()}</div>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                <button className="text-xs font-semibold text-brand-700 hover:underline" onClick={() => view(d)}>View</button>
+                <button className="text-xs font-semibold text-red-600 hover:underline" onClick={() => remove(d)}>Delete</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Crm() {
   const { user } = useAuth();
   const { data, loading, error, refetch } = useFetch<{ orgs: Org[] }>('/orgs?includeSelf=true');
@@ -486,6 +613,8 @@ function EditAccount({
             )}
           </div>
         </div>
+
+        {canManage && <OrgDocuments orgId={org.id} />}
 
         <div className="mt-5 flex justify-end gap-2">
           <button className="btn-ghost" onClick={onClose}>Close</button>

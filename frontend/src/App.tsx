@@ -20,6 +20,7 @@ import Structure from './pages/Structure';
 import Mana from './pages/Mana';
 import Materials from './pages/Materials';
 import Customers from './pages/Customers';
+import Referrals from './pages/Referrals';
 import ResellerSale from './pages/ResellerSale';
 import Users from './pages/Users';
 
@@ -53,6 +54,7 @@ export default function App() {
       <Route path="/materials" element={<Protected path="/materials"><Materials /></Protected>} />
       <Route path="/sell" element={<Protected path="/sell"><ResellerSale /></Protected>} />
       <Route path="/customers" element={<Protected path="/customers"><Customers /></Protected>} />
+      <Route path="/referrals" element={<Protected path="/referrals"><Referrals /></Protected>} />
       <Route path="/users" element={<Protected path="/users"><Users /></Protected>} />
       <Route path="/account" element={<Protected path="/account"><Account /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />

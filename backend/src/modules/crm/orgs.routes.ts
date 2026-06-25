@@ -320,6 +320,94 @@ orgsRouter.get(
   })
 );
 
+// ---------------------------------------------------------------------------
+// Account documents (Valid ID, agreement, application form, …)
+// Confidential: only the Principal and its staff (who have CRM access) may
+// upload/view/delete. The distributor/reseller account itself can NEVER see these.
+// ---------------------------------------------------------------------------
+
+const DOC_MAX_BYTES = 4 * 1024 * 1024; // 4 MB per file
+const docUploadSchema = z.object({
+  type: z.enum(['VALID_ID', 'AGREEMENT', 'APPLICATION_FORM', 'OTHER']).default('OTHER'),
+  fileName: z.string().min(1),
+  mimeType: z.string().min(1),
+  dataBase64: z.string().min(1),
+});
+
+function requirePrincipal(req: any) {
+  if (req.auth.role !== 'PRINCIPAL') throw forbidden('Only the Principal can access account documents');
+}
+
+// GET /orgs/:id/documents — list document metadata (Principal only).
+orgsRouter.get(
+  '/:id/documents',
+  asyncHandler(async (req, res) => {
+    requirePrincipal(req);
+    assertInScope(req, req.params.id);
+    const documents = await prisma.orgDocument.findMany({
+      where: { orgId: req.params.id },
+      select: { id: true, type: true, fileName: true, mimeType: true, size: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json({ documents });
+  })
+);
+
+// POST /orgs/:id/documents — upload a document (Principal only).
+orgsRouter.post(
+  '/:id/documents',
+  asyncHandler(async (req, res) => {
+    requirePrincipal(req);
+    assertInScope(req, req.params.id);
+    const target = await prisma.organization.findUnique({ where: { id: req.params.id } });
+    if (!target) throw notFound('Organization not found');
+    const body = docUploadSchema.parse(req.body);
+    const data = body.dataBase64.replace(/^data:[^;]+;base64,/, '');
+    const size = Math.floor((data.length * 3) / 4);
+    if (size > DOC_MAX_BYTES) throw badRequest('File too large (max 4 MB)');
+    const doc = await prisma.orgDocument.create({
+      data: {
+        orgId: req.params.id,
+        type: body.type,
+        fileName: body.fileName,
+        mimeType: body.mimeType,
+        size,
+        data,
+        uploadedById: req.auth!.sub,
+      },
+      select: { id: true, type: true, fileName: true, mimeType: true, size: true, createdAt: true },
+    });
+    res.status(201).json(doc);
+  })
+);
+
+// GET /orgs/:id/documents/:docId — view/download a document (Principal only).
+orgsRouter.get(
+  '/:id/documents/:docId',
+  asyncHandler(async (req, res) => {
+    requirePrincipal(req);
+    assertInScope(req, req.params.id);
+    const doc = await prisma.orgDocument.findUnique({ where: { id: req.params.docId } });
+    if (!doc || doc.orgId !== req.params.id) throw notFound('Document not found');
+    res.setHeader('Content-Type', doc.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${doc.fileName}"`);
+    res.send(Buffer.from(doc.data, 'base64'));
+  })
+);
+
+// DELETE /orgs/:id/documents/:docId — remove a document (Principal only).
+orgsRouter.delete(
+  '/:id/documents/:docId',
+  asyncHandler(async (req, res) => {
+    requirePrincipal(req);
+    assertInScope(req, req.params.id);
+    const doc = await prisma.orgDocument.findUnique({ where: { id: req.params.docId } });
+    if (!doc || doc.orgId !== req.params.id) throw notFound('Document not found');
+    await prisma.orgDocument.delete({ where: { id: doc.id } });
+    res.json({ ok: true });
+  })
+);
+
 // POST /orgs/:id/activate | /deactivate — membership activation.
 function setActive(active: boolean) {
   return asyncHandler(async (req: any, res: any) => {

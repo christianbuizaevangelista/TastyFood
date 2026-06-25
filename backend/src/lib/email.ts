@@ -243,6 +243,60 @@ export async function sendInviteEmail(p: {
   }
 }
 
+// Notify a distributor/reseller that the Principal referred a new lead to them.
+export async function sendReferralEmail(p: {
+  to: string;
+  toOrgName: string;
+  leadName: string;
+  address: string;
+  cpNumber: string;
+  note?: string | null;
+}): Promise<{ sent: boolean; reason?: string }> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM || 'Tasty Food <onboarding@resend.dev>';
+  if (!p.to) return { sent: false, reason: 'no recipient email' };
+  if (!apiKey) {
+    console.log(`[email] RESEND_API_KEY not set — referral for ${p.to}: ${p.leadName}`);
+    return { sent: false, reason: 'RESEND_API_KEY not configured' };
+  }
+  const noteRow = p.note
+    ? `<tr><td style="padding:6px 0;color:#888;vertical-align:top">Note</td><td style="padding:6px 0">${p.note}</td></tr>`
+    : '';
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#333;line-height:1.55">
+      <div style="background:#0b9444;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
+        <strong style="font-size:16px">Tasty Food Manufacturing Inc.</strong>
+        <div style="font-size:11px;opacity:.9">New Referral</div>
+      </div>
+      <div style="border:1px solid #eee;border-top:none;padding:22px;border-radius:0 0 8px 8px">
+        <h2 style="margin:0 0 8px">📨 You have a new referral</h2>
+        <p>Hi ${p.toOrgName}, Tasty Food has referred a new lead/customer to you. Please reach out to them:</p>
+        <table style="width:100%;font-size:14px;border-collapse:collapse">
+          <tr><td style="padding:6px 0;color:#888;width:120px">Name</td><td style="padding:6px 0;font-weight:bold">${p.leadName}</td></tr>
+          <tr><td style="padding:6px 0;color:#888;vertical-align:top">Address</td><td style="padding:6px 0">${p.address}</td></tr>
+          <tr><td style="padding:6px 0;color:#888">CP Number</td><td style="padding:6px 0">${p.cpNumber}</td></tr>
+          ${noteRow}
+        </table>
+        <p style="margin-top:12px;color:#666">You can also see this in the Referrals page of your dashboard.</p>
+      </div>
+    </div>`;
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: [p.to], subject: `New referral: ${p.leadName}`, html }),
+    });
+    if (!res.ok) {
+      console.error('[email] Resend error', res.status, await res.text());
+      return { sent: false, reason: `Resend responded ${res.status}` };
+    }
+    return { sent: true };
+  } catch (err: any) {
+    console.error('[email] referral send failed', err?.message);
+    return { sent: false, reason: err?.message ?? 'send failed' };
+  }
+}
+
 // Internal staff (Users & Roles) invite — simpler than the distributor welcome.
 export async function sendStaffInviteEmail(p: {
   to: string;

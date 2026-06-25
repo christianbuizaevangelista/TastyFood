@@ -20,6 +20,7 @@ import { manaRouter } from './modules/mana/mana.routes';
 import { usersRouter } from './modules/users/users.routes';
 import { materialsRouter } from './modules/materials/materials.routes';
 import { customersRouter } from './modules/customers/customers.routes';
+import { referralsRouter } from './modules/referrals/referrals.routes';
 
 export function createApp() {
   const app = express();
@@ -47,6 +48,7 @@ export function createApp() {
   app.use('/api/users', usersRouter);
   app.use('/api/materials', materialsRouter);
   app.use('/api/customers', customersRouter);
+  app.use('/api/referrals', referralsRouter);
 
   app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
   app.use(errorHandler);
