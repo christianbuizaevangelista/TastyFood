@@ -195,8 +195,10 @@ export async function sendInviteEmail(p: {
     console.log(`[email] RESEND_API_KEY not set — invite for ${p.to}: ${p.link}`);
     return { sent: false, reason: 'RESEND_API_KEY not configured' };
   }
+  // The handwritten signature image is served by the web app (frontend/public).
+  const origin = (process.env.CLIENT_ORIGIN || 'https://tasty-food-manufacturing-inc.vercel.app').replace(/\/$/, '');
+  const sigUrl = `${origin}/signature.png`;
   const html = `
-    <style>@import url('https://fonts.googleapis.com/css2?family=Sacramento&display=swap');</style>
     <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#333;line-height:1.55">
       <div style="background:#0b9444;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
         <strong style="font-size:17px">Tasty Food Manufacturing Inc.</strong>
@@ -220,7 +222,7 @@ export async function sendInviteEmail(p: {
         <p>Should you have any questions, please do not hesitate to reach out. We are here to ensure your partnership with us is a success.</p>
         <p>Once again, welcome aboard. We look forward to a successful and long-lasting relationship.</p>
         <p style="margin:18px 0 0">Regards,</p>
-        <div style="font-family:'Sacramento','Brush Script MT','Segoe Script',cursive;font-size:36px;color:#000000;line-height:1;margin:6px 0 2px">Christian Evangelista</div>
+        <img src="${sigUrl}" alt="Christian Evangelista" width="240" style="display:block;height:auto;max-width:240px;margin:4px 0 2px" />
         <div style="font-weight:bold;color:#222">Christian Evangelista</div>
         <div style="color:#555;font-size:13px">President and CEO</div>
         <div style="color:#555;font-size:13px">Tasty Food Manufacturing Inc.</div>
