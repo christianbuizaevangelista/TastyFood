@@ -196,25 +196,41 @@ export async function sendInviteEmail(p: {
     return { sent: false, reason: 'RESEND_API_KEY not configured' };
   }
   const html = `
-    <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto">
-      <div style="background:#e8521d;color:#fff;padding:14px 18px;border-radius:8px 8px 0 0">
-        <strong style="font-size:16px">Juan Palaman · Tasty Food Mfg. Inc.</strong>
+    <style>@import url('https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap');</style>
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#333;line-height:1.55">
+      <div style="background:#0b9444;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
+        <strong style="font-size:17px">Tasty Food Manufacturing Inc.</strong>
+        <div style="font-size:11px;opacity:.9">Distribution Management System</div>
       </div>
-      <div style="border:1px solid #eee;border-top:none;padding:18px;border-radius:0 0 8px 8px">
-        <h2 style="margin:0 0 8px">You've been invited 🎉</h2>
-        <p>Hi ${p.name}, ${p.orgName} has created an account for you on the distribution portal.</p>
-        <p>Click below to set your password and get started:</p>
-        <p style="text-align:center;margin:18px 0">
-          <a href="${p.link}" style="background:#e8521d;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:bold">Set your password</a>
+      <div style="border:1px solid #eee;border-top:none;padding:22px;border-radius:0 0 8px 8px">
+        <p style="margin:0 0 12px"><strong>Good day${p.name ? ', ' + p.name : ''}!</strong></p>
+        <p>On behalf of our entire team, we would like to extend a heartfelt welcome to you as a valued member of our growing network of <strong>Distributors and Resellers</strong>.</p>
+        <p>We are truly delighted to have you on board. Your partnership marks an important step toward our shared growth, and we are committed to supporting you at every stage of your journey with our brand.</p>
+        <p style="margin-bottom:6px">Here is some key information as we begin our partnership:</p>
+        <ul style="margin:0 0 12px;padding-left:18px">
+          <li style="margin-bottom:4px"><strong>Dedicated Support</strong> — A dedicated team is ready to assist you with inquiries, orders, and consultations.</li>
+          <li style="margin-bottom:4px"><strong>Product Resources</strong> — We will provide you with a complete product catalog, pricing, and marketing materials.</li>
+          <li><strong>Onboarding</strong> — We will schedule a brief orientation to ensure a smooth start.</li>
+        </ul>
+        <p>To get started, please set your account password:</p>
+        <p style="text-align:center;margin:20px 0">
+          <a href="${p.link}" style="background:#0b9444;color:#fff;text-decoration:none;padding:11px 22px;border-radius:8px;font-weight:bold;display:inline-block">Set your password</a>
         </p>
-        <p style="color:#888;font-size:12px">Or paste this link: ${p.link}</p>
+        <p style="color:#999;font-size:12px;margin-bottom:18px">Or paste this link into your browser: ${p.link}</p>
+        <p>Should you have any questions, please do not hesitate to reach out. We are here to ensure your partnership with us is a success.</p>
+        <p>Once again, welcome aboard. We look forward to a successful and long-lasting relationship.</p>
+        <p style="margin:18px 0 0">Regards,</p>
+        <div style="font-family:'Great Vibes','Brush Script MT','Segoe Script',cursive;font-size:34px;color:#0b9444;line-height:1;margin:6px 0 2px">Christian Evangelista</div>
+        <div style="font-weight:bold;color:#222">Christian Evangelista</div>
+        <div style="color:#555;font-size:13px">President and CEO</div>
+        <div style="color:#555;font-size:13px">Tasty Food Manufacturing Inc.</div>
       </div>
     </div>`;
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to: [p.to], subject: `You're invited to ${p.orgName}`, html }),
+      body: JSON.stringify({ from, to: [p.to], subject: 'Welcome to Tasty Food Manufacturing Inc. 🎉', html }),
     });
     if (!res.ok) {
       console.error('[email] Resend error', res.status, await res.text());
