@@ -21,6 +21,10 @@ export default function Layout({ children }: { children: ReactNode }) {
   }
   if (!user) return null;
   const items = dmsNavForUser(user);
+  // Users & Roles and Account Settings sit at the bottom, outside the modules folder.
+  const BOTTOM_PATHS = ['/users', '/account'];
+  const folderItems = items.filter((i) => !BOTTOM_PATHS.includes(i.to));
+  const bottomItems = items.filter((i) => BOTTOM_PATHS.includes(i.to));
 
   return (
     <div className="flex min-h-screen">
@@ -47,7 +51,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           </button>
           {dmsOpen && (
             <div className="ml-3 space-y-1 border-l border-white/10 pl-2">
-              {items.map((item) => {
+              {folderItems.map((item) => {
                 const active = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to);
                 return (
                   <NavLink
@@ -65,6 +69,26 @@ export default function Layout({ children }: { children: ReactNode }) {
             </div>
           )}
         </nav>
+
+        {bottomItems.length > 0 && (
+          <div className="space-y-1 border-t border-white/10 px-3 py-2">
+            {bottomItems.map((item) => {
+              const active = location.pathname.startsWith(item.to);
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                    active ? 'bg-white/15 text-white' : 'text-brand-100 hover:bg-white/10'
+                  }`}
+                >
+                  <span>{item.icon}</span>
+                  {item.label}
+                </NavLink>
+              );
+            })}
+          </div>
+        )}
 
         {canAccessFinance(user) && (
           <div className="px-3 pb-2">

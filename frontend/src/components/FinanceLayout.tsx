@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { ReactNode } from 'react';
+import { ReactNode, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { hasDmsAccess } from '../lib/nav';
 
@@ -12,6 +12,7 @@ const FINANCE_NAV = [
 export default function FinanceLayout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const [open, setOpen] = useState(true);
   if (!user) return null;
   const showBackToDms = hasDmsAccess(user);
 
@@ -24,27 +25,38 @@ export default function FinanceLayout({ children }: { children: ReactNode }) {
             <img src="/tasty-food-splash.png" alt="Tasty Food" className="h-full w-full object-contain" />
           </div>
           <div className="leading-tight">
-            <div className="text-sm font-bold">Finance &amp; Accounting</div>
-            <div className="text-[11px] text-slate-400">Tasty Food Manufacturing Inc.</div>
+            <div className="text-sm font-bold">Tasty Food Manufacturing Inc.</div>
           </div>
         </div>
 
         <nav className="flex-1 space-y-1 px-3 py-2">
-          {FINANCE_NAV.map((item) => {
-            const active = item.exact ? location.pathname === item.to : location.pathname.startsWith(item.to);
-            return (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
-                  active ? 'bg-emerald-600 text-white' : 'text-slate-300 hover:bg-white/10'
-                }`}
-              >
-                <span>{item.icon}</span>
-                {item.label}
-              </NavLink>
-            );
-          })}
+          <button
+            onClick={() => setOpen((v) => !v)}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-white hover:bg-white/10"
+          >
+            <span>{open ? '📂' : '📁'}</span>
+            <span className="flex-1 text-left">Finance &amp; Accounting</span>
+            <span className="text-xs text-slate-400">{open ? '▾' : '▸'}</span>
+          </button>
+          {open && (
+            <div className="ml-3 space-y-1 border-l border-white/10 pl-2">
+              {FINANCE_NAV.map((item) => {
+                const active = item.exact ? location.pathname === item.to : location.pathname.startsWith(item.to);
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                      active ? 'bg-emerald-600 text-white' : 'text-slate-300 hover:bg-white/10'
+                    }`}
+                  >
+                    <span>{item.icon}</span>
+                    {item.label}
+                  </NavLink>
+                );
+              })}
+            </div>
+          )}
         </nav>
 
         {showBackToDms && (
