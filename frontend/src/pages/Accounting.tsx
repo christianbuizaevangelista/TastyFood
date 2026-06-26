@@ -211,7 +211,7 @@ function TrialBalance({ d }: { d: any }) {
 export function Journal() {
   const entries = useFetch<{ entries: any[] }>('/accounting/entries');
   const accounts = useFetch<{ accounts: Account[] }>('/accounting/accounts');
-  const [modal, setModal] = useState<null | 'income' | 'expense' | 'entry'>(null);
+  const [modal, setModal] = useState<null | 'income' | 'expense' | 'entry' | 'delivery'>(null);
   const [err, setErr] = useState<string | null>(null);
 
   async function del(id: string) {
@@ -231,6 +231,7 @@ export function Journal() {
       <div className="mb-4 flex flex-wrap gap-2">
         <button className="btn-primary" onClick={() => setModal('income')}>+ Record Income</button>
         <button className="btn-primary" onClick={() => setModal('expense')}>+ Record Expense</button>
+        <button className="btn-primary" onClick={() => setModal('delivery')}>+ Distributor Delivery</button>
         <button className="btn-ghost" onClick={() => setModal('entry')}>+ Journal Entry</button>
       </div>
       {err && <div className="mb-3"><Alert>{err}</Alert></div>}
@@ -251,6 +252,12 @@ export function Journal() {
                   <div>
                     <span className="font-mono text-xs text-slate-500">{e.number}</span>
                     <span className="ml-2 text-xs text-slate-400">{new Date(e.date).toLocaleDateString()}</span>
+                    {e.distributorOrg && (
+                      <div className="text-sm font-medium text-slate-700">
+                        🚚 {e.distributorOrg.name}
+                        {e.deliveryReceiptNo && <span className="ml-2 text-xs font-normal text-slate-400">DR #{e.deliveryReceiptNo}</span>}
+                      </div>
+                    )}
                     {e.memo && <div className="text-sm text-slate-700">{e.memo}</div>}
                   </div>
                   <div className="flex items-center gap-3">
@@ -269,6 +276,25 @@ export function Journal() {
                     ))}
                   </tbody>
                 </table>
+                {e.items?.length > 0 && (
+                  <table className="mt-2 w-full text-xs">
+                    <thead><tr className="text-left text-slate-400">
+                      <th className="font-normal">SKU</th><th className="font-normal">Item</th>
+                      <th className="font-normal text-right">Qty</th><th className="font-normal text-right">Unit</th><th className="font-normal text-right">Amount</th>
+                    </tr></thead>
+                    <tbody>
+                      {e.items.map((it: any) => (
+                        <tr key={it.id} className="text-slate-600">
+                          <td className="py-0.5 font-mono">{it.sku}</td>
+                          <td className="py-0.5">{it.name}</td>
+                          <td className="py-0.5 text-right">{it.quantity}</td>
+                          <td className="py-0.5 text-right">{peso(it.unitPrice)}</td>
+                          <td className="py-0.5 text-right">{peso(it.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
                 {e.attachments?.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-2 border-t border-slate-50 pt-2">
                     {e.attachments.map((a: any) => (
@@ -296,6 +322,9 @@ export function Journal() {
       )}
       {modal === 'entry' && (
         <ManualEntry accounts={accounts.data?.accounts ?? []} onClose={() => setModal(null)} onSaved={() => { setModal(null); entries.refetch(); }} />
+      )}
+      {modal === 'delivery' && (
+        <DeliveryEntry accounts={accounts.data?.accounts ?? []} onClose={() => setModal(null)} onSaved={() => { setModal(null); entries.refetch(); }} />
       )}
     </div>
   );
@@ -458,6 +487,150 @@ function ManualEntry({ accounts, onClose, onSaved }: { accounts: Account[]; onCl
       <div className="mt-4 flex justify-end gap-2">
         <button className="btn-ghost" onClick={onClose}>Cancel</button>
         <button className="btn-primary" disabled={busy || !balanced} onClick={save}>{busy ? 'Saving…' : 'Post entry'}</button>
+      </div>
+    </Modal>
+  );
+}
+
+// Distributor delivery on account: Dr Accounts Receivable, Cr Sales Revenue,
+// with a Delivery Receipt number and per-SKU items.
+function DeliveryEntry({ accounts, onClose, onSaved }: { accounts: Account[]; onClose: () => void; onSaved: () => void }) {
+  const distributors = useFetch<{ distributors: { id: string; name: string; type: string }[] }>('/accounting/distributors');
+  const products = useFetch<{ products: { id: string; sku: string; name: string; srp: number }[] }>('/accounting/products');
+  const active = accounts.filter((a) => a.isActive);
+  const arAccounts = active.filter((a) => a.type === 'ASSET');
+  const revAccounts = active.filter((a) => a.type === 'INCOME');
+  const arDefault = arAccounts.find((a) => a.code === '1100' || /receivable/i.test(a.name))?.id ?? arAccounts[0]?.id ?? '';
+  const revDefault = revAccounts.find((a) => a.code === '4000' || /sales/i.test(a.name))?.id ?? revAccounts[0]?.id ?? '';
+
+  const [date, setDate] = useState(today());
+  const [distributorId, setDistributorId] = useState('');
+  const [drNo, setDrNo] = useState('');
+  const [arId, setArId] = useState('');
+  const [revId, setRevId] = useState('');
+  const [memo, setMemo] = useState('');
+  const [items, setItems] = useState([{ productId: '', sku: '', name: '', quantity: '1', unitPrice: '' }]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Defaults populate once the data is loaded.
+  if (!arId && arDefault) setArId(arDefault);
+  if (!revId && revDefault) setRevId(revDefault);
+
+  function pickProduct(i: number, productId: string) {
+    const p = products.data?.products.find((x) => x.id === productId);
+    setItems(items.map((it, j) => (j === i ? { ...it, productId, sku: p?.sku ?? '', name: p?.name ?? '', unitPrice: it.unitPrice || String(p?.srp ?? '') } : it)));
+  }
+  const setItem = (i: number, k: 'quantity' | 'unitPrice', v: string) =>
+    setItems(items.map((it, j) => (j === i ? { ...it, [k]: v } : it)));
+  const lineAmount = (it: typeof items[number]) => (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0);
+  const total = items.reduce((s, it) => s + lineAmount(it), 0);
+
+  async function save() {
+    setErr(null);
+    if (!distributorId) return setErr('Select a distributor.');
+    if (!arId || !revId) return setErr('Pick the Accounts Receivable and Revenue accounts.');
+    const valid = items.filter((it) => it.productId && Number(it.quantity) > 0);
+    if (!valid.length) return setErr('Add at least one item with a quantity.');
+    if (total <= 0) return setErr('Total must be greater than zero.');
+    setBusy(true);
+    try {
+      const distName = distributors.data?.distributors.find((d) => d.id === distributorId)?.name ?? '';
+      await api.post('/accounting/entries', {
+        date,
+        memo: memo || `Delivery to ${distName}${drNo ? ` · DR #${drNo}` : ''}`,
+        reference: drNo || undefined,
+        distributorOrgId: distributorId,
+        deliveryReceiptNo: drNo || undefined,
+        lines: [
+          { accountId: arId, debit: total },
+          { accountId: revId, credit: total },
+        ],
+        items: valid.map((it) => ({
+          productId: it.productId,
+          sku: it.sku,
+          name: it.name,
+          quantity: Number(it.quantity),
+          unitPrice: Number(it.unitPrice) || 0,
+          amount: lineAmount(it),
+        })),
+      });
+      onSaved();
+    } catch (e) {
+      setErr(apiError(e));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Distributor Delivery (Accounts Receivable)" onClose={onClose} wide>
+      {err && <div className="mb-3"><Alert>{err}</Alert></div>}
+      <div className="mb-3 grid grid-cols-2 gap-3">
+        <div>
+          <label className="label">Date</label>
+          <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} />
+        </div>
+        <div>
+          <label className="label">Delivery Receipt No.</label>
+          <input className="input" value={drNo} onChange={(e) => setDrNo(e.target.value)} placeholder="DR-0001" />
+        </div>
+        <div className="col-span-2">
+          <label className="label">Distributor</label>
+          <select className="input" value={distributorId} onChange={(e) => setDistributorId(e.target.value)}>
+            <option value="">{distributors.loading ? 'Loading…' : 'Select a distributor…'}</option>
+            {(distributors.data?.distributors ?? []).map((d) => (
+              <option key={d.id} value={d.id}>{d.name} ({d.type})</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label">Debit — Accounts Receivable</label>
+          <select className="input" value={arId} onChange={(e) => setArId(e.target.value)}>
+            {arAccounts.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label">Credit — Revenue</label>
+          <select className="input" value={revId} onChange={(e) => setRevId(e.target.value)}>
+            {revAccounts.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <label className="label">Items (per SKU)</label>
+      <table className="w-full text-sm">
+        <thead><tr className="text-left text-xs text-slate-400">
+          <th className="pb-1">Product</th><th className="pb-1 text-right">Qty</th><th className="pb-1 text-right">Unit price</th><th className="pb-1 text-right">Amount</th><th></th>
+        </tr></thead>
+        <tbody>
+          {items.map((it, i) => (
+            <tr key={i}>
+              <td className="py-1 pr-2">
+                <select className="input" value={it.productId} onChange={(e) => pickProduct(i, e.target.value)}>
+                  <option value="">{products.loading ? 'Loading…' : 'Select SKU…'}</option>
+                  {(products.data?.products ?? []).map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.name}</option>)}
+                </select>
+              </td>
+              <td className="py-1 w-20"><input type="number" min={1} className="input text-right" value={it.quantity} onChange={(e) => setItem(i, 'quantity', e.target.value)} /></td>
+              <td className="py-1 w-28 pl-2"><input type="number" min={0} step="0.01" className="input text-right" value={it.unitPrice} onChange={(e) => setItem(i, 'unitPrice', e.target.value)} /></td>
+              <td className="py-1 pl-2 text-right">{peso(lineAmount(it))}</td>
+              <td className="pl-2">{items.length > 1 && <button className="text-xs text-red-600" onClick={() => setItems(items.filter((_, j) => j !== i))}>✕</button>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <button className="mt-2 text-xs font-semibold text-brand-700 hover:underline" onClick={() => setItems([...items, { productId: '', sku: '', name: '', quantity: '1', unitPrice: '' }])}>+ Add item</button>
+
+      <div className="mt-3">
+        <label className="label">Memo (optional)</label>
+        <input className="input" value={memo} onChange={(e) => setMemo(e.target.value)} />
+      </div>
+      <div className="mt-3 flex items-center justify-end gap-4 text-sm">
+        <span>Total (Accounts Receivable): <strong>{peso(total)}</strong></span>
+      </div>
+      <div className="mt-4 flex justify-end gap-2">
+        <button className="btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn-primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Post delivery'}</button>
       </div>
     </Modal>
   );

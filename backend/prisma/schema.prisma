@@ -178,6 +178,7 @@ model Organization {
   documents     OrgDocument[]
   referralsSent     Referral[] @relation("ReferralFrom")
   referralsReceived Referral[] @relation("ReferralTo")
+  journalEntries    JournalEntry[] @relation("EntryDistributor")
 
   @@index([parentId])
   @@index([type])
@@ -604,10 +605,31 @@ model JournalEntry {
   createdById String
   createdAt   DateTime @default(now())
 
+  // Optional: ties an entry to a distributor delivery (A/R sale on account).
+  distributorOrgId  String?
+  distributorOrg    Organization? @relation("EntryDistributor", fields: [distributorOrgId], references: [id])
+  deliveryReceiptNo String?
+
   lines       JournalLine[]
   attachments JournalAttachment[]
+  items       JournalItem[]
 
   @@index([date])
+}
+
+// Per-SKU line of a distributor delivery recorded in a journal entry.
+model JournalItem {
+  id        String  @id @default(cuid())
+  entryId   String
+  entry     JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  productId String?
+  sku       String
+  name      String
+  quantity  Int
+  unitPrice Float
+  amount    Float
+
+  @@index([entryId])
 }
 
 model JournalLine {

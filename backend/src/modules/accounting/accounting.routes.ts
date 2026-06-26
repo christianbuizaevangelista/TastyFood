@@ -105,6 +105,32 @@ accountingRouter.patch(
   })
 );
 
+// GET /accounting/distributors — accounts that can owe receivables (for A/R deliveries).
+accountingRouter.get(
+  '/distributors',
+  asyncHandler(async (_req, res) => {
+    const distributors = await prisma.organization.findMany({
+      where: { type: { not: 'PRINCIPAL' }, archivedAt: null },
+      select: { id: true, name: true, type: true },
+      orderBy: [{ type: 'asc' }, { name: 'asc' }],
+    });
+    res.json({ distributors });
+  })
+);
+
+// GET /accounting/products — active products (for per-SKU delivery items).
+accountingRouter.get(
+  '/products',
+  asyncHandler(async (_req, res) => {
+    const products = await prisma.product.findMany({
+      where: { isActive: true },
+      select: { id: true, sku: true, name: true, srp: true },
+      orderBy: { name: 'asc' },
+    });
+    res.json({ products });
+  })
+);
+
 // =============================================================================
 // Journal Entries
 // =============================================================================
@@ -124,6 +150,8 @@ accountingRouter.get(
       include: {
         lines: { include: { account: { select: { code: true, name: true, type: true } } } },
         attachments: { select: { id: true, fileName: true, mimeType: true, size: true } },
+        items: true,
+        distributorOrg: { select: { id: true, name: true, type: true } },
       },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
       take: 300,
@@ -143,12 +171,23 @@ const attachmentSchema = z.object({
   mimeType: z.string().min(1),
   dataBase64: z.string().min(1),
 });
+const itemSchema = z.object({
+  productId: z.string().optional(),
+  sku: z.string().min(1),
+  name: z.string().min(1),
+  quantity: z.number().int().positive(),
+  unitPrice: z.number().min(0),
+  amount: z.number().min(0),
+});
 const entrySchema = z.object({
   date: z.coerce.date(),
   memo: z.string().max(300).optional(),
   reference: z.string().max(120).optional(),
   lines: z.array(lineSchema).min(2),
   attachments: z.array(attachmentSchema).max(5).optional(),
+  distributorOrgId: z.string().optional(),
+  deliveryReceiptNo: z.string().max(80).optional(),
+  items: z.array(itemSchema).optional(),
 });
 
 const ATTACH_MAX_BYTES = 4 * 1024 * 1024; // 4 MB per receipt
@@ -186,6 +225,14 @@ accountingRouter.post(
     });
 
     const number = await nextEntryNumber();
+    const itemsData = (body.items ?? []).map((it) => ({
+      productId: it.productId ?? null,
+      sku: it.sku,
+      name: it.name,
+      quantity: it.quantity,
+      unitPrice: round2(it.unitPrice),
+      amount: round2(it.amount),
+    }));
     const entry = await prisma.journalEntry.create({
       data: {
         number,
@@ -193,12 +240,17 @@ accountingRouter.post(
         memo: body.memo ?? null,
         reference: body.reference ?? null,
         createdById: req.auth!.sub,
+        distributorOrgId: body.distributorOrgId ?? null,
+        deliveryReceiptNo: body.deliveryReceiptNo ?? null,
         lines: { create: lines },
         ...(attachData.length ? { attachments: { create: attachData } } : {}),
+        ...(itemsData.length ? { items: { create: itemsData } } : {}),
       },
       include: {
         lines: { include: { account: { select: { code: true, name: true, type: true } } } },
         attachments: { select: { id: true, fileName: true, mimeType: true, size: true } },
+        items: true,
+        distributorOrg: { select: { id: true, name: true, type: true } },
       },
     });
     res.status(201).json(entry);
