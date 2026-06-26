@@ -56,11 +56,11 @@ export default function Layout({ children }: { children: ReactNode }) {
         {canAccessFinance(user) && (
           <div className="px-3 pb-2">
             <NavLink
-              to="/finance"
+              to="/home"
               className="flex items-center gap-3 rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-sm font-medium text-white hover:bg-white/15"
             >
-              <span>📒</span>
-              <span className="flex-1">Finance &amp; Accounting</span>
+              <span>⊞</span>
+              <span className="flex-1">Switch app</span>
               <span className="text-brand-200">↗</span>
             </NavLink>
           </div>

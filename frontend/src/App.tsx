@@ -8,6 +8,7 @@ import { Spinner } from './components/ui';
 
 import Login from './pages/Login';
 import SetPassword from './pages/SetPassword';
+import Home from './pages/Home';
 import Dashboard from './pages/Dashboard';
 import Inventory from './pages/Inventory';
 import PurchaseOrders from './pages/PurchaseOrders';
@@ -52,6 +53,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/set-password" element={<SetPassword />} />
+      <Route path="/home" element={<Home />} />
       <Route path="/" element={<Protected path="/"><Dashboard /></Protected>} />
       <Route path="/inventory" element={<Protected path="/inventory"><Inventory /></Protected>} />
       <Route path="/purchase-orders" element={<Protected path="/purchase-orders"><PurchaseOrders /></Protected>} />

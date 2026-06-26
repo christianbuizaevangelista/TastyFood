@@ -61,9 +61,15 @@ export function canAccessFinance(user: Pick<AuthUser, 'role' | 'isOwner' | 'perm
   return user.role === 'PRINCIPAL' && (user.isOwner || (user.permissions ?? []).includes('accounting'));
 }
 
-// Does the user have any Distribution (non-finance) module to go back to?
+// Does the user have a real Distribution module (beyond just Account settings)?
 export function hasDmsAccess(user: Pick<AuthUser, 'role' | 'isOwner' | 'permissions'>): boolean {
-  return dmsNavForUser(user).length > 0;
+  return dmsNavForUser(user).some((n) => n.to !== '/account');
+}
+
+// The first Distribution page to open when entering the DMS workspace.
+export function firstDmsPath(user: Pick<AuthUser, 'role' | 'isOwner' | 'permissions'>): string {
+  const items = dmsNavForUser(user);
+  return (items.find((n) => n.to !== '/account') ?? items[0])?.to ?? '/account';
 }
 
 // Can the user reach a given route path? (used to guard routes)

@@ -50,11 +50,12 @@ export default function FinanceLayout({ children }: { children: ReactNode }) {
         {showBackToDms && (
           <div className="px-3 pb-2">
             <NavLink
-              to="/"
+              to="/home"
               className="flex items-center gap-3 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm font-medium text-white hover:bg-white/15"
             >
-              <span>↩</span>
-              <span className="flex-1">Distribution System</span>
+              <span>⊞</span>
+              <span className="flex-1">Switch app</span>
+              <span className="text-slate-400">↗</span>
             </NavLink>
           </div>
         )}
