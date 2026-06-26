@@ -4,6 +4,7 @@ import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
 import { requirePermission } from '../../middleware/rbac';
 import { computeOrgKpis, parseWindow } from './kpi.service';
+import { excludeArchived } from '../../lib/scope';
 
 export const kpiRouter = Router();
 kpiRouter.use(authenticate);
@@ -17,7 +18,8 @@ kpiRouter.get(
     const { from, to } = parseWindow(req.query);
     const tier = req.query.tier as string | undefined;
 
-    let orgIds = req.scopeOrgIds!.filter((id) => id !== req.auth!.orgId); // downstream only
+    // Downstream only, excluding deleted (archived) accounts.
+    let orgIds = await excludeArchived(req.scopeOrgIds!.filter((id) => id !== req.auth!.orgId));
     if (tier) {
       const tierOrgs = await prisma.organization.findMany({
         where: { id: { in: orgIds }, type: tier as any },

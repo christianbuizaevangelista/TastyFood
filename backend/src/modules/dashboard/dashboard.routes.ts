@@ -3,6 +3,7 @@ import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
 import { computeOrgKpis, parseWindow } from '../kpi/kpi.service';
+import { excludeArchived } from '../../lib/scope';
 
 export const dashboardRouter = Router();
 dashboardRouter.use(authenticate);
@@ -18,6 +19,8 @@ dashboardRouter.get(
     const scope = req.scopeOrgIds!;
     const myOrgId = req.auth!.orgId;
     const { from, to } = parseWindow(req.query);
+    // Deleted (archived) accounts are dropped from rankings/top performers.
+    const downstreamIds = await excludeArchived(scope.filter((id) => id !== myOrgId));
 
     // Current-month and previous-month boundaries (for the daily trend).
     const now = new Date();
@@ -56,11 +59,7 @@ dashboardRouter.get(
           },
           select: { total: true, createdAt: true },
         }),
-        computeOrgKpis(
-          scope.filter((id) => id !== myOrgId),
-          from,
-          to
-        ),
+        computeOrgKpis(downstreamIds, from, to),
         prisma.organization.findUnique({ where: { id: myOrgId }, select: { salesTarget: true } }),
       ]);
 

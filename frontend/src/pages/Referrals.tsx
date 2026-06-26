@@ -1,10 +1,8 @@
 import { useState } from 'react';
 import { api, apiError } from '../api/client';
-import { useAuth } from '../auth/AuthContext';
 import { useFetch } from '../lib/useFetch';
-import { PageHeader, Spinner, Alert, EmptyState } from '../components/ui';
+import { PageHeader, Spinner, Alert, EmptyState, Badge } from '../components/ui';
 import { dateTime } from '../lib/format';
-import { Org } from '../types';
 
 interface Referral {
   id: string;
@@ -13,32 +11,31 @@ interface Referral {
   cpNumber: string;
   note?: string | null;
   createdAt: string;
+  direction: 'sent' | 'received';
   toOrg?: { id: string; name: string; type: string };
-  fromOrg?: { id: string; name: string };
+  fromOrg?: { id: string; name: string; type: string };
+}
+
+interface Recipient {
+  id: string;
+  name: string;
+  contactName?: string | null;
+  type: string;
 }
 
 export default function Referrals() {
-  const { user } = useAuth();
-  const isPrincipal = user!.role === 'PRINCIPAL';
-  const { data, loading, error, refetch } = useFetch<{ referrals: Referral[] }>('/referrals');
+  const { data, loading, error, refetch } = useFetch<{ referrals: Referral[]; canRefer: boolean }>('/referrals');
   const [showNew, setShowNew] = useState(false);
 
   const referrals = data?.referrals ?? [];
+  const canRefer = data?.canRefer ?? false;
 
   return (
     <div>
       <PageHeader
         title="Referrals"
-        subtitle={
-          isPrincipal
-            ? 'Refer leads/customers to your distributors and resellers'
-            : 'Leads and customers referred to you by Tasty Food'
-        }
-        action={
-          isPrincipal ? (
-            <button className="btn-primary" onClick={() => setShowNew(true)}>+ New referral</button>
-          ) : null
-        }
+        subtitle="Leads and customers referred between you and your network"
+        action={canRefer ? <button className="btn-primary" onClick={() => setShowNew(true)}>+ New referral</button> : null}
       />
 
       {loading ? (
@@ -46,9 +43,7 @@ export default function Referrals() {
       ) : error ? (
         <Alert>{error}</Alert>
       ) : referrals.length === 0 ? (
-        <EmptyState>
-          {isPrincipal ? 'No referrals sent yet.' : 'No referrals yet. New leads from Tasty Food will appear here.'}
-        </EmptyState>
+        <EmptyState>No referrals yet.</EmptyState>
       ) : (
         <div className="space-y-2">
           {referrals.map((r) => (
@@ -61,8 +56,14 @@ export default function Referrals() {
                   {r.note && <div className="mt-1 text-sm text-slate-600">📝 {r.note}</div>}
                 </div>
                 <div className="shrink-0 text-right text-xs text-slate-400">
-                  {isPrincipal && r.toOrg && (
-                    <div className="mb-1 font-semibold text-brand-700">→ {r.toOrg.name}</div>
+                  {r.direction === 'sent' ? (
+                    <div className="mb-1">
+                      <Badge value="SENT" /> <span className="font-semibold text-brand-700">→ {r.toOrg?.name}</span>
+                    </div>
+                  ) : (
+                    <div className="mb-1">
+                      <Badge value="RECEIVED" /> <span className="font-semibold text-slate-600">from {r.fromOrg?.name}</span>
+                    </div>
                   )}
                   {dateTime(r.createdAt)}
                 </div>
@@ -86,7 +87,7 @@ export default function Referrals() {
 }
 
 function NewReferral({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const orgs = useFetch<{ orgs: Org[] }>('/orgs');
+  const recipients = useFetch<{ recipients: Recipient[] }>('/referrals/recipients');
   const [form, setForm] = useState({ toOrgId: '', name: '', address: '', cpNumber: '', note: '' });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -140,13 +141,16 @@ function NewReferral({ onClose, onCreated }: { onClose: () => void; onCreated: (
               <div>
                 <label className="label">Refer to</label>
                 <select className="input" value={form.toOrgId} onChange={set('toOrgId')}>
-                  <option value="">{orgs.loading ? 'Loading…' : 'Select an account…'}</option>
-                  {(orgs.data?.orgs ?? []).map((o) => (
+                  <option value="">{recipients.loading ? 'Loading…' : 'Select an account…'}</option>
+                  {(recipients.data?.recipients ?? []).map((o) => (
                     <option key={o.id} value={o.id}>
                       {o.contactName || o.name} ({o.type})
                     </option>
                   ))}
                 </select>
+                {!recipients.loading && (recipients.data?.recipients.length ?? 0) === 0 && (
+                  <p className="mt-1 text-xs text-amber-600">No accounts available to refer to yet.</p>
+                )}
               </div>
               <div>
                 <label className="label">Name</label>
