@@ -30,6 +30,7 @@ export const PERMISSIONS = [
   'materials',
   'customers',
   'referrals',
+  'accounting',
 ] as const;
 
 function inviteLink(token: string) {

@@ -31,6 +31,7 @@ export const NAV: NavItem[] = [
   { to: '/customers', label: 'Customers', icon: '👥', roles: ALL, perm: 'customers' },
   { to: '/referrals', label: 'Referrals', icon: '📨', roles: ALL, perm: 'referrals' },
   { to: '/products', label: 'Products', icon: '🏷️', roles: ['PRINCIPAL'], perm: 'products' },
+  { to: '/accounting', label: 'Accounting', icon: '📒', roles: ['PRINCIPAL'], perm: 'accounting' },
   { to: '/materials', label: 'Downloadables', icon: '📥', roles: UP, perm: 'materials' },
   { to: '/users', label: 'Users & Roles', icon: '🔑', roles: ['PRINCIPAL'], ownerOnly: true },
   { to: '/account', label: 'Account Settings', icon: '👤', roles: ALL },

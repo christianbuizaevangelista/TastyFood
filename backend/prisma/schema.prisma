@@ -97,6 +97,25 @@ enum OrgDocumentType {
 }
 
 // ---------------------------------------------------------------------------
+// Accounting (double-entry) — finance department only, separate from the DMS.
+// ---------------------------------------------------------------------------
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+// How movements in a (non-cash) account are classified on the Cash Flow Statement.
+enum CashflowSection {
+  OPERATING
+  INVESTING
+  FINANCING
+}
+
+// ---------------------------------------------------------------------------
 // Core entities
 // ---------------------------------------------------------------------------
 
@@ -555,6 +574,53 @@ model Referral {
 
   @@index([toOrgId])
   @@index([fromOrgId])
+}
+
+// A line in the chart of accounts. Company-wide (the Principal's books).
+model Account {
+  id              String  @id @default(cuid())
+  code            String  @unique
+  name            String
+  type            AccountType
+  // Cash & cash equivalents — these accounts ARE the cash on the cash-flow statement.
+  isCash          Boolean @default(false)
+  // For non-cash accounts: which section a cash movement against it belongs to.
+  cashflowSection CashflowSection?
+  isActive        Boolean @default(true)
+  createdAt       DateTime @default(now())
+
+  lines           JournalLine[]
+
+  @@index([type])
+}
+
+// A balanced double-entry journal entry (sum of debits == sum of credits).
+model JournalEntry {
+  id          String  @id @default(cuid())
+  number      String  @unique
+  date        DateTime
+  memo        String?
+  reference   String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  lines       JournalLine[]
+
+  @@index([date])
+}
+
+model JournalLine {
+  id        String  @id @default(cuid())
+  entryId   String
+  entry     JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id])
+  debit     Float   @default(0)
+  credit    Float   @default(0)
+  memo      String?
+
+  @@index([entryId])
+  @@index([accountId])
 }
 
 model KPIRecord {
