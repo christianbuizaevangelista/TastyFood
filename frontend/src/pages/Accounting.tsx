@@ -24,6 +24,22 @@ const TYPE_LABEL: Record<AccountType, string> = {
   EXPENSE: 'Expenses',
 };
 
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error('Could not read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function viewAttachment(entryId: string, attId: string) {
+  const res = await api.get(`/accounting/entries/${entryId}/attachments/${attId}`, { responseType: 'blob' });
+  const url = URL.createObjectURL(res.data);
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 const today = () => new Date().toISOString().slice(0, 10);
 const monthStart = () => {
   const n = new Date();
@@ -253,6 +269,19 @@ export function Journal() {
                     ))}
                   </tbody>
                 </table>
+                {e.attachments?.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2 border-t border-slate-50 pt-2">
+                    {e.attachments.map((a: any) => (
+                      <button
+                        key={a.id}
+                        className="rounded border border-slate-200 px-2 py-0.5 text-xs text-brand-700 hover:bg-slate-50"
+                        onClick={() => viewAttachment(e.id, a.id)}
+                      >
+                        📎 {a.fileName}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -281,6 +310,7 @@ function QuickEntry({ kind, accounts, onClose, onSaved }: { kind: 'income' | 'ex
   const [cashId, setCashId] = useState(cashAccounts[0]?.id ?? '');
   const [catId, setCatId] = useState(catAccounts[0]?.id ?? '');
   const [memo, setMemo] = useState('');
+  const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -289,6 +319,7 @@ function QuickEntry({ kind, accounts, onClose, onSaved }: { kind: 'income' | 'ex
     const amt = Number(amount);
     if (!amt || amt <= 0) return setErr('Enter an amount.');
     if (!cashId || !catId) return setErr('Pick the accounts.');
+    if (file && file.size > 4 * 1024 * 1024) return setErr('Receipt too large (max 4 MB).');
     setBusy(true);
     try {
       // Income: Dr Cash, Cr Income. Expense: Dr Expense, Cr Cash.
@@ -296,7 +327,10 @@ function QuickEntry({ kind, accounts, onClose, onSaved }: { kind: 'income' | 'ex
         kind === 'income'
           ? [{ accountId: cashId, debit: amt }, { accountId: catId, credit: amt }]
           : [{ accountId: catId, debit: amt }, { accountId: cashId, credit: amt }];
-      await api.post('/accounting/entries', { date, memo: memo || undefined, lines });
+      const attachments = file
+        ? [{ fileName: file.name, mimeType: file.type || 'application/octet-stream', dataBase64: await fileToDataUrl(file) }]
+        : undefined;
+      await api.post('/accounting/entries', { date, memo: memo || undefined, lines, attachments });
       onSaved();
     } catch (e) {
       setErr(apiError(e));
@@ -320,8 +354,11 @@ function QuickEntry({ kind, accounts, onClose, onSaved }: { kind: 'income' | 'ex
       <label className="label">Amount (₱)</label>
       <input type="number" min={0} step="0.01" className="input mb-3" value={amount} onChange={(e) => setAmount(e.target.value)} />
       <label className="label">Memo (optional)</label>
-      <input className="input mb-4" value={memo} onChange={(e) => setMemo(e.target.value)} />
-      <div className="flex justify-end gap-2">
+      <input className="input mb-3" value={memo} onChange={(e) => setMemo(e.target.value)} />
+      <label className="label">{kind === 'expense' ? 'Receipt' : 'Attachment'} (optional, max 4 MB)</label>
+      <input type="file" className="mb-1 text-xs" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+      {file && <div className="mb-3 text-xs text-green-600">📎 {file.name}</div>}
+      <div className="mt-3 flex justify-end gap-2">
         <button className="btn-ghost" onClick={onClose}>Cancel</button>
         <button className="btn-primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
       </div>
@@ -338,6 +375,7 @@ function ManualEntry({ accounts, onClose, onSaved }: { accounts: Account[]; onCl
     { accountId: '', debit: '', credit: '' },
     { accountId: '', debit: '', credit: '' },
   ]);
+  const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -352,12 +390,17 @@ function ManualEntry({ accounts, onClose, onSaved }: { accounts: Account[]; onCl
     setErr(null);
     if (!balanced) return setErr('Debits must equal credits (and be greater than zero).');
     if (lines.some((l) => !l.accountId)) return setErr('Pick an account on every line.');
+    if (file && file.size > 4 * 1024 * 1024) return setErr('Receipt too large (max 4 MB).');
     setBusy(true);
     try {
+      const attachments = file
+        ? [{ fileName: file.name, mimeType: file.type || 'application/octet-stream', dataBase64: await fileToDataUrl(file) }]
+        : undefined;
       await api.post('/accounting/entries', {
         date,
         memo: memo || undefined,
         lines: lines.map((l) => ({ accountId: l.accountId, debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 })),
+        attachments,
       });
       onSaved();
     } catch (e) {
@@ -402,6 +445,11 @@ function ManualEntry({ accounts, onClose, onSaved }: { accounts: Account[]; onCl
         </tbody>
       </table>
       <button className="mt-2 text-xs font-semibold text-brand-700 hover:underline" onClick={() => setLines([...lines, { accountId: '', debit: '', credit: '' }])}>+ Add line</button>
+      <div className="mt-3">
+        <label className="label">Receipt / attachment (optional, max 4 MB)</label>
+        <input type="file" className="text-xs" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        {file && <span className="ml-2 text-xs text-green-600">📎 {file.name}</span>}
+      </div>
       <div className="mt-3 flex justify-end gap-6 text-sm">
         <span>Debits: <strong>{peso(totalDebit)}</strong></span>
         <span>Credits: <strong>{peso(totalCredit)}</strong></span>

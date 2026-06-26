@@ -121,7 +121,10 @@ accountingRouter.get(
     }
     const entries = await prisma.journalEntry.findMany({
       where,
-      include: { lines: { include: { account: { select: { code: true, name: true, type: true } } } } },
+      include: {
+        lines: { include: { account: { select: { code: true, name: true, type: true } } } },
+        attachments: { select: { id: true, fileName: true, mimeType: true, size: true } },
+      },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
       take: 300,
     });
@@ -135,12 +138,20 @@ const lineSchema = z.object({
   credit: z.number().min(0).optional(),
   memo: z.string().max(200).optional(),
 });
+const attachmentSchema = z.object({
+  fileName: z.string().min(1),
+  mimeType: z.string().min(1),
+  dataBase64: z.string().min(1),
+});
 const entrySchema = z.object({
   date: z.coerce.date(),
   memo: z.string().max(300).optional(),
   reference: z.string().max(120).optional(),
   lines: z.array(lineSchema).min(2),
+  attachments: z.array(attachmentSchema).max(5).optional(),
 });
+
+const ATTACH_MAX_BYTES = 4 * 1024 * 1024; // 4 MB per receipt
 
 // POST /accounting/entries — record a balanced journal entry.
 accountingRouter.post(
@@ -166,6 +177,14 @@ accountingRouter.post(
     const found = await prisma.account.count({ where: { id: { in: ids } } });
     if (found !== ids.length) throw badRequest('One or more accounts do not exist');
 
+    // Prepare any attached receipts (base64, size-checked).
+    const attachData = (body.attachments ?? []).map((a) => {
+      const data = a.dataBase64.replace(/^data:[^;]+;base64,/, '');
+      const size = Math.floor((data.length * 3) / 4);
+      if (size > ATTACH_MAX_BYTES) throw badRequest(`Receipt "${a.fileName}" is too large (max 4 MB)`);
+      return { fileName: a.fileName, mimeType: a.mimeType, size, data, uploadedById: req.auth!.sub };
+    });
+
     const number = await nextEntryNumber();
     const entry = await prisma.journalEntry.create({
       data: {
@@ -175,10 +194,26 @@ accountingRouter.post(
         reference: body.reference ?? null,
         createdById: req.auth!.sub,
         lines: { create: lines },
+        ...(attachData.length ? { attachments: { create: attachData } } : {}),
       },
-      include: { lines: { include: { account: { select: { code: true, name: true, type: true } } } } },
+      include: {
+        lines: { include: { account: { select: { code: true, name: true, type: true } } } },
+        attachments: { select: { id: true, fileName: true, mimeType: true, size: true } },
+      },
     });
     res.status(201).json(entry);
+  })
+);
+
+// GET /accounting/entries/:entryId/attachments/:attId — view/download a receipt.
+accountingRouter.get(
+  '/entries/:entryId/attachments/:attId',
+  asyncHandler(async (req, res) => {
+    const att = await prisma.journalAttachment.findUnique({ where: { id: req.params.attId } });
+    if (!att || att.entryId !== req.params.entryId) throw notFound('Attachment not found');
+    res.setHeader('Content-Type', att.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${att.fileName}"`);
+    res.send(Buffer.from(att.data, 'base64'));
   })
 );
 

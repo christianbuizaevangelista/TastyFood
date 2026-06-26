@@ -605,6 +605,7 @@ model JournalEntry {
   createdAt   DateTime @default(now())
 
   lines       JournalLine[]
+  attachments JournalAttachment[]
 
   @@index([date])
 }
@@ -621,6 +622,21 @@ model JournalLine {
 
   @@index([entryId])
   @@index([accountId])
+}
+
+// Receipts / supporting documents attached to a journal entry (e.g. expense receipts).
+model JournalAttachment {
+  id           String  @id @default(cuid())
+  entryId      String
+  entry        JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  fileName     String
+  mimeType     String
+  size         Int
+  data         String   // base64-encoded file content
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  @@index([entryId])
 }
 
 model KPIRecord {
