@@ -27,7 +27,7 @@ dashboardRouter.get(
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
-    const [sales, ownInventory, activeMembers, newMembers, lastMonthSales, downstreamKpis, myOrg] =
+    const [sales, ownInventory, activeDownstream, newMembers, lastMonthSales, downstreamKpis, myOrg] =
       await Promise.all([
         prisma.sale.findMany({
           where: { sellerOrgId: { in: scope }, createdAt: { gte: from, lte: to } },
@@ -37,8 +37,17 @@ dashboardRouter.get(
           where: { orgId: myOrgId },
           include: { product: { select: { srp: true } } },
         }),
-        prisma.organization.count({
-          where: { id: { in: scope }, NOT: { id: myOrgId }, status: 'APPROVED', isActive: true },
+        // Active downstream accounts (not deleted) — used to count this month's performers per tier.
+        prisma.organization.findMany({
+          where: {
+            id: { in: scope },
+            NOT: { id: myOrgId },
+            type: { in: ['PROVINCIAL', 'CITY', 'RESELLER'] },
+            status: 'APPROVED',
+            isActive: true,
+            archivedAt: null,
+          },
+          select: { id: true, type: true },
         }),
         // New members: downstream distributors/resellers added (active) this month.
         prisma.organization.count({
@@ -117,6 +126,21 @@ dashboardRouter.get(
       .slice(0, 5)
       .map((k) => ({ orgId: k.orgId, name: k.orgName, type: k.orgType, revenue: k.revenue }));
 
+    // Active accounts per tier that recorded at least one sale this month
+    // ("performing this month"), scoped to the requester's downstream.
+    const typeById = new Map(activeDownstream.map((o) => [o.id, o.type]));
+    const performedThisMonth = new Set<string>();
+    for (const s of sales) {
+      if (s.createdAt >= thisMonthStart && typeById.has(s.sellerOrgId)) performedThisMonth.add(s.sellerOrgId);
+    }
+    const activePerformers = { provincial: 0, city: 0, reseller: 0 };
+    for (const id of performedThisMonth) {
+      const t = typeById.get(id);
+      if (t === 'PROVINCIAL') activePerformers.provincial++;
+      else if (t === 'CITY') activePerformers.city++;
+      else if (t === 'RESELLER') activePerformers.reseller++;
+    }
+
     res.json({
       role: req.auth!.role,
       period: { from, to },
@@ -129,7 +153,7 @@ dashboardRouter.get(
         salesUnits: units,
         inventoryValue,
         newMembers,
-        activeMembers,
+        activePerformers,
         lowStockItems: ownInventory.filter((r) => r.reorderLevel != null && r.quantity <= r.reorderLevel).length,
       },
       charts: {

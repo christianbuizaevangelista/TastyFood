@@ -27,7 +27,7 @@ interface DashboardData {
     salesUnits: number;
     inventoryValue: number;
     newMembers: number;
-    activeMembers: number;
+    activePerformers: { provincial: number; city: number; reseller: number };
     lowStockItems: number;
   };
   charts: {
@@ -96,7 +96,14 @@ export default function Dashboard() {
         />
         <KpiCard label="Units Sold" value={num(c.salesUnits)} hint="this month" />
         <KpiCard label="Inventory Value" value={peso(c.inventoryValue)} hint="your org · current" />
-        <KpiCard label="Active Members" value={num(c.activeMembers)} hint="downstream · current" />
+        {/* Active accounts that sold this month, scoped to the role's downstream. */}
+        {(user!.role === 'PRINCIPAL') && (
+          <KpiCard label="Active Provincial" value={num(c.activePerformers.provincial)} hint="performing this month" accent="text-brand-600" />
+        )}
+        {(user!.role === 'PRINCIPAL' || user!.role === 'PROVINCIAL') && (
+          <KpiCard label="Active City" value={num(c.activePerformers.city)} hint="performing this month" accent="text-brand-600" />
+        )}
+        <KpiCard label="Active Resellers" value={num(c.activePerformers.reseller)} hint="performing this month" accent="text-brand-600" />
         <KpiCard
           label="New Members"
           value={num(c.newMembers)}
