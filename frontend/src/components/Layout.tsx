@@ -1,7 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { ReactNode, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
-import { navForUser, ROLE_LABEL } from '../lib/nav';
+import { dmsNavForUser, canAccessFinance, ROLE_LABEL } from '../lib/nav';
 
 export default function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
@@ -18,7 +18,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     });
   }
   if (!user) return null;
-  const items = navForUser(user);
+  const items = dmsNavForUser(user);
 
   return (
     <div className="flex min-h-screen">
@@ -52,6 +52,19 @@ export default function Layout({ children }: { children: ReactNode }) {
             );
           })}
         </nav>
+
+        {canAccessFinance(user) && (
+          <div className="px-3 pb-2">
+            <NavLink
+              to="/finance"
+              className="flex items-center gap-3 rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-sm font-medium text-white hover:bg-white/15"
+            >
+              <span>📒</span>
+              <span className="flex-1">Finance &amp; Accounting</span>
+              <span className="text-brand-200">↗</span>
+            </NavLink>
+          </div>
+        )}
 
         <div className="border-t border-white/10 px-4 py-4 text-xs text-brand-100">
           <div className="font-semibold text-white">{user.org.name}</div>

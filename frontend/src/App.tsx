@@ -1,8 +1,9 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { ReactNode } from 'react';
 import { useAuth } from './auth/AuthContext';
-import { canAccessPath, firstAccessiblePath } from './lib/nav';
+import { canAccessPath, canAccessFinance, firstAccessiblePath } from './lib/nav';
 import Layout from './components/Layout';
+import FinanceLayout from './components/FinanceLayout';
 import { Spinner } from './components/ui';
 
 import Login from './pages/Login';
@@ -21,7 +22,7 @@ import Mana from './pages/Mana';
 import Materials from './pages/Materials';
 import Customers from './pages/Customers';
 import Referrals from './pages/Referrals';
-import Accounting from './pages/Accounting';
+import { Reports, Journal, ChartOfAccounts } from './pages/Accounting';
 import ResellerSale from './pages/ResellerSale';
 import Users from './pages/Users';
 
@@ -35,6 +36,15 @@ function Protected({ children, path }: { children: ReactNode; path: string }) {
     return <Navigate to={home === path ? '/account' : home} replace />;
   }
   return <Layout>{children}</Layout>;
+}
+
+// Guards the separate Finance & Accounting workspace (Principal + accounting access).
+function FinanceProtected({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) return <Spinner />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!canAccessFinance(user)) return <Navigate to={firstAccessiblePath(user)} replace />;
+  return <FinanceLayout>{children}</FinanceLayout>;
 }
 
 export default function App() {
@@ -56,7 +66,9 @@ export default function App() {
       <Route path="/sell" element={<Protected path="/sell"><ResellerSale /></Protected>} />
       <Route path="/customers" element={<Protected path="/customers"><Customers /></Protected>} />
       <Route path="/referrals" element={<Protected path="/referrals"><Referrals /></Protected>} />
-      <Route path="/accounting" element={<Protected path="/accounting"><Accounting /></Protected>} />
+      <Route path="/finance" element={<FinanceProtected><Reports /></FinanceProtected>} />
+      <Route path="/finance/journal" element={<FinanceProtected><Journal /></FinanceProtected>} />
+      <Route path="/finance/accounts" element={<FinanceProtected><ChartOfAccounts /></FinanceProtected>} />
       <Route path="/users" element={<Protected path="/users"><Users /></Protected>} />
       <Route path="/account" element={<Protected path="/account"><Account /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />

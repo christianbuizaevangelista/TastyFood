@@ -7,6 +7,7 @@ export interface NavItem {
   roles: Role[];
   perm?: string; // permission key a staff user needs (owner always passes)
   ownerOnly?: boolean; // only the org owner sees this
+  workspace?: 'finance'; // lives in the separate Finance & Accounting workspace, not the DMS sidebar
 }
 
 const ALL: Role[] = ['PRINCIPAL', 'PROVINCIAL', 'CITY', 'RESELLER'];
@@ -31,7 +32,8 @@ export const NAV: NavItem[] = [
   { to: '/customers', label: 'Customers', icon: '👥', roles: ALL, perm: 'customers' },
   { to: '/referrals', label: 'Referrals', icon: '📨', roles: ALL, perm: 'referrals' },
   { to: '/products', label: 'Products', icon: '🏷️', roles: ['PRINCIPAL'], perm: 'products' },
-  { to: '/accounting', label: 'Accounting', icon: '📒', roles: ['PRINCIPAL'], perm: 'accounting' },
+  // Finance & Accounting lives in its own separate workspace (not the DMS sidebar).
+  { to: '/finance', label: 'Finance & Accounting', icon: '📒', roles: ['PRINCIPAL'], perm: 'accounting', workspace: 'finance' },
   { to: '/materials', label: 'Downloadables', icon: '📥', roles: UP, perm: 'materials' },
   { to: '/users', label: 'Users & Roles', icon: '🔑', roles: ['PRINCIPAL'], ownerOnly: true },
   { to: '/account', label: 'Account Settings', icon: '👤', roles: ALL },
@@ -47,6 +49,21 @@ export function canAccess(user: Pick<AuthUser, 'role' | 'isOwner' | 'permissions
 
 export function navForUser(user: Pick<AuthUser, 'role' | 'isOwner' | 'permissions'>): NavItem[] {
   return NAV.filter((n) => canAccess(user, n));
+}
+
+// The DMS (distribution) sidebar items — everything except the Finance workspace.
+export function dmsNavForUser(user: Pick<AuthUser, 'role' | 'isOwner' | 'permissions'>): NavItem[] {
+  return navForUser(user).filter((n) => n.workspace !== 'finance');
+}
+
+// Can the user open the separate Finance & Accounting workspace?
+export function canAccessFinance(user: Pick<AuthUser, 'role' | 'isOwner' | 'permissions'>): boolean {
+  return user.role === 'PRINCIPAL' && (user.isOwner || (user.permissions ?? []).includes('accounting'));
+}
+
+// Does the user have any Distribution (non-finance) module to go back to?
+export function hasDmsAccess(user: Pick<AuthUser, 'role' | 'isOwner' | 'permissions'>): boolean {
+  return dmsNavForUser(user).length > 0;
 }
 
 // Can the user reach a given route path? (used to guard routes)

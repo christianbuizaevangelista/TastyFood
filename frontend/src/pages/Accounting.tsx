@@ -4,7 +4,6 @@ import { useFetch } from '../lib/useFetch';
 import { PageHeader, Spinner, Alert, EmptyState, Badge } from '../components/ui';
 import { peso } from '../lib/format';
 
-type Tab = 'reports' | 'journal' | 'accounts';
 type AccountType = 'ASSET' | 'LIABILITY' | 'EQUITY' | 'INCOME' | 'EXPENSE';
 
 interface Account {
@@ -31,35 +30,8 @@ const monthStart = () => {
   return new Date(n.getFullYear(), n.getMonth(), 1).toISOString().slice(0, 10);
 };
 
-export default function Accounting() {
-  const [tab, setTab] = useState<Tab>('reports');
-  return (
-    <div>
-      <PageHeader title="Accounting" subtitle="Finance department · double-entry books (private to Tasty Food)" />
-      <div className="mb-4 flex gap-1 border-b border-slate-200">
-        {([
-          ['reports', 'Reports'],
-          ['journal', 'Journal Entries'],
-          ['accounts', 'Chart of Accounts'],
-        ] as [Tab, string][]).map(([k, label]) => (
-          <button
-            key={k}
-            onClick={() => setTab(k)}
-            className={`px-4 py-2 text-sm font-medium ${tab === k ? 'border-b-2 border-brand-600 text-brand-700' : 'text-slate-500 hover:text-slate-700'}`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      {tab === 'reports' && <Reports />}
-      {tab === 'journal' && <Journal />}
-      {tab === 'accounts' && <ChartOfAccounts />}
-    </div>
-  );
-}
-
 // ============================ Reports =======================================
-function Reports() {
+export function Reports() {
   const [report, setReport] = useState<'pnl' | 'balance-sheet' | 'cash-flow' | 'trial-balance'>('pnl');
   const usesRange = report === 'pnl' || report === 'cash-flow';
   const [from, setFrom] = useState(monthStart());
@@ -72,6 +44,7 @@ function Reports() {
 
   return (
     <div>
+      <PageHeader title="Reports" subtitle="Profit & Loss · Balance Sheet · Cash Flow · Trial Balance" />
       <div className="mb-4 flex flex-wrap items-end gap-2">
         <div>
           <label className="label">Report</label>
@@ -219,7 +192,7 @@ function TrialBalance({ d }: { d: any }) {
 }
 
 // ============================ Journal =======================================
-function Journal() {
+export function Journal() {
   const entries = useFetch<{ entries: any[] }>('/accounting/entries');
   const accounts = useFetch<{ accounts: Account[] }>('/accounting/accounts');
   const [modal, setModal] = useState<null | 'income' | 'expense' | 'entry'>(null);
@@ -238,6 +211,7 @@ function Journal() {
 
   return (
     <div>
+      <PageHeader title="Journal Entries" subtitle="Record income, expenses, and manual double-entry journals" />
       <div className="mb-4 flex flex-wrap gap-2">
         <button className="btn-primary" onClick={() => setModal('income')}>+ Record Income</button>
         <button className="btn-primary" onClick={() => setModal('expense')}>+ Record Expense</button>
@@ -442,7 +416,7 @@ function ManualEntry({ accounts, onClose, onSaved }: { accounts: Account[]; onCl
 }
 
 // ======================= Chart of Accounts ==================================
-function ChartOfAccounts() {
+export function ChartOfAccounts() {
   const { data, loading, error, refetch } = useFetch<{ accounts: Account[] }>('/accounting/accounts');
   const [showAdd, setShowAdd] = useState(false);
 
@@ -451,6 +425,7 @@ function ChartOfAccounts() {
 
   return (
     <div>
+      <PageHeader title="Chart of Accounts" subtitle="Your accounts, grouped by type" />
       <div className="mb-4 flex justify-end">
         <button className="btn-primary" onClick={() => setShowAdd(true)}>+ Add account</button>
       </div>
