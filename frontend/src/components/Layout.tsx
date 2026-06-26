@@ -10,6 +10,8 @@ export default function Layout({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(
     () => typeof localStorage !== 'undefined' && localStorage.getItem('dms_sidebar') === '1'
   );
+  // The DMS modules live inside a collapsible "folder" in the sidebar.
+  const [dmsOpen, setDmsOpen] = useState(true);
   function toggleSidebar() {
     setCollapsed((v) => {
       const next = !v;
@@ -31,26 +33,37 @@ export default function Layout({ children }: { children: ReactNode }) {
           </div>
           <div className="leading-tight">
             <div className="text-sm font-bold">Tasty Food Manufacturing Inc.</div>
-            <div className="text-[11px] text-brand-100">Distribution Management System (DMS)</div>
           </div>
         </div>
 
         <nav className="flex-1 space-y-1 px-3 py-2">
-          {items.map((item) => {
-            const active = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to);
-            return (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
-                  active ? 'bg-white/15 text-white' : 'text-brand-100 hover:bg-white/10'
-                }`}
-              >
-                <span>{item.icon}</span>
-                {item.label}
-              </NavLink>
-            );
-          })}
+          <button
+            onClick={() => setDmsOpen((v) => !v)}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-white hover:bg-white/10"
+          >
+            <span>{dmsOpen ? '📂' : '📁'}</span>
+            <span className="flex-1 text-left">Distribution Management System</span>
+            <span className="text-xs text-brand-200">{dmsOpen ? '▾' : '▸'}</span>
+          </button>
+          {dmsOpen && (
+            <div className="ml-3 space-y-1 border-l border-white/10 pl-2">
+              {items.map((item) => {
+                const active = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to);
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                      active ? 'bg-white/15 text-white' : 'text-brand-100 hover:bg-white/10'
+                    }`}
+                  >
+                    <span>{item.icon}</span>
+                    {item.label}
+                  </NavLink>
+                );
+              })}
+            </div>
+          )}
         </nav>
 
         {canAccessFinance(user) && (
@@ -95,7 +108,6 @@ export default function Layout({ children }: { children: ReactNode }) {
             {collapsed && (
               <img src="/tasty-food-splash.png" alt="Tasty Food" className="h-7 w-auto object-contain" />
             )}
-            <span className="text-sm text-slate-500">Distribution Management System</span>
           </div>
           <div className="flex items-center gap-3">
             <div className="text-right">
