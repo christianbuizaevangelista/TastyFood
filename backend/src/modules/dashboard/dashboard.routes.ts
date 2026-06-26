@@ -126,19 +126,13 @@ dashboardRouter.get(
       .slice(0, 5)
       .map((k) => ({ orgId: k.orgId, name: k.orgName, type: k.orgType, revenue: k.revenue }));
 
-    // Active accounts per tier that recorded at least one sale this month
-    // ("performing this month"), scoped to the requester's downstream.
-    const typeById = new Map(activeDownstream.map((o) => [o.id, o.type]));
-    const performedThisMonth = new Set<string>();
-    for (const s of sales) {
-      if (s.createdAt >= thisMonthStart && typeById.has(s.sellerOrgId)) performedThisMonth.add(s.sellerOrgId);
-    }
+    // Count of active (not deleted) downstream accounts per tier, scoped to the
+    // requester's chain — regardless of whether they have sales yet.
     const activePerformers = { provincial: 0, city: 0, reseller: 0 };
-    for (const id of performedThisMonth) {
-      const t = typeById.get(id);
-      if (t === 'PROVINCIAL') activePerformers.provincial++;
-      else if (t === 'CITY') activePerformers.city++;
-      else if (t === 'RESELLER') activePerformers.reseller++;
+    for (const o of activeDownstream) {
+      if (o.type === 'PROVINCIAL') activePerformers.provincial++;
+      else if (o.type === 'CITY') activePerformers.city++;
+      else if (o.type === 'RESELLER') activePerformers.reseller++;
     }
 
     res.json({
