@@ -2,12 +2,10 @@ import { OrgType, UserRole } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { getDescendantOrgIds } from '../../lib/scope';
 
-// Which org types each role is allowed to approve for onboarding.
-//  - Principal approves Provincial & City distributors.
-//  - Provincial approves Resellers (within its chain).
+// Which org types each role is allowed to onboard.
+//  - Only the Principal onboards accounts (Provincial, City, Reseller, Retail).
 const ONBOARDING_RIGHTS: Partial<Record<UserRole, OrgType[]>> = {
-  PRINCIPAL: ['PROVINCIAL', 'CITY'],
-  PROVINCIAL: ['RESELLER'],
+  PRINCIPAL: ['PROVINCIAL', 'CITY', 'RESELLER'],
 };
 
 export async function canApproveOrgOnboarding(

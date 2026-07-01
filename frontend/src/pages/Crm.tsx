@@ -201,8 +201,8 @@ export default function Crm() {
 
   // Which tiers can this role onboard? Principal can onboard any tier directly
   // (e.g. a Reseller with no City/Provincial in the area yet).
-  const onboardTiers: OrgType[] =
-    user!.role === 'PRINCIPAL' ? ['PROVINCIAL', 'CITY', 'RESELLER'] : user!.role === 'PROVINCIAL' ? ['RESELLER'] : [];
+  // Only the Principal can onboard accounts.
+  const onboardTiers: OrgType[] = user!.role === 'PRINCIPAL' ? ['PROVINCIAL', 'CITY', 'RESELLER'] : [];
 
   return (
     <div>
