@@ -120,15 +120,17 @@ posRouter.post(
       if (body.distributionType === 'TRADE') {
         await notifyLowStock(seller.id, priced.items.map((i) => i.productId));
       }
-      // Auto-post the POS sale to the finance books (cash sale). Best-effort.
-      await postSaleToBooks({
-        saleId: sale.id,
-        total: sale.total,
-        date: sale.createdAt,
-        onAccount: false,
-        label: `POS sale ${sale.number} — ${sale.sellerOrg.name}`,
-        createdById: req.auth!.sub,
-      });
+      // Auto-post to the finance books — ONLY the Principal's own sales. Best-effort.
+      if (seller.type === 'PRINCIPAL') {
+        await postSaleToBooks({
+          saleId: sale.id,
+          total: sale.total,
+          date: sale.createdAt,
+          onAccount: false,
+          label: `POS sale ${sale.number} — ${sale.sellerOrg.name}`,
+          createdById: req.auth!.sub,
+        });
+      }
       res.status(201).json(buildReceipt(sale));
     } catch (err: any) {
       if (typeof err?.message === 'string' && err.message.startsWith('Insufficient stock')) {

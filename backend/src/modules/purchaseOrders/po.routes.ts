@@ -453,8 +453,9 @@ poRouter.post(
         await notifyLowStock(po.sellerOrgId, po.items.map((i) => i.productId));
       }
       await notifyBuyerPoStatus(po, 'FULFILLED');
-      // Auto-post the fulfilled PO's sale to the finance books (on account). Best-effort.
-      if (!isStockIn) {
+      // Auto-post the fulfilled PO's sale to the finance books (on account) —
+      // ONLY when the Principal is the seller. Best-effort.
+      if (!isStockIn && po.sellerOrg.type === 'PRINCIPAL') {
         const genSale = await prisma.sale.findUnique({ where: { poId: po.id }, select: { id: true, total: true, createdAt: true } });
         if (genSale) {
           await postSaleToBooks({
