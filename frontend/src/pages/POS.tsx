@@ -73,7 +73,13 @@ export default function POS() {
   const products = data!.products;
 
   const lines = Object.entries(cart).filter(([, q]) => q > 0);
-  const subtotalSRP = lines.reduce((s, [pid, q]) => s + (products.find((x) => x.id === pid)?.srp ?? 0) * q, 0);
+  // Retail-segment buyers are priced off the product's Retail SRP (fallback to srp).
+  const isRetail = selected?.segment === 'RETAIL';
+  const srpOf = (p: Product) => (isRetail ? p.retailSrp ?? p.srp : p.srp);
+  const subtotalSRP = lines.reduce((s, [pid, q]) => {
+    const p = products.find((x) => x.id === pid);
+    return s + (p ? srpOf(p) : 0) * q;
+  }, 0);
   // Tier customer -> their fixed discount; Unofficial Reseller -> 8%; Others -> manual.
   const discountRate = selected
     ? selected.discountRate
@@ -156,8 +162,9 @@ export default function POS() {
                 <div>
                   <div className="text-sm font-medium">{p.name}{p.size ? ` (${p.size})` : ''}</div>
                   <div className="text-xs text-slate-400">
-                    {peso(p.srp)}
-                    {discountRate > 0 && <span className="ml-1 text-brand-600">→ {peso(p.srp * (1 - discountRate))}</span>}
+                    {peso(srpOf(p))}
+                    {isRetail && <span className="ml-1 text-amber-600">(retail)</span>}
+                    {discountRate > 0 && <span className="ml-1 text-brand-600">→ {peso(srpOf(p) * (1 - discountRate))}</span>}
                   </div>
                 </div>
                 <input
@@ -220,7 +227,7 @@ export default function POS() {
                   >
                     <span className="font-medium text-slate-700">{o.name}</span>
                     <span className="text-xs text-slate-400">
-                      {TIER[o.type]?.label ?? o.type} · {Math.round(o.discountRate * 100)}%
+                      {o.segment === 'RETAIL' ? 'Retail Distributor' : TIER[o.type]?.label ?? o.type} · {Math.round(o.discountRate * 100)}%
                     </span>
                   </button>
                 ))}
@@ -263,8 +270,9 @@ export default function POS() {
           {/* Auto-detected customer type + discount */}
           {selected ? (
             <div className="mb-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
-              Type: <span className="font-semibold">{TIER[selected.type]?.label ?? selected.type}</span> ·{' '}
+              Type: <span className="font-semibold">{selected.segment === 'RETAIL' ? 'Retail Distributor' : TIER[selected.type]?.label ?? selected.type}</span> ·{' '}
               <span className="font-semibold text-brand-600">{Math.round(selected.discountRate * 100)}% discount</span>
+              {isRetail && <span className="ml-1 text-amber-600">· retail pricing</span>}
             </div>
           ) : unofficial ? (
             <div className="mb-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
