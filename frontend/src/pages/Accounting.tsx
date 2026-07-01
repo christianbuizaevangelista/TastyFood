@@ -46,6 +46,35 @@ const monthStart = () => {
   return new Date(n.getFullYear(), n.getMonth(), 1).toISOString().slice(0, 10);
 };
 
+// Builds a report's rows for CSV export (respecting the selected date).
+function reportToCsv(report: string, d: any): (string | number)[][] {
+  const rows: (string | number)[][] = [];
+  if (report === 'pnl') {
+    rows.push(['Profit & Loss'], ['From', new Date(d.from).toLocaleDateString(), 'To', new Date(d.to).toLocaleDateString()], []);
+    rows.push(['Income']);
+    (d.income ?? []).forEach((r: any) => rows.push([`${r.code} ${r.name}`, r.amount]));
+    rows.push(['Total Income', d.totalIncome], [], ['Expenses']);
+    (d.expenses ?? []).forEach((r: any) => rows.push([`${r.code} ${r.name}`, r.amount]));
+    rows.push(['Total Expenses', d.totalExpenses], [], ['Net Income', d.netIncome]);
+  } else if (report === 'balance-sheet') {
+    rows.push(['Balance Sheet'], ['As of', new Date(d.asOf).toLocaleDateString()], [], ['Assets']);
+    (d.assets ?? []).forEach((r: any) => rows.push([`${r.code} ${r.name}`, r.amount]));
+    rows.push(['Total Assets', d.totalAssets], [], ['Liabilities']);
+    (d.liabilities ?? []).forEach((r: any) => rows.push([`${r.code} ${r.name}`, r.amount]));
+    rows.push(['Total Liabilities', d.totalLiabilities], [], ['Equity']);
+    (d.equity ?? []).forEach((r: any) => rows.push([`${r.code} ${r.name}`, r.amount]));
+    rows.push(['Current Earnings', d.currentEarnings], ['Total Equity', d.totalEquity], [], ['Liabilities + Equity', d.totalLiabilities + d.totalEquity]);
+  } else if (report === 'cash-flow') {
+    rows.push(['Cash Flow Statement'], ['From', new Date(d.from).toLocaleDateString(), 'To', new Date(d.to).toLocaleDateString()], []);
+    rows.push(['Operating', d.operating], ['Investing', d.investing], ['Financing', d.financing], ['Net change', d.netChange], ['Beginning cash', d.beginningCash], ['Ending cash', d.endingCash]);
+  } else {
+    rows.push(['Trial Balance'], ['As of', new Date(d.asOf).toLocaleDateString()], [], ['Code', 'Account', 'Type', 'Debit', 'Credit']);
+    (d.rows ?? []).forEach((r: any) => rows.push([r.code, r.name, r.type, r.debit, r.credit]));
+    rows.push(['', 'Total', '', d.totalDebit, d.totalCredit]);
+  }
+  return rows;
+}
+
 // ============================ Reports =======================================
 export function Reports() {
   const [report, setReport] = useState<'pnl' | 'balance-sheet' | 'cash-flow' | 'trial-balance'>('pnl');
@@ -56,7 +85,37 @@ export function Reports() {
 
   const qs = usesRange ? `?from=${from}&to=${to}` : `?asOf=${asOf}`;
   const url = `/accounting/reports/${report}${qs}`;
-  const { data, loading, error } = useFetch<any>(url, [url]);
+  const { data, loading, error, refetch } = useFetch<any>(url, [url]);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const tag = usesRange ? `${from}_to_${to}` : `asof_${asOf}`;
+  function exportCsv() {
+    if (!data) return;
+    const rows = reportToCsv(report, data);
+    const csv = rows.map((r) => r.map((c) => (/[",\n]/.test(String(c)) ? `"${String(c).replace(/"/g, '""')}"` : String(c))).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const u = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = u;
+    a.download = `${report}_${tag}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(u), 60000);
+  }
+  async function importCsv(file: File) {
+    setNote(null);
+    setBusy(true);
+    try {
+      const text = await file.text();
+      const { data: r } = await api.post('/accounting/entries/import', { csv: text });
+      setNote(`Imported ${r.imported} entr${r.imported === 1 ? 'y' : 'ies'}.${r.errors?.length ? ` (${r.errors.length} skipped)` : ''}`);
+      refetch();
+    } catch (e) {
+      setNote(apiError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div>
@@ -88,7 +147,14 @@ export function Reports() {
             <input type="date" className="input" value={asOf} onChange={(e) => setAsOf(e.target.value)} />
           </div>
         )}
+        <button className="btn-ghost text-xs" disabled={!data} onClick={exportCsv}>⬇ Export CSV</button>
+        <label className="btn-ghost cursor-pointer text-xs">
+          {busy ? 'Importing…' : '⬆ Import entries'}
+          <input type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) importCsv(f); e.target.value = ''; }} />
+        </label>
       </div>
+      {note && <div className="mb-3"><Alert kind="success">{note}</Alert></div>}
+      <p className="mb-3 text-xs text-slate-400">Import format (one entry per row): <span className="font-mono">Date, DebitAccountCode, CreditAccountCode, Amount, Memo</span></p>
 
       {loading ? (
         <Spinner />

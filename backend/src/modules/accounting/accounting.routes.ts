@@ -281,6 +281,62 @@ accountingRouter.delete(
   })
 );
 
+// POST /accounting/entries/import — bulk-create balanced journal entries from CSV.
+// Each row is one entry: Date, Debit Account Code, Credit Account Code, Amount, Memo.
+accountingRouter.post(
+  '/entries/import',
+  asyncHandler(async (req, res) => {
+    const { csv } = z.object({ csv: z.string().min(1) }).parse(req.body);
+    const accounts = await prisma.account.findMany({ select: { id: true, code: true } });
+    const byCode = new Map(accounts.map((a) => [a.code.trim(), a.id]));
+
+    const parseRow = (line: string): string[] => {
+      const out: string[] = [];
+      let cur = '';
+      let q = false;
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (q) {
+          if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+          else if (c === '"') q = false;
+          else cur += c;
+        } else if (c === '"') q = true;
+        else if (c === ',') { out.push(cur); cur = ''; }
+        else cur += c;
+      }
+      out.push(cur);
+      return out.map((s) => s.trim());
+    };
+
+    const rows = csv.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (rows.length && /date/i.test(rows[0]) && /(debit|credit|amount)/i.test(rows[0])) rows.shift();
+
+    let imported = 0;
+    const errors: string[] = [];
+    for (const [idx, line] of rows.entries()) {
+      const c = parseRow(line);
+      const date = new Date(c[0]);
+      const debitId = byCode.get((c[1] || '').trim());
+      const creditId = byCode.get((c[2] || '').trim());
+      const amount = round2(Number(c[3]) || 0);
+      if (isNaN(date.getTime())) { errors.push(`Row ${idx + 1}: bad date`); continue; }
+      if (!debitId) { errors.push(`Row ${idx + 1}: unknown debit account "${c[1]}"`); continue; }
+      if (!creditId) { errors.push(`Row ${idx + 1}: unknown credit account "${c[2]}"`); continue; }
+      if (amount <= 0) { errors.push(`Row ${idx + 1}: amount must be > 0`); continue; }
+      const number = await nextEntryNumber();
+      await prisma.journalEntry.create({
+        data: {
+          number, date, memo: c[4] || null, createdById: req.auth!.sub,
+          lines: { create: [{ accountId: debitId, debit: amount }, { accountId: creditId, credit: amount }] },
+        },
+      });
+      imported++;
+    }
+    if (imported === 0) throw badRequest('No valid rows imported. ' + errors.slice(0, 3).join('; '));
+    res.json({ imported, errors });
+  })
+);
+
 // =============================================================================
 // Reports
 // =============================================================================
