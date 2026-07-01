@@ -24,7 +24,6 @@ import Materials from './pages/Materials';
 import Customers from './pages/Customers';
 import Referrals from './pages/Referrals';
 import { Reports, Journal, ChartOfAccounts } from './pages/Accounting';
-import RetailDistributors from './pages/RetailDistributors';
 import ResellerSale from './pages/ResellerSale';
 import Users from './pages/Users';
 
@@ -71,7 +70,6 @@ export default function App() {
       <Route path="/referrals" element={<Protected path="/referrals"><Referrals /></Protected>} />
       <Route path="/finance" element={<FinanceProtected><Reports /></FinanceProtected>} />
       <Route path="/finance/journal" element={<FinanceProtected><Journal /></FinanceProtected>} />
-      <Route path="/finance/retail" element={<FinanceProtected><RetailDistributors /></FinanceProtected>} />
       <Route path="/finance/accounts" element={<FinanceProtected><ChartOfAccounts /></FinanceProtected>} />
       <Route path="/users" element={<Protected path="/users"><Users /></Protected>} />
       <Route path="/account" element={<Protected path="/account"><Account /></Protected>} />

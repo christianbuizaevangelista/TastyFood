@@ -31,7 +31,11 @@ dashboardRouter.get(
       await Promise.all([
         prisma.sale.findMany({
           where: { sellerOrgId: { in: scope }, createdAt: { gte: from, lte: to } },
-          include: { items: true, sellerOrg: { select: { type: true, discountRate: true } } },
+          include: {
+            items: true,
+            sellerOrg: { select: { type: true, discountRate: true } },
+            buyerOrg: { select: { segment: true } },
+          },
         }),
         prisma.inventory.findMany({
           where: { orgId: myOrgId },
@@ -121,6 +125,17 @@ dashboardRouter.get(
       ),
     };
 
+    // Reseller vs Retail Distribution — the requester's OWN sales, split by the
+    // buyer's market segment (walk-in with no buyer counts as retail).
+    const byMarketSegment = { reseller: 0, retail: 0 };
+    for (const s of sales) {
+      if (s.sellerOrgId !== myOrgId) continue;
+      if (s.buyerOrg?.segment === 'RETAIL' || !s.buyerOrgId) byMarketSegment.retail += s.total;
+      else byMarketSegment.reseller += s.total;
+    }
+    byMarketSegment.reseller = round2(byMarketSegment.reseller);
+    byMarketSegment.retail = round2(byMarketSegment.retail);
+
     const topPerformers = [...downstreamKpis]
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 5)
@@ -159,6 +174,7 @@ dashboardRouter.get(
           lastMonthTotal,
         },
         byDistributionType: byType,
+        byMarketSegment,
         topPerformers,
       },
     });

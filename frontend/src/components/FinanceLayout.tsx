@@ -6,7 +6,6 @@ import { hasDmsAccess } from '../lib/nav';
 const FINANCE_NAV = [
   { to: '/finance', label: 'Reports', icon: '📊', exact: true },
   { to: '/finance/journal', label: 'Journal Entries', icon: '🧾', exact: false },
-  { to: '/finance/retail', label: 'Retail Distributors', icon: '🏪', exact: false },
   { to: '/finance/accounts', label: 'Chart of Accounts', icon: '📚', exact: false },
 ];
 

@@ -255,7 +255,7 @@ export default function Crm() {
                     </div>
                   </button>
                 </td>
-                <td className="td text-xs">{o.type}</td>
+                <td className="td text-xs">{o.segment === 'RETAIL' ? '🏪 Retail' : o.type}</td>
                 <td className="td text-xs text-slate-500">{o.parent?.name ?? '—'}</td>
                 <td className="td text-xs">
                   {o.contactPhone && <div>{o.contactPhone}</div>}
@@ -769,6 +769,9 @@ function Onboard({
   onCreated: () => void;
 }) {
   const { user } = useAuth();
+  // Market segment: RESELLER (P→C→R hierarchy) or RETAIL (leaf, reports to Principal).
+  const [segment, setSegment] = useState<'RESELLER' | 'RETAIL'>('RESELLER');
+  const canRetail = user!.role === 'PRINCIPAL';
   const [type, setType] = useState<OrgType>(tiers[0]);
   const [form, setForm] = useState({
     name: '',
@@ -815,11 +818,14 @@ function Onboard({
     setErr(null);
     setBusy(true);
     try {
+      const isRetail = segment === 'RETAIL';
       const { data } = await api.post('/orgs', {
         name: form.name || undefined,
-        type,
-        parentId: form.parentId,
-        territoryId: form.territoryId || undefined,
+        segment,
+        // Retail is a leaf that reports to the Principal (the current owner's org).
+        type: isRetail ? undefined : type,
+        parentId: isRetail ? user!.org.id : form.parentId,
+        territoryId: isRetail ? undefined : form.territoryId || undefined,
         contactName: form.contactName || undefined,
         contactPhone: form.contactPhone || undefined,
         address: form.address || undefined,
@@ -858,6 +864,17 @@ function Onboard({
 
         {!created && (
         <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <label className="label">Market segment</label>
+            <select className="input" value={segment} onChange={(e) => setSegment(e.target.value as any)}>
+              <option value="RESELLER">Reseller Distribution (Provincial / City / Reseller)</option>
+              {canRetail && <option value="RETAIL">Retail Distribution (retail distributor — no downline)</option>}
+            </select>
+            {segment === 'RETAIL' && <p className="mt-1 text-xs text-slate-400">A retail distributor reports directly to the Principal and has no accounts under it.</p>}
+          </div>
+
+          {segment === 'RESELLER' && (
+          <>
           <div>
             <label className="label">Tier</label>
             <select className="input" value={type} onChange={(e) => { setType(e.target.value as OrgType); setForm({ ...form, parentId: '', territoryId: '' }); }}>
@@ -887,6 +904,8 @@ function Onboard({
               <p className="mt-1 text-xs text-amber-600">No vacant {LEVEL_OF[type]} territory available in your scope.</p>
             )}
           </div>
+          </>
+          )}
           <div className="col-span-2">
             <label className="label">Business name <span className="font-normal text-slate-400">(optional)</span></label>
             <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Leave blank to use the contact/admin name" />
@@ -972,7 +991,7 @@ function Onboard({
               <button className="btn-ghost" onClick={onClose}>Cancel</button>
               <button
                 className="btn-primary"
-                disabled={busy || !form.parentId || !form.adminName || !form.adminEmail}
+                disabled={busy || (segment === 'RESELLER' && !form.parentId) || !form.adminName || !form.adminEmail}
                 onClick={submit}
               >
                 {busy ? (docs.length ? 'Creating & uploading…' : 'Creating…') : 'Create account'}

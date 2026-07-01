@@ -70,6 +70,7 @@ export interface Org {
   id: string;
   name: string;
   type: OrgType;
+  segment?: 'RESELLER' | 'RETAIL';
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   isActive: boolean;
   discountRate: number;

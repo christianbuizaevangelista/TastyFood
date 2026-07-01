@@ -132,6 +132,10 @@ model Organization {
   // PRINCIPAL 0, PROVINCIAL 0.20, CITY 0.15, RESELLER 0.08
   discountRate Float     @default(0)
 
+  // Market segment for downstream accounts: RESELLER (Provincial→City→Reseller
+  // hierarchy) or RETAIL (a retail distributor with no downline).
+  segment      String    @default("RESELLER")
+
   // Onboarding/approval state.
   status       OrgStatus @default(PENDING)
   // Membership activation (independent of approval; can be toggled later).
@@ -621,41 +625,6 @@ model JournalEntry {
 
   @@unique([sourceType, sourceId])
   @@index([date])
-}
-
-// A retail distributor — a separate market segment, independent of the
-// Provincial/City/Reseller operations chain. Tracked only in Financials.
-model RetailDistributor {
-  id            String   @id @default(cuid())
-  name          String
-  contactPerson String?
-  phone         String?
-  address       String?
-  notes         String?
-  createdById   String
-  createdAt     DateTime @default(now())
-
-  transactions  RetailTransaction[]
-
-  @@index([name])
-}
-
-// A financial transaction for a retail distributor (a charge/sale they owe, or a
-// payment they made). Running balance = cumulative (charge - payment).
-model RetailTransaction {
-  id            String   @id @default(cuid())
-  distributorId String
-  distributor   RetailDistributor @relation(fields: [distributorId], references: [id], onDelete: Cascade)
-  date          DateTime
-  type          String   // SALE | PAYMENT | ADJUSTMENT
-  description   String?
-  reference     String?
-  charge        Float    @default(0) // amount owed (a sale/delivery)
-  payment       Float    @default(0) // amount received
-  createdById   String
-  createdAt     DateTime @default(now())
-
-  @@index([distributorId])
 }
 
 // Per-SKU line of a distributor delivery recorded in a journal entry.

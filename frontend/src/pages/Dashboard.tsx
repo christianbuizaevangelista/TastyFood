@@ -39,11 +39,13 @@ interface DashboardData {
       lastMonthTotal: number;
     };
     byDistributionType: { trade: number; dropShip: number };
+    byMarketSegment: { reseller: number; retail: number };
     topPerformers: { orgId: string; name: string; type: string; revenue: number }[];
   };
 }
 
 const PIE_COLORS = ['#0ea5e9', '#8b5cf6'];
+const SEG_COLORS = ['#0b9444', '#f59e0b'];
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -59,6 +61,12 @@ export default function Dashboard() {
     { name: 'Regular', value: data.charts.byDistributionType.trade },
     { name: 'Dropship', value: data.charts.byDistributionType.dropShip },
   ];
+  const seg = data.charts.byMarketSegment ?? { reseller: 0, retail: 0 };
+  const segData = [
+    { name: 'Reseller Distribution', value: seg.reseller },
+    { name: 'Retail Distribution', value: seg.retail },
+  ];
+  const hasSegData = seg.reseller > 0 || seg.retail > 0;
 
   // Current month vs last month totals.
   const cm = data.charts.currentMonth;
@@ -181,6 +189,25 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </div>
       </div>
+
+      {hasSegData && (
+        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="card">
+            <h2 className="mb-4 text-sm font-semibold text-slate-700">Reseller vs Retail Distribution</h2>
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie data={segData} dataKey="value" nameKey="name" outerRadius={90} label>
+                  {segData.map((_, i) => (
+                    <Cell key={i} fill={SEG_COLORS[i]} />
+                  ))}
+                </Pie>
+                <Legend />
+                <Tooltip formatter={(v: number) => peso(v)} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {data.charts.topPerformers.length > 0 && (
         <div className="card mt-6">

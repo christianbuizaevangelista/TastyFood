@@ -118,7 +118,10 @@ orgsRouter.get(
 const createSchema = z.object({
   // Optional — falls back to the contact person or admin name if left blank.
   name: z.string().optional(),
-  type: z.enum(['PROVINCIAL', 'CITY', 'RESELLER']),
+  // Market segment: RESELLER (P→C→R hierarchy) or RETAIL (leaf, no downline).
+  segment: z.enum(['RESELLER', 'RETAIL']).default('RESELLER'),
+  // For RESELLER segment: the tier. Ignored for RETAIL (treated as a leaf account).
+  type: z.enum(['PROVINCIAL', 'CITY', 'RESELLER']).optional(),
   parentId: z.string(),
   // Optional geographic territory to assign this account to.
   territoryId: z.string().optional(),
@@ -141,13 +144,22 @@ orgsRouter.post(
   asyncHandler(async (req, res) => {
     const body = createSchema.parse(req.body);
 
+    // A RETAIL account is a leaf (type RESELLER internally) with segment=RETAIL;
+    // a RESELLER-segment account uses its chosen tier.
+    const isRetail = body.segment === 'RETAIL';
+    const effectiveType = (isRetail ? 'RESELLER' : body.type) as OrgType | undefined;
+    if (!effectiveType) throw badRequest('Select a tier for a reseller account');
+
     // Parent must be in scope and of the correct upstream tier.
     assertInScope(req, body.parentId);
     const parent = await prisma.organization.findUnique({ where: { id: body.parentId } });
     if (!parent) throw notFound('Parent organization not found');
-    if (!ALLOWED_PARENTS[body.type as OrgType].includes(parent.type)) {
+    if (isRetail) {
+      // Retail distributors buy from (report to) the Principal.
+      if (parent.type !== 'PRINCIPAL') throw badRequest('A retail distributor must report to the Principal');
+    } else if (!ALLOWED_PARENTS[effectiveType].includes(parent.type)) {
       throw badRequest(
-        `A ${body.type} must report to a ${ALLOWED_PARENTS[body.type as OrgType].join(' or ')}`
+        `A ${effectiveType} must report to a ${ALLOWED_PARENTS[effectiveType].join(' or ')}`
       );
     }
 
@@ -155,7 +167,7 @@ orgsRouter.post(
     const allowed = await canApproveOrgOnboarding(
       req.auth!.role,
       req.auth!.orgId,
-      body.type as OrgType,
+      effectiveType,
       // subject not created yet; check the parent chain instead
       body.parentId
     );
@@ -185,12 +197,13 @@ orgsRouter.post(
     const orgName = (body.name?.trim() || body.contactName?.trim() || body.admin.name.trim());
 
     // If assigning a territory, validate it is vacant and the right level.
-    if (body.territoryId) {
+    // (Retail accounts are leaves with no territory.)
+    if (body.territoryId && !isRetail) {
       const terr = await prisma.territory.findUnique({ where: { id: body.territoryId } });
       if (!terr) throw notFound('Territory not found');
       if (terr.assignedOrgId) throw badRequest('That territory is already occupied');
-      if (terr.level !== LEVEL_FOR_TYPE[body.type as OrgType]) {
-        throw badRequest(`A ${body.type} must occupy a ${LEVEL_FOR_TYPE[body.type as OrgType]} territory`);
+      if (terr.level !== LEVEL_FOR_TYPE[effectiveType]) {
+        throw badRequest(`A ${effectiveType} must occupy a ${LEVEL_FOR_TYPE[effectiveType]} territory`);
       }
     }
 
@@ -202,9 +215,10 @@ orgsRouter.post(
       const created = await tx.organization.create({
         data: {
           name: orgName,
-          type: body.type as OrgType,
+          type: effectiveType,
+          segment: body.segment,
           parentId: body.parentId,
-          discountRate: TIER_DISCOUNT[body.type as OrgType],
+          discountRate: TIER_DISCOUNT[effectiveType],
           status: 'APPROVED', // accounts are live as soon as they're encoded in CRM
           isActive: true,
           contactName: body.contactName,
@@ -219,7 +233,7 @@ orgsRouter.post(
           name: body.admin.name,
           email,
           passwordHash: wantsInvite ? null : await hashPassword(body.admin.password!),
-          role: body.type as any,
+          role: effectiveType as any,
           orgId: created.id,
           isOwner: true,
           isActive: !wantsInvite, // activated once they accept the invite
