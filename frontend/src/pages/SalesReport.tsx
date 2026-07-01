@@ -116,7 +116,15 @@ export default function SalesReport() {
     }
   }
 
-  const canFilterTier = user!.role === 'PRINCIPAL' || user!.role === 'PROVINCIAL';
+  // Tier filter offers only the user's own tier and the tiers below it (a user
+  // never sees sales from a level above their own account).
+  const TIER_LABELS: Record<string, string> = { PRINCIPAL: 'Principal', PROVINCIAL: 'Provincial', CITY: 'City', RESELLER: 'Reseller' };
+  const tierOptions =
+    user!.role === 'PRINCIPAL' ? ['PRINCIPAL', 'PROVINCIAL', 'CITY', 'RESELLER']
+    : user!.role === 'PROVINCIAL' ? ['PROVINCIAL', 'CITY', 'RESELLER']
+    : user!.role === 'CITY' ? ['CITY', 'RESELLER']
+    : [];
+  const canFilterTier = tierOptions.length > 0;
 
   return (
     <div>
@@ -165,11 +173,8 @@ export default function SalesReport() {
           <div>
             <label className="label">Tier</label>
             <select className="input" value={filters.tier} onChange={(e) => setFilters({ ...filters, tier: e.target.value })}>
-              <option value="">All</option>
-              <option value="PRINCIPAL">Principal</option>
-              <option value="PROVINCIAL">Provincial</option>
-              <option value="CITY">City</option>
-              <option value="RESELLER">Reseller</option>
+              <option value="">All (my level & below)</option>
+              {tierOptions.map((t) => <option key={t} value={t}>{TIER_LABELS[t]}</option>)}
             </select>
           </div>
         )}
