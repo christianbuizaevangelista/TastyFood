@@ -42,13 +42,15 @@ posRouter.post(
     // Determine the discount to apply. Selling to a downstream account in your
     // network auto-applies that account's tier discount; walk-in/other = SRP.
     let discountRate = body.discountRate ?? 0;
+    let retailPricing = false; // retail buyers use the product's retail SRP
     if (body.buyerOrgId) {
       const buyer = await prisma.organization.findUnique({ where: { id: body.buyerOrgId } });
       if (!buyer) throw badRequest('Buyer organization not found');
       if (!req.scopeOrgIds!.includes(buyer.id) || buyer.id === seller.id) {
         throw badRequest('You can only sell to accounts within your downstream network');
       }
-      discountRate = buyer.discountRate; // tier discount: PROVINCIAL 20%, CITY 15%, RESELLER 8%
+      discountRate = buyer.discountRate; // tier discount: PROVINCIAL 20%, CITY 15%, RESELLER 8%, RETAIL 15%
+      retailPricing = buyer.segment === 'RETAIL';
     }
 
     // Optional saved end-customer (the customer database). The seller may sell to
@@ -68,7 +70,8 @@ posRouter.post(
     if (products.length !== new Set(body.items.map((i) => i.productId)).size) {
       throw badRequest('One or more products were not found');
     }
-    const srpById = new Map(products.map((p) => [p.id, p.srp]));
+    // Retail buyers are priced off the product's retail SRP (fallback to standard srp).
+    const srpById = new Map(products.map((p) => [p.id, retailPricing ? p.retailSrp ?? p.srp : p.srp]));
     const priced = priceLines(
       body.items.map((i) => ({
         productId: i.productId,

@@ -29,6 +29,8 @@ const productSchema = z.object({
   category: z.string().optional(),
   size: z.string().optional(),
   srp: z.number().positive(),
+  // Separate SRP for the retail channel; null/omitted = use the standard srp.
+  retailSrp: z.number().positive().nullable().optional(),
 });
 
 // Only the Principal manages the product catalog.

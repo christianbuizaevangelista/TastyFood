@@ -48,6 +48,7 @@ export interface Product {
   category?: string | null;
   size?: string | null;
   srp: number;
+  retailSrp?: number | null;
 }
 
 export interface InventoryItem {

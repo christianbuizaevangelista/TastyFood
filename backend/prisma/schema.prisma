@@ -223,8 +223,10 @@ model Product {
   category    String?
   // Size of this SKU (e.g. "200g"). Each size is its own product with its own SKU & SRP.
   size        String?
-  // Suggested Retail Price — the basis for all tier pricing.
+  // Suggested Retail Price — the basis for all tier (reseller-channel) pricing.
   srp         Float
+  // Separate SRP for the RETAIL distribution channel (falls back to `srp` if unset).
+  retailSrp   Float?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

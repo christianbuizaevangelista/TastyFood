@@ -14,7 +14,7 @@ interface Group {
 export default function Products() {
   const { data, loading, error, refetch } = useFetch<{ products: Product[] }>('/products');
   // New product: a base name/category + its first size (size, SKU, SRP).
-  const [form, setForm] = useState({ name: '', category: '', size: '', sku: '', srp: '' });
+  const [form, setForm] = useState({ name: '', category: '', size: '', sku: '', srp: '', retailSrp: '' });
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [editing, setEditing] = useState<Group | null>(null);
@@ -71,8 +71,9 @@ export default function Products() {
         size: form.size || undefined,
         sku: form.sku,
         srp: Number(form.srp),
+        retailSrp: form.retailSrp ? Number(form.retailSrp) : undefined,
       });
-      setForm({ name: '', category: '', size: '', sku: '', srp: '' });
+      setForm({ name: '', category: '', size: '', sku: '', srp: '', retailSrp: '' });
       setMsg('Product added');
       refetch();
     } catch (e2) {
@@ -102,7 +103,7 @@ export default function Products() {
           </div>
           <div className="rounded-lg border border-slate-200 p-2">
             <div className="mb-2 text-xs font-semibold uppercase text-slate-400">First size</div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="label">Size</label>
                 <input className="input" placeholder="200g" value={form.size} onChange={(e) => setForm({ ...form, size: e.target.value })} />
@@ -114,6 +115,10 @@ export default function Products() {
               <div>
                 <label className="label">SRP</label>
                 <input className="input" type="number" step="0.01" value={form.srp} onChange={(e) => setForm({ ...form, srp: e.target.value })} required />
+              </div>
+              <div>
+                <label className="label">Retail SRP <span className="font-normal text-slate-400">(optional)</span></label>
+                <input className="input" type="number" step="0.01" value={form.retailSrp} onChange={(e) => setForm({ ...form, retailSrp: e.target.value })} placeholder="= SRP if blank" />
               </div>
             </div>
           </div>
@@ -184,13 +189,14 @@ interface SizeRow {
   size: string;
   sku: string;
   srp: string;
+  retailSrp: string;
 }
 
 function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState(group.name);
   const [category, setCategory] = useState(group.category);
   const [rows, setRows] = useState<SizeRow[]>(
-    group.items.map((i) => ({ id: i.id, size: i.size ?? '', sku: i.sku, srp: String(i.srp) }))
+    group.items.map((i) => ({ id: i.id, size: i.size ?? '', sku: i.sku, srp: String(i.srp), retailSrp: i.retailSrp != null ? String(i.retailSrp) : '' }))
   );
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -199,7 +205,7 @@ function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => v
     setRows((r) => r.map((row, i) => (i === idx ? { ...row, ...patch } : row)));
   }
   function addRow() {
-    setRows((r) => [...r, { size: '', sku: '', srp: '' }]);
+    setRows((r) => [...r, { size: '', sku: '', srp: '', retailSrp: '' }]);
   }
   function removeRow(idx: number) {
     setRows((r) => r.filter((_, i) => i !== idx));
@@ -225,6 +231,7 @@ function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => v
           size: row.size || undefined,
           sku: row.sku,
           srp: Number(row.srp),
+          retailSrp: row.retailSrp ? Number(row.retailSrp) : null,
         };
         if (row.id) await api.put(`/products/${row.id}`, payload);
         else await api.post('/products', payload);
@@ -264,6 +271,7 @@ function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => v
                 <th className="th">Size</th>
                 <th className="th">SKU</th>
                 <th className="th text-right">SRP</th>
+                <th className="th text-right">Retail SRP</th>
                 <th className="th"></th>
               </tr>
             </thead>
@@ -273,6 +281,7 @@ function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => v
                   <td className="td"><input className="input" placeholder="200g" value={row.size} onChange={(e) => setRow(idx, { size: e.target.value })} /></td>
                   <td className="td"><input className="input" value={row.sku} onChange={(e) => setRow(idx, { sku: e.target.value })} /></td>
                   <td className="td"><input className="input text-right" type="number" step="0.01" value={row.srp} onChange={(e) => setRow(idx, { srp: e.target.value })} /></td>
+                  <td className="td"><input className="input text-right" type="number" step="0.01" placeholder="= SRP" value={row.retailSrp} onChange={(e) => setRow(idx, { retailSrp: e.target.value })} /></td>
                   <td className="td text-right">
                     <button className="text-xs font-semibold text-red-600 hover:underline" onClick={() => removeRow(idx)}>Remove</button>
                   </td>
