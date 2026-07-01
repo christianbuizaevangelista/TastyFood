@@ -8,6 +8,9 @@ export const TIER_DISCOUNT: Record<OrgType, number> = {
   RESELLER: 0.08,
 };
 
+// Discount off SRP for a RETAIL-segment distributor (buys from the Principal).
+export const RETAIL_DISCOUNT = 0.15;
+
 // The tier each org type buys from (its immediate parent).
 export const PARENT_TYPE: Record<OrgType, OrgType | null> = {
   PRINCIPAL: null,

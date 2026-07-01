@@ -8,7 +8,7 @@ import { authenticate } from '../../middleware/auth';
 import { assertInScope, requirePermission } from '../../middleware/rbac';
 import { getDescendantOrgIds } from '../../lib/scope';
 import { badRequest, forbidden, notFound, conflict } from '../../lib/errors';
-import { TIER_DISCOUNT, ALLOWED_PARENTS } from '../../lib/pricing';
+import { TIER_DISCOUNT, RETAIL_DISCOUNT, ALLOWED_PARENTS } from '../../lib/pricing';
 import { hashPassword, verifyPassword } from '../../lib/auth';
 import { canApproveOrgOnboarding } from './approvals.service';
 import { LEVEL_FOR_TYPE } from '../territories/territories.routes';
@@ -227,7 +227,7 @@ orgsRouter.post(
           type: effectiveType,
           segment: body.segment,
           parentId: body.parentId,
-          discountRate: TIER_DISCOUNT[effectiveType],
+          discountRate: isRetail ? RETAIL_DISCOUNT : TIER_DISCOUNT[effectiveType],
           status: 'APPROVED', // accounts are live as soon as they're encoded in CRM
           isActive: true,
           contactName: body.contactName,
