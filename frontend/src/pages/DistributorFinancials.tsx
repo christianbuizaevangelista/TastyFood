@@ -1,9 +1,23 @@
 import { useState } from 'react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { api, apiError } from '../api/client';
 import { useFetch } from '../lib/useFetch';
 import { PageHeader, Spinner, Alert, EmptyState } from '../components/ui';
 import { peso } from '../lib/format';
 import { DATE_PRESETS, presetRange, DatePreset } from '../lib/datePresets';
+
+// jsPDF's standard fonts can't render ₱, so use an ASCII money format for PDF/Excel.
+const money = (n: number) => 'PHP ' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const xmlEsc = (s: any) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function downloadBlob(blob: Blob, filename: string) {
+  const u = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = u;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(u), 60000);
+}
 
 interface Dist {
   id: string;
@@ -98,6 +112,56 @@ function Statement({ dist, onClose }: { dist: Dist; onClose: () => void }) {
     if (r) setRange(r);
   }
 
+  const rangeLabel = `${range.from || 'start'} to ${range.to || 'today'}`;
+  const fileBase = `${dist.name.replace(/[^a-z0-9]+/gi, '_')}_statement`;
+
+  function exportExcel() {
+    if (!data) return;
+    let h = `<table border="1"><tr><td colspan="3"><b>${xmlEsc(dist.name)} — Distributor Statement</b></td></tr>`;
+    h += `<tr><td colspan="3">${rangeLabel}</td></tr><tr></tr>`;
+    h += `<tr><td>Sales</td><td></td><td>${data.salesTotal}</td></tr>`;
+    h += `<tr><td>Expenses</td><td></td><td>${data.expensesTotal}</td></tr>`;
+    h += `<tr><td>Net</td><td></td><td>${data.net}</td></tr>`;
+    h += `<tr><td>Payments</td><td></td><td>${data.paymentsTotal}</td></tr>`;
+    h += `<tr><td>Outstanding A/R</td><td></td><td>${data.balance}</td></tr><tr></tr>`;
+    h += `<tr><th>SALES</th><th>Date</th><th>Amount</th></tr>`;
+    data.sales.forEach((s) => (h += `<tr><td>${xmlEsc(s.number)}${s.onAccount ? ' (A/R)' : ''}</td><td>${new Date(s.createdAt).toLocaleDateString()}</td><td>${s.total}</td></tr>`));
+    h += `<tr><th>EXPENSES</th><th>Date</th><th>Amount</th></tr>`;
+    data.expenses.forEach((x) => (h += `<tr><td>${xmlEsc(x.memo || x.number)}</td><td>${new Date(x.date).toLocaleDateString()}</td><td>${x.amount}</td></tr>`));
+    h += `<tr><th>PAYMENTS</th><th>Date</th><th>Amount</th></tr>`;
+    data.payments.forEach((p) => (h += `<tr><td>${xmlEsc(p.note || 'Payment')}</td><td>${new Date(p.date).toLocaleDateString()}</td><td>${p.amount}</td></tr>`));
+    h += `</table>`;
+    const blob = new Blob(['﻿<html><head><meta charset="utf-8"></head><body>' + h + '</body></html>'], { type: 'application/vnd.ms-excel' });
+    downloadBlob(blob, `${fileBase}.xls`);
+  }
+
+  function exportPdf() {
+    if (!data) return;
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const M = 40;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text(dist.name, M, 40);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(120);
+    doc.text(`Distributor Statement — ${rangeLabel}`, M, 56);
+    doc.setTextColor(30);
+    doc.setFontSize(10);
+    doc.text(
+      `Sales: ${money(data.salesTotal)}    Expenses: ${money(data.expensesTotal)}    Net: ${money(data.net)}    Payments: ${money(data.paymentsTotal)}    Outstanding A/R: ${money(data.balance)}`,
+      M,
+      74
+    );
+    let y = 90;
+    autoTable(doc, { startY: y, head: [['Sales', 'Date', 'Amount']], body: data.sales.map((s) => [s.number + (s.onAccount ? ' (A/R)' : ''), new Date(s.createdAt).toLocaleDateString(), money(s.total)]), styles: { fontSize: 9 }, headStyles: { fillColor: [11, 148, 68] } });
+    y = (doc as any).lastAutoTable.finalY + 16;
+    autoTable(doc, { startY: y, head: [['Expenses', 'Date', 'Amount']], body: data.expenses.map((x) => [x.memo || x.number, new Date(x.date).toLocaleDateString(), money(x.amount)]), styles: { fontSize: 9 }, headStyles: { fillColor: [239, 68, 68] } });
+    y = (doc as any).lastAutoTable.finalY + 16;
+    autoTable(doc, { startY: y, head: [['Payments', 'Date', 'Amount']], body: data.payments.map((p) => [p.note || 'Payment', new Date(p.date).toLocaleDateString(), money(p.amount)]), styles: { fontSize: 9 }, headStyles: { fillColor: [14, 165, 233] } });
+    doc.save(`${fileBase}.pdf`);
+  }
+
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
       <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -124,6 +188,8 @@ function Statement({ dist, onClose }: { dist: Dist; onClose: () => void }) {
             </>
           )}
           <div className="flex-1" />
+          <button className="btn-ghost text-xs" disabled={!data} onClick={exportExcel}>⬇ Excel</button>
+          <button className="btn-ghost text-xs" disabled={!data} onClick={exportPdf}>⬇ PDF</button>
           <button className="btn-primary text-xs" onClick={() => setModal('payment')}>+ Payment</button>
           <button className="btn-ghost text-xs" onClick={() => setModal('expense')}>+ Expense</button>
         </div>
