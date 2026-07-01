@@ -829,9 +829,9 @@ function Onboard({
         contactName: form.contactName || undefined,
         contactPhone: form.contactPhone || undefined,
         address: form.address || undefined,
-        salesTarget: form.salesTarget ? Number(form.salesTarget) : undefined,
-        // No password — the admin gets an email invite to set their own.
-        admin: { name: form.adminName, email: form.adminEmail },
+        salesTarget: isRetail ? undefined : form.salesTarget ? Number(form.salesTarget) : undefined,
+        // Retail has no login/admin. Reseller: the admin gets an email invite.
+        admin: isRetail ? undefined : { name: form.adminName, email: form.adminEmail },
       });
       // Upload any queued documents to the new account (best-effort per file).
       for (const d of docs) {
@@ -922,11 +922,15 @@ function Onboard({
             <label className="label">Address</label>
             <input className="input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
           </div>
+          {segment === 'RESELLER' && (
           <div className="col-span-2">
             <label className="label">Monthly sales target (₱)</label>
             <input className="input" type="number" value={form.salesTarget} onChange={(e) => setForm({ ...form, salesTarget: e.target.value })} />
           </div>
+          )}
 
+          {segment === 'RESELLER' && (
+          <>
           <div className="col-span-2 mt-2 border-t border-slate-100 pt-3 text-xs font-semibold uppercase text-slate-400">Login for the account admin</div>
           <div>
             <label className="label">Admin name</label>
@@ -936,6 +940,8 @@ function Onboard({
             <label className="label">Admin email</label>
             <input className="input" type="email" value={form.adminEmail} onChange={(e) => setForm({ ...form, adminEmail: e.target.value })} />
           </div>
+          </>
+          )}
 
           <div className="col-span-2 mt-2 border-t border-slate-100 pt-3">
             <div className="text-xs font-semibold uppercase text-slate-400">Documents <span className="font-normal normal-case text-slate-300">(optional)</span></div>
@@ -964,8 +970,9 @@ function Onboard({
           <div className="rounded-lg border border-green-200 bg-green-50 p-4">
             <div className="text-sm font-semibold text-green-800">Account created 🎉</div>
             <p className="mt-1 text-xs text-green-700">
-              An email invite was sent to {form.adminEmail} so they can set their own password.
-              If it doesn't arrive, copy the link below and send it to them.
+              {segment === 'RETAIL'
+                ? 'Retail distributor account created (no login needed).'
+                : <>An email invite was sent to {form.adminEmail} so they can set their own password. If it doesn't arrive, copy the link below and send it to them.</>}
               {created.docCount > 0 && ` ${created.docCount} document(s) attached.`}
             </p>
             {created.inviteLink && (
@@ -991,7 +998,7 @@ function Onboard({
               <button className="btn-ghost" onClick={onClose}>Cancel</button>
               <button
                 className="btn-primary"
-                disabled={busy || (segment === 'RESELLER' && !form.parentId) || !form.adminName || !form.adminEmail}
+                disabled={busy || (segment === 'RESELLER' ? (!form.parentId || !form.adminName || !form.adminEmail) : !(form.name.trim() || form.contactName.trim()))}
                 onClick={submit}
               >
                 {busy ? (docs.length ? 'Creating & uploading…' : 'Creating…') : 'Create account'}

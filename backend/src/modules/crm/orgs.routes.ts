@@ -130,12 +130,15 @@ const createSchema = z.object({
   contactPhone: z.string().optional(),
   address: z.string().optional(),
   salesTarget: z.number().min(0).optional(),
-  admin: z.object({
-    name: z.string().min(1),
-    email: z.string().email(),
-    // Optional: if omitted, the admin gets an email invite to set their own password.
-    password: z.string().min(6).optional(),
-  }),
+  // Optional — a RETAIL account has no login/admin. RESELLER accounts require it.
+  admin: z
+    .object({
+      name: z.string().min(1),
+      email: z.string().email(),
+      // Optional: if omitted, the admin gets an email invite to set their own password.
+      password: z.string().min(6).optional(),
+    })
+    .optional(),
 });
 
 // POST /orgs — onboard a downstream account (starts PENDING, needs approval).
@@ -175,26 +178,30 @@ orgsRouter.post(
       throw forbidden('You are not authorized to onboard this tier');
     }
 
-    const email = body.admin.email.toLowerCase();
-    const existingUser = await prisma.user.findUnique({
-      where: { email },
-      include: { org: { select: { archivedAt: true } } },
-    });
-    if (existingUser) {
-      // If the previous account using this email was deleted (archived), free up
-      // the address by tombstoning the old login, then allow re-registration.
-      if (existingUser.org?.archivedAt) {
-        await prisma.user.update({
-          where: { id: existingUser.id },
-          data: { email: `${email}.deleted.${existingUser.id}`, inviteToken: null },
-        });
-      } else {
-        throw badRequest('A user with that email already exists');
+    // RESELLER accounts need a login (admin); RETAIL accounts have none.
+    if (!isRetail && !body.admin) throw badRequest('An account admin (name + email) is required');
+    const email = body.admin?.email.toLowerCase();
+    if (email) {
+      const existingUser = await prisma.user.findUnique({
+        where: { email },
+        include: { org: { select: { archivedAt: true } } },
+      });
+      if (existingUser) {
+        // If the previous account using this email was deleted (archived), free up
+        // the address by tombstoning the old login, then allow re-registration.
+        if (existingUser.org?.archivedAt) {
+          await prisma.user.update({
+            where: { id: existingUser.id },
+            data: { email: `${email}.deleted.${existingUser.id}`, inviteToken: null },
+          });
+        } else {
+          throw badRequest('A user with that email already exists');
+        }
       }
     }
 
     // Business name is optional — fall back to the contact person or admin name.
-    const orgName = (body.name?.trim() || body.contactName?.trim() || body.admin.name.trim());
+    const orgName = (body.name?.trim() || body.contactName?.trim() || body.admin?.name.trim() || 'Retail account');
 
     // If assigning a territory, validate it is vacant and the right level.
     // (Retail accounts are leaves with no territory.)
@@ -208,7 +215,9 @@ orgsRouter.post(
     }
 
     // If no password is supplied, the admin gets an email invite to set their own.
-    const wantsInvite = !body.admin.password;
+    // Retail accounts have no admin/login at all.
+    const hasAdmin = !!body.admin;
+    const wantsInvite = hasAdmin && !body.admin!.password;
     const inviteToken = wantsInvite ? crypto.randomBytes(24).toString('hex') : null;
 
     const org = await prisma.$transaction(async (tx) => {
@@ -225,22 +234,24 @@ orgsRouter.post(
           contactEmail: body.contactEmail,
           contactPhone: body.contactPhone,
           address: body.address,
-          salesTarget: body.salesTarget ?? 0,
+          salesTarget: isRetail ? 0 : body.salesTarget ?? 0,
         },
       });
-      await tx.user.create({
-        data: {
-          name: body.admin.name,
-          email,
-          passwordHash: wantsInvite ? null : await hashPassword(body.admin.password!),
-          role: effectiveType as any,
-          orgId: created.id,
-          isOwner: true,
-          isActive: !wantsInvite, // activated once they accept the invite
-          inviteToken,
-          inviteExpires: wantsInvite ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) : null,
-        },
-      });
+      if (hasAdmin) {
+        await tx.user.create({
+          data: {
+            name: body.admin!.name,
+            email: email!,
+            passwordHash: wantsInvite ? null : await hashPassword(body.admin!.password!),
+            role: effectiveType as any,
+            orgId: created.id,
+            isOwner: true,
+            isActive: !wantsInvite, // activated once they accept the invite
+            inviteToken,
+            inviteExpires: wantsInvite ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) : null,
+          },
+        });
+      }
       if (body.territoryId) {
         await tx.territory.update({
           where: { id: body.territoryId },
@@ -253,9 +264,9 @@ orgsRouter.post(
     // Email the admin an invite to set their own password (best-effort; the
     // returned link lets the owner share it manually if email isn't delivering).
     let link: string | null = null;
-    if (wantsInvite && inviteToken) {
+    if (wantsInvite && inviteToken && email) {
       link = inviteLink(inviteToken);
-      await sendInviteEmail({ to: email, name: body.admin.name, orgName, link });
+      await sendInviteEmail({ to: email, name: body.admin!.name, orgName, link });
     }
 
     res.status(201).json({ ...org, inviteLink: link });

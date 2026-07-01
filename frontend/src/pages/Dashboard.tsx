@@ -66,7 +66,8 @@ export default function Dashboard() {
     { name: 'Reseller Distribution', value: seg.reseller },
     { name: 'Retail Distribution', value: seg.retail },
   ];
-  const hasSegData = seg.reseller > 0 || seg.retail > 0;
+  // Reseller-vs-Retail split is a Principal-only view.
+  const hasSegData = user!.role === 'PRINCIPAL' && (seg.reseller > 0 || seg.retail > 0);
 
   // Current month vs last month totals.
   const cm = data.charts.currentMonth;
