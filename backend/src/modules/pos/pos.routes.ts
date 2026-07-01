@@ -5,7 +5,8 @@ import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
 import { requirePermission } from '../../middleware/rbac';
 import { badRequest, forbidden, notFound } from '../../lib/errors';
-import { priceLines } from '../../lib/pricing';
+import { priceLines, productTierDiscount } from '../../lib/pricing';
+import { OrgType } from '@prisma/client';
 import { saleNumber } from '../../lib/numbering';
 import { applyStockMovement, notifyLowStock } from '../inventory/inventory.service';
 import { postSaleToBooks } from '../accounting/accounting.service';
@@ -45,6 +46,7 @@ posRouter.post(
     // network auto-applies that account's tier discount; walk-in/other = SRP.
     let discountRate = body.discountRate ?? 0;
     let retailPricing = false; // retail buyers use the product's retail SRP
+    let buyerType: OrgType | undefined; // for per-product tier discount overrides
     if (body.buyerOrgId) {
       const buyer = await prisma.organization.findUnique({ where: { id: body.buyerOrgId } });
       if (!buyer) throw badRequest('Buyer organization not found');
@@ -53,6 +55,7 @@ posRouter.post(
       }
       discountRate = buyer.discountRate; // tier discount: PROVINCIAL 20%, CITY 15%, RESELLER 8%, RETAIL 15%
       retailPricing = buyer.segment === 'RETAIL';
+      buyerType = buyer.type;
     }
 
     // Optional saved end-customer (the customer database). The seller may sell to
@@ -73,13 +76,20 @@ posRouter.post(
       throw badRequest('One or more products were not found');
     }
     // Retail buyers are priced off the product's retail SRP (fallback to standard srp).
-    const srpById = new Map(products.map((p) => [p.id, retailPricing ? p.retailSrp ?? p.srp : p.srp]));
+    const prodById = new Map(products.map((p) => [p.id, p]));
     const priced = priceLines(
-      body.items.map((i) => ({
-        productId: i.productId,
-        quantity: i.quantity,
-        srp: srpById.get(i.productId)!,
-      })),
+      body.items.map((i) => {
+        const p = prodById.get(i.productId)!;
+        // Per-product tier override (e.g. institutional) applies to reseller-chain
+        // buyers only; retail buyers use retail SRP + the retail rate.
+        const override = !retailPricing && buyerType ? productTierDiscount(p, buyerType) : undefined;
+        return {
+          productId: i.productId,
+          quantity: i.quantity,
+          srp: retailPricing ? p.retailSrp ?? p.srp : p.srp,
+          discountRate: override,
+        };
+      }),
       discountRate
     );
 

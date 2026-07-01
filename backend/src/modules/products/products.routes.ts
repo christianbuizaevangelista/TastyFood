@@ -31,6 +31,10 @@ const productSchema = z.object({
   srp: z.number().positive(),
   // Separate SRP for the retail channel; null/omitted = use the standard srp.
   retailSrp: z.number().positive().nullable().optional(),
+  // Per-product tier discount overrides (fractions 0..1); null = standard tier rate.
+  provincialDiscount: z.number().min(0).max(1).nullable().optional(),
+  cityDiscount: z.number().min(0).max(1).nullable().optional(),
+  resellerDiscount: z.number().min(0).max(1).nullable().optional(),
 });
 
 // Only the Principal manages the product catalog.

@@ -228,6 +228,12 @@ model Product {
   srp         Float
   // Separate SRP for the RETAIL distribution channel (falls back to `srp` if unset).
   retailSrp   Float?
+  // Optional per-product tier discount overrides (fractions, e.g. 0.15). When set,
+  // they replace the standard tier discount FOR THIS PRODUCT ONLY (e.g. institutional
+  // pricing). Null = use the standard TIER_DISCOUNT for that tier.
+  provincialDiscount Float?
+  cityDiscount       Float?
+  resellerDiscount   Float?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

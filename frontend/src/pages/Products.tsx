@@ -190,13 +190,24 @@ interface SizeRow {
   sku: string;
   srp: string;
   retailSrp: string;
+  // Institutional / custom tier discount overrides, entered as percentages ('' = standard).
+  provPct: string;
+  cityPct: string;
+  resPct: string;
 }
+
+const pctToFrac = (s: string) => (s.trim() === '' ? null : Number(s) / 100);
+const fracToPct = (n: number | null | undefined) => (n == null ? '' : String(Math.round(n * 1000) / 10));
 
 function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState(group.name);
   const [category, setCategory] = useState(group.category);
   const [rows, setRows] = useState<SizeRow[]>(
-    group.items.map((i) => ({ id: i.id, size: i.size ?? '', sku: i.sku, srp: String(i.srp), retailSrp: i.retailSrp != null ? String(i.retailSrp) : '' }))
+    group.items.map((i) => ({
+      id: i.id, size: i.size ?? '', sku: i.sku, srp: String(i.srp),
+      retailSrp: i.retailSrp != null ? String(i.retailSrp) : '',
+      provPct: fracToPct(i.provincialDiscount), cityPct: fracToPct(i.cityDiscount), resPct: fracToPct(i.resellerDiscount),
+    }))
   );
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -205,7 +216,7 @@ function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => v
     setRows((r) => r.map((row, i) => (i === idx ? { ...row, ...patch } : row)));
   }
   function addRow() {
-    setRows((r) => [...r, { size: '', sku: '', srp: '', retailSrp: '' }]);
+    setRows((r) => [...r, { size: '', sku: '', srp: '', retailSrp: '', provPct: '', cityPct: '', resPct: '' }]);
   }
   function removeRow(idx: number) {
     setRows((r) => r.filter((_, i) => i !== idx));
@@ -232,6 +243,9 @@ function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => v
           sku: row.sku,
           srp: Number(row.srp),
           retailSrp: row.retailSrp ? Number(row.retailSrp) : null,
+          provincialDiscount: pctToFrac(row.provPct),
+          cityDiscount: pctToFrac(row.cityPct),
+          resellerDiscount: pctToFrac(row.resPct),
         };
         if (row.id) await api.put(`/products/${row.id}`, payload);
         else await api.post('/products', payload);
@@ -265,13 +279,17 @@ function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => v
             <label className="label mb-0">Sizes (each has its own SKU & SRP)</label>
             <button className="btn-ghost text-xs" onClick={addRow}>+ Add size</button>
           </div>
-          <table className="w-full">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px]">
             <thead>
               <tr className="border-b border-slate-100">
                 <th className="th">Size</th>
                 <th className="th">SKU</th>
                 <th className="th text-right">SRP</th>
                 <th className="th text-right">Retail SRP</th>
+                <th className="th text-right">Prov %</th>
+                <th className="th text-right">City %</th>
+                <th className="th text-right">Res %</th>
                 <th className="th"></th>
               </tr>
             </thead>
@@ -282,6 +300,9 @@ function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => v
                   <td className="td"><input className="input" value={row.sku} onChange={(e) => setRow(idx, { sku: e.target.value })} /></td>
                   <td className="td"><input className="input text-right" type="number" step="0.01" value={row.srp} onChange={(e) => setRow(idx, { srp: e.target.value })} /></td>
                   <td className="td"><input className="input text-right" type="number" step="0.01" placeholder="= SRP" value={row.retailSrp} onChange={(e) => setRow(idx, { retailSrp: e.target.value })} /></td>
+                  <td className="td"><input className="input text-right" type="number" step="0.1" placeholder="std" value={row.provPct} onChange={(e) => setRow(idx, { provPct: e.target.value })} /></td>
+                  <td className="td"><input className="input text-right" type="number" step="0.1" placeholder="std" value={row.cityPct} onChange={(e) => setRow(idx, { cityPct: e.target.value })} /></td>
+                  <td className="td"><input className="input text-right" type="number" step="0.1" placeholder="std" value={row.resPct} onChange={(e) => setRow(idx, { resPct: e.target.value })} /></td>
                   <td className="td text-right">
                     <button className="text-xs font-semibold text-red-600 hover:underline" onClick={() => removeRow(idx)}>Remove</button>
                   </td>
@@ -289,6 +310,8 @@ function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => v
               ))}
             </tbody>
           </table>
+          </div>
+          <p className="mt-1 text-xs text-slate-400">Prov/City/Res % are optional per-product tier discounts (e.g. institutional). Leave blank to use the standard 20% / 15% / 8%.</p>
         </div>
 
         <div className="mt-5 flex justify-end gap-2">

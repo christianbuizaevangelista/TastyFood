@@ -38,6 +38,19 @@ export function unitPrice(srp: number, discountRate: number): number {
   return round2(srp * (1 - discountRate));
 }
 
+// The per-product discount override for a buyer's tier, if the product defines one
+// (e.g. institutional pricing). Returns undefined to fall back to the standard rate.
+export function productTierDiscount(
+  product: { provincialDiscount?: number | null; cityDiscount?: number | null; resellerDiscount?: number | null },
+  buyerType: OrgType
+): number | undefined {
+  const v = buyerType === 'PROVINCIAL' ? product.provincialDiscount
+    : buyerType === 'CITY' ? product.cityDiscount
+    : buyerType === 'RESELLER' ? product.resellerDiscount
+    : null;
+  return v == null ? undefined : v;
+}
+
 export interface PricedLine {
   productId: string;
   quantity: number;
@@ -47,11 +60,13 @@ export interface PricedLine {
 }
 
 export function priceLines(
-  lines: { productId: string; quantity: number; srp: number }[],
+  // Each line may carry its own discountRate (per-product override); otherwise the
+  // sale/PO-level discountRate is used.
+  lines: { productId: string; quantity: number; srp: number; discountRate?: number }[],
   discountRate: number
 ): { items: PricedLine[]; subtotal: number; total: number } {
   const items = lines.map((l) => {
-    const price = unitPrice(l.srp, discountRate);
+    const price = unitPrice(l.srp, l.discountRate ?? discountRate);
     return {
       productId: l.productId,
       quantity: l.quantity,

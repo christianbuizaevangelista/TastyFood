@@ -5,7 +5,7 @@ import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
 import { requirePermission } from '../../middleware/rbac';
 import { badRequest, forbidden, notFound, conflict } from '../../lib/errors';
-import { priceLines, round2 } from '../../lib/pricing';
+import { priceLines, round2, productTierDiscount } from '../../lib/pricing';
 import { poNumber, saleNumber } from '../../lib/numbering';
 import { applyStockMovement, notifyLowStock } from '../inventory/inventory.service';
 import { adjustMana } from '../mana/mana.service';
@@ -204,12 +204,18 @@ poRouter.post(
         total: round2(items.reduce((s, it) => s + it.lineTotal, 0)),
       };
     } else {
+      const prodById = new Map(products.map((p) => [p.id, p]));
       priced = priceLines(
-        body.items.map((i) => ({
-          productId: i.productId,
-          quantity: i.quantity,
-          srp: srpById.get(i.productId)!,
-        })),
+        body.items.map((i) => {
+          const p = prodById.get(i.productId)!;
+          // Per-product tier override (e.g. institutional pricing) for this buyer's tier.
+          return {
+            productId: i.productId,
+            quantity: i.quantity,
+            srp: srpById.get(i.productId)!,
+            discountRate: productTierDiscount(p, buyer.type),
+          };
+        }),
         buyer.discountRate
       );
     }
