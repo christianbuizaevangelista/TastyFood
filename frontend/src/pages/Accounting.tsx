@@ -122,10 +122,10 @@ function Pnl({ d }: { d: any }) {
       <h3 className="mb-1 text-base font-bold">Profit &amp; Loss</h3>
       <p className="mb-3 text-xs text-slate-400">{new Date(d.from).toLocaleDateString()} – {new Date(d.to).toLocaleDateString()}</p>
       <div className="text-xs font-semibold uppercase text-slate-400">Income</div>
-      {d.income.length ? d.income.map((r: any) => <Row key={r.code} label={`${r.code} ${r.name}`} value={r.amount} indent />) : <div className="py-1 pl-3 text-sm text-slate-400">None</div>}
+      {(d.income ?? []).length ? (d.income ?? []).map((r: any) => <Row key={r.code} label={`${r.code} ${r.name}`} value={r.amount} indent />) : <div className="py-1 pl-3 text-sm text-slate-400">None</div>}
       <Row label="Total Income" value={d.totalIncome} bold />
       <div className="mt-3 text-xs font-semibold uppercase text-slate-400">Expenses</div>
-      {d.expenses.length ? d.expenses.map((r: any) => <Row key={r.code} label={`${r.code} ${r.name}`} value={r.amount} indent />) : <div className="py-1 pl-3 text-sm text-slate-400">None</div>}
+      {(d.expenses ?? []).length ? (d.expenses ?? []).map((r: any) => <Row key={r.code} label={`${r.code} ${r.name}`} value={r.amount} indent />) : <div className="py-1 pl-3 text-sm text-slate-400">None</div>}
       <Row label="Total Expenses" value={d.totalExpenses} bold />
       <div className="mt-2 border-t border-slate-200 pt-2">
         <div className={`flex justify-between text-lg font-bold ${d.netIncome >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -142,13 +142,13 @@ function BalanceSheet({ d }: { d: any }) {
       <h3 className="mb-1 text-base font-bold">Balance Sheet</h3>
       <p className="mb-3 text-xs text-slate-400">As of {new Date(d.asOf).toLocaleDateString()}</p>
       <div className="text-xs font-semibold uppercase text-slate-400">Assets</div>
-      {d.assets.map((r: any) => <Row key={r.code} label={`${r.code} ${r.name}`} value={r.amount} indent />)}
+      {(d.assets ?? []).map((r: any) => <Row key={r.code} label={`${r.code} ${r.name}`} value={r.amount} indent />)}
       <Row label="Total Assets" value={d.totalAssets} bold />
       <div className="mt-3 text-xs font-semibold uppercase text-slate-400">Liabilities</div>
-      {d.liabilities.length ? d.liabilities.map((r: any) => <Row key={r.code} label={`${r.code} ${r.name}`} value={r.amount} indent />) : <div className="py-1 pl-3 text-sm text-slate-400">None</div>}
+      {(d.liabilities ?? []).length ? (d.liabilities ?? []).map((r: any) => <Row key={r.code} label={`${r.code} ${r.name}`} value={r.amount} indent />) : <div className="py-1 pl-3 text-sm text-slate-400">None</div>}
       <Row label="Total Liabilities" value={d.totalLiabilities} bold />
       <div className="mt-3 text-xs font-semibold uppercase text-slate-400">Equity</div>
-      {d.equity.map((r: any) => <Row key={r.code} label={`${r.code} ${r.name}`} value={r.amount} indent />)}
+      {(d.equity ?? []).map((r: any) => <Row key={r.code} label={`${r.code} ${r.name}`} value={r.amount} indent />)}
       <Row label="Current Earnings (net income to date)" value={d.currentEarnings} indent />
       <Row label="Total Equity" value={d.totalEquity} bold />
       <div className="mt-2 border-t border-slate-200 pt-2">
@@ -188,7 +188,7 @@ function TrialBalance({ d }: { d: any }) {
           <th className="td">Code</th><th className="td">Account</th><th className="td text-right">Debit</th><th className="td text-right">Credit</th>
         </tr></thead>
         <tbody>
-          {d.rows.map((r: any) => (
+          {(d.rows ?? []).map((r: any) => (
             <tr key={r.code} className="border-b border-slate-50">
               <td className="td font-mono text-xs">{r.code}</td>
               <td className="td">{r.name}</td>
