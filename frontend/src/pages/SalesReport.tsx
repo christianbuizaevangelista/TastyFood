@@ -87,8 +87,8 @@ export default function SalesReport() {
 
   const typePie = data
     ? [
-        { name: 'Distribution', value: data.summary.trade.revenue },
-        { name: 'Drop-ship', value: data.summary.dropShip.revenue },
+        { name: 'Regular', value: data.summary.trade.revenue },
+        { name: 'Dropship', value: data.summary.dropShip.revenue },
       ]
     : [];
   const channelPie = data

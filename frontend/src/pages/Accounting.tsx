@@ -3,6 +3,7 @@ import { api, apiError } from '../api/client';
 import { useFetch } from '../lib/useFetch';
 import { PageHeader, Spinner, Alert, EmptyState, Badge } from '../components/ui';
 import { peso } from '../lib/format';
+import { DATE_PRESETS, presetRange, DatePreset } from '../lib/datePresets';
 
 type AccountType = 'ASSET' | 'LIABILITY' | 'EQUITY' | 'INCOME' | 'EXPENSE';
 
@@ -82,6 +83,17 @@ export function Reports() {
   const [from, setFrom] = useState(monthStart());
   const [to, setTo] = useState(today());
   const [asOf, setAsOf] = useState(today());
+  const [preset, setPreset] = useState<DatePreset>('month');
+
+  function applyPreset(p: DatePreset) {
+    setPreset(p);
+    const r = presetRange(p); // null for 'custom'
+    if (r) {
+      setFrom(r.from);
+      setTo(r.to);
+      setAsOf(r.to || today()); // as-of reports use the range's end date
+    }
+  }
 
   const qs = usesRange ? `?from=${from}&to=${to}` : `?asOf=${asOf}`;
   const url = `/accounting/reports/${report}${qs}`;
@@ -130,7 +142,13 @@ export function Reports() {
             <option value="trial-balance">Trial Balance</option>
           </select>
         </div>
-        {usesRange ? (
+        <div>
+          <label className="label">Date</label>
+          <select className="input" value={preset} onChange={(e) => applyPreset(e.target.value as DatePreset)}>
+            {DATE_PRESETS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+          </select>
+        </div>
+        {preset === 'custom' && (usesRange ? (
           <>
             <div>
               <label className="label">From</label>
@@ -146,7 +164,7 @@ export function Reports() {
             <label className="label">As of</label>
             <input type="date" className="input" value={asOf} onChange={(e) => setAsOf(e.target.value)} />
           </div>
-        )}
+        ))}
         <button className="btn-ghost text-xs" disabled={!data} onClick={exportCsv}>⬇ Export CSV</button>
         <label className="btn-ghost cursor-pointer text-xs">
           {busy ? 'Importing…' : '⬆ Import entries'}
