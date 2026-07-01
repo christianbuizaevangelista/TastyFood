@@ -524,19 +524,59 @@ accountingRouter.get(
   })
 );
 
-// GET /accounting/distributor-financials/:orgId — one distributor's statement.
+// GET /accounting/distributor-financials/:orgId?from&to — one distributor's
+// statement: sales + expenses + payments over a date range, plus the A/R balance.
 accountingRouter.get(
   '/distributor-financials/:orgId',
   asyncHandler(async (req, res) => {
     const org = await prisma.organization.findUnique({ where: { id: req.params.orgId }, select: { id: true, name: true, type: true, segment: true } });
     if (!org) throw notFound('Distributor not found');
-    const [sales, payments] = await Promise.all([
-      prisma.sale.findMany({ where: { buyerOrgId: org.id, onAccount: true }, select: { id: true, number: true, total: true, createdAt: true }, orderBy: { createdAt: 'desc' } }),
-      prisma.distributorPayment.findMany({ where: { orgId: org.id }, orderBy: { date: 'desc' } }),
+    const range = parseRange(req.query); // defaults to current month
+    const inRange = { gte: range.from, lte: range.to };
+
+    const [sales, payments, expenseEntries, allChargeAgg, allPayAgg] = await Promise.all([
+      // All sales to this distributor in range (cash + on account).
+      prisma.sale.findMany({
+        where: { buyerOrgId: org.id, createdAt: inRange },
+        select: { id: true, number: true, total: true, createdAt: true, onAccount: true },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.distributorPayment.findMany({ where: { orgId: org.id, date: inRange }, orderBy: { date: 'desc' } }),
+      // Expenses tagged to this distributor (journal entries with distributorOrgId).
+      prisma.journalEntry.findMany({
+        where: { distributorOrgId: org.id, date: inRange },
+        include: { lines: { include: { account: { select: { type: true, name: true } } } } },
+        orderBy: { date: 'desc' },
+      }),
+      // All-time A/R (on-account sales) and payments for the outstanding balance.
+      prisma.sale.aggregate({ where: { buyerOrgId: org.id, onAccount: true }, _sum: { total: true } }),
+      prisma.distributorPayment.aggregate({ where: { orgId: org.id }, _sum: { amount: true } }),
     ]);
-    const charges = round2(sales.reduce((s, x) => s + x.total, 0));
-    const paid = round2(payments.reduce((s, x) => s + x.amount, 0));
-    res.json({ distributor: org, sales, payments, charges, paid, balance: round2(charges - paid) });
+
+    const expenses = expenseEntries
+      .map((e) => {
+        const amount = round2(e.lines.filter((l) => l.account.type === 'EXPENSE').reduce((s, l) => s + l.debit - l.credit, 0));
+        return { id: e.id, number: e.number, date: e.date, memo: e.memo, amount };
+      })
+      .filter((x) => x.amount > 0);
+
+    const salesTotal = round2(sales.reduce((s, x) => s + x.total, 0));
+    const expensesTotal = round2(expenses.reduce((s, x) => s + x.amount, 0));
+    const paymentsTotal = round2(payments.reduce((s, x) => s + x.amount, 0));
+    const balance = round2((allChargeAgg._sum.total ?? 0) - (allPayAgg._sum.amount ?? 0));
+
+    res.json({
+      distributor: org,
+      period: range,
+      sales,
+      expenses,
+      payments,
+      salesTotal,
+      expensesTotal,
+      paymentsTotal,
+      net: round2(salesTotal - expensesTotal),
+      balance,
+    });
   })
 );
 
@@ -559,6 +599,36 @@ accountingRouter.post(
       createdById: req.auth!.sub,
     });
     res.status(201).json(payment);
+  })
+);
+
+// POST /accounting/distributor-financials/:orgId/expenses — record an expense
+// attributed to a distributor (Debit the chosen expense account / Credit Cash),
+// tagged with distributorOrgId so it shows in that distributor's statement.
+accountingRouter.post(
+  '/distributor-financials/:orgId/expenses',
+  asyncHandler(async (req, res) => {
+    const org = await prisma.organization.findUnique({ where: { id: req.params.orgId }, select: { id: true, name: true } });
+    if (!org) throw notFound('Distributor not found');
+    const b = z.object({ amount: z.number().positive(), date: z.coerce.date(), accountId: z.string().min(1), note: z.string().max(300).optional() }).parse(req.body);
+    const expenseAcct = await prisma.account.findUnique({ where: { id: b.accountId } });
+    if (!expenseAcct || expenseAcct.type !== 'EXPENSE') throw badRequest('Choose a valid expense account');
+    await ensureDefaultAccounts();
+    let cash = await prisma.account.findUnique({ where: { code: '1000' } });
+    if (!cash) cash = await prisma.account.create({ data: { code: '1000', name: 'Cash on Hand', type: 'ASSET', isCash: true } });
+    const amount = round2(b.amount);
+    const number = await nextEntryNumber();
+    const entry = await prisma.journalEntry.create({
+      data: {
+        number,
+        date: b.date,
+        memo: b.note ? `${b.note} — ${org.name}` : `Expense — ${org.name}`,
+        distributorOrgId: org.id,
+        createdById: req.auth!.sub,
+        lines: { create: [{ accountId: expenseAcct.id, debit: amount }, { accountId: cash.id, credit: amount }] },
+      },
+    });
+    res.status(201).json(entry);
   })
 );
 
