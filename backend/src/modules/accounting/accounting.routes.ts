@@ -561,3 +561,64 @@ accountingRouter.post(
     res.status(201).json(payment);
   })
 );
+
+// =============================================================================
+// Finance Dashboard
+// =============================================================================
+
+// GET /accounting/dashboard?from&to — finance KPIs + charts. Period defaults to
+// the current month; cash & A/R are point-in-time (as of now).
+accountingRouter.get(
+  '/dashboard',
+  asyncHandler(async (req, res) => {
+    await ensureDefaultAccounts();
+    const now = new Date();
+    const from = req.query.from ? new Date(req.query.from as string) : new Date(now.getFullYear(), now.getMonth(), 1);
+    const to = req.query.to ? endOfDay(new Date(req.query.to as string)) : now;
+
+    const [periodTotals, asOfTotals] = await Promise.all([
+      accountTotals({ date: { gte: from, lte: to } }),
+      accountTotals({ date: { lte: now } }),
+    ]);
+
+    const revenue = round2(periodTotals.filter((t) => t.account.type === 'INCOME').reduce((s, t) => s + (t.credit - t.debit), 0));
+    const expenses = round2(periodTotals.filter((t) => t.account.type === 'EXPENSE').reduce((s, t) => s + (t.debit - t.credit), 0));
+    const cash = round2(asOfTotals.filter((t) => t.account.isCash).reduce((s, t) => s + (t.debit - t.credit), 0));
+    const arAcct = asOfTotals.find((t) => t.account.code === '1100');
+    const accountsReceivable = round2(arAcct ? arAcct.debit - arAcct.credit : 0);
+
+    const expenseBreakdown = periodTotals
+      .filter((t) => t.account.type === 'EXPENSE')
+      .map((t) => ({ name: `${t.account.code} ${t.account.name}`, amount: round2(t.debit - t.credit) }))
+      .filter((r) => r.amount > 0)
+      .sort((a, b) => b.amount - a.amount);
+
+    // 6-month revenue vs expenses trend.
+    const trendStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const lines = await prisma.journalLine.findMany({
+      where: { entry: { date: { gte: trendStart } } },
+      select: { debit: true, credit: true, entry: { select: { date: true } }, account: { select: { type: true } } },
+    });
+    const buckets: { key: string; label: string; revenue: number; expenses: number }[] = [];
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
+      buckets.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label: d.toLocaleString('en-US', { month: 'short' }), revenue: 0, expenses: 0 });
+    }
+    const byKey = new Map(buckets.map((b) => [b.key, b]));
+    for (const l of lines) {
+      const d = new Date(l.entry.date);
+      const b = byKey.get(`${d.getFullYear()}-${d.getMonth()}`);
+      if (!b) continue;
+      if (l.account.type === 'INCOME') b.revenue += l.credit - l.debit;
+      else if (l.account.type === 'EXPENSE') b.expenses += l.debit - l.credit;
+    }
+    buckets.forEach((b) => { b.revenue = round2(b.revenue); b.expenses = round2(b.expenses); });
+
+    res.json({
+      period: { from, to },
+      cards: { revenue, expenses, netIncome: round2(revenue - expenses), cash, accountsReceivable },
+      expenseBreakdown,
+      trend: buckets.map(({ label, revenue, expenses }) => ({ month: label, revenue, expenses })),
+    });
+  })
+);

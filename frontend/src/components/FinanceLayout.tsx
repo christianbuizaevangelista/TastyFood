@@ -4,7 +4,8 @@ import { useAuth } from '../auth/AuthContext';
 import { hasDmsAccess } from '../lib/nav';
 
 const FINANCE_NAV = [
-  { to: '/finance', label: 'Reports', icon: '📊', exact: true },
+  { to: '/finance', label: 'Dashboard', icon: '📊', exact: true },
+  { to: '/finance/reports', label: 'Reports', icon: '📈', exact: false },
   { to: '/finance/journal', label: 'Journal Entries', icon: '🧾', exact: false },
   { to: '/finance/distributors', label: 'Distributor Financials', icon: '🏬', exact: false },
   { to: '/finance/accounts', label: 'Chart of Accounts', icon: '📚', exact: false },
