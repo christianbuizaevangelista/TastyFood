@@ -48,6 +48,8 @@ export default function POS() {
   const [discMode, setDiscMode] = useState<'percent' | 'amount'>('percent');
   const [discValue, setDiscValue] = useState(0);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  // Payment terms for an account sale: false = Cash, true = Accounts Receivable.
+  const [onAccount, setOnAccount] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -131,6 +133,7 @@ export default function POS() {
         customerName: selected ? selected.name : customer ? customer.name : unofficial ? 'Unofficial Reseller' : query.trim() || 'Walk-in',
         // For Unofficial Reseller / Customer / Others / Walk-in, send the discount rate explicitly.
         discountRate: selected ? undefined : discountRate,
+        onAccount: selected ? onAccount : false, // Cash vs Accounts Receivable (account sales only)
         items: lines.map(([productId, quantity]) => ({ productId, quantity })),
       });
       setReceipt(r);
@@ -140,6 +143,7 @@ export default function POS() {
       setCustomer(null);
       setUnofficial(false);
       setDiscValue(0);
+      setOnAccount(false);
     } catch (e) {
       setErr(apiError(e));
     } finally {
@@ -270,9 +274,31 @@ export default function POS() {
           {/* Auto-detected customer type + discount */}
           {selected ? (
             <div className="mb-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
-              Type: <span className="font-semibold">{selected.segment === 'RETAIL' ? 'Retail Distributor' : TIER[selected.type]?.label ?? selected.type}</span> ·{' '}
-              <span className="font-semibold text-brand-600">{Math.round(selected.discountRate * 100)}% discount</span>
-              {isRetail && <span className="ml-1 text-amber-600">· retail pricing</span>}
+              <div>
+                Type: <span className="font-semibold">{selected.segment === 'RETAIL' ? 'Retail Distributor' : TIER[selected.type]?.label ?? selected.type}</span> ·{' '}
+                <span className="font-semibold text-brand-600">{Math.round(selected.discountRate * 100)}% discount</span>
+                {isRetail && <span className="ml-1 text-amber-600">· retail pricing</span>}
+              </div>
+              <div className="mt-2">
+                <div className="mb-1 font-semibold text-slate-500">Payment</div>
+                <div className="flex overflow-hidden rounded-md border border-slate-300">
+                  {([
+                    { v: false, label: '💵 Cash' },
+                    { v: true, label: '🧾 Accounts Receivable' },
+                  ] as const).map((m) => (
+                    <button
+                      key={String(m.v)}
+                      onClick={() => setOnAccount(m.v)}
+                      className={`flex-1 px-2 py-1 text-xs font-semibold ${onAccount === m.v ? 'bg-brand-500 text-white' : 'bg-white text-slate-600'}`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  {onAccount ? 'Records as a receivable (they owe) — tracked in Distributor Financials.' : 'Records as a cash sale in the finance books.'}
+                </p>
+              </div>
             </div>
           ) : unofficial ? (
             <div className="mb-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">

@@ -23,6 +23,8 @@ const saleSchema = z.object({
   customerId: z.string().optional(),
   // Explicit discount override (0..1). Falls back to buyer org's rate, else 0 (SRP).
   discountRate: z.number().min(0).max(1).optional(),
+  // Payment terms for an account sale: true = Accounts Receivable, false = Cash.
+  onAccount: z.boolean().optional(),
   items: z
     .array(z.object({ productId: z.string(), quantity: z.number().int().positive() }))
     .min(1),
@@ -110,6 +112,7 @@ posRouter.post(
             discountRate,
             subtotal: priced.subtotal,
             total: priced.total,
+            onAccount: body.onAccount ?? false,
             createdById: req.auth!.sub,
             items: { create: priced.items },
           },
@@ -129,7 +132,7 @@ posRouter.post(
           saleId: sale.id,
           total: sale.total,
           date: sale.createdAt,
-          onAccount: false,
+          onAccount: sale.onAccount,
           label: `POS sale ${sale.number} — ${sale.sellerOrg.name}`,
           createdById: req.auth!.sub,
         });

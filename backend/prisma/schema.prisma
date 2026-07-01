@@ -183,6 +183,7 @@ model Organization {
   referralsSent     Referral[] @relation("ReferralFrom")
   referralsReceived Referral[] @relation("ReferralTo")
   journalEntries    JournalEntry[] @relation("EntryDistributor")
+  distributorPayments DistributorPayment[]
 
   @@index([parentId])
   @@index([type])
@@ -391,6 +392,10 @@ model Sale {
   subtotal         Float    @default(0)
   total            Float    @default(0)
 
+  // Payment terms for a POS sale to a distributor: true = on account (Accounts
+  // Receivable), false = cash. Drives the finance posting + per-distributor A/R.
+  onAccount        Boolean  @default(false)
+
   // If this sale was generated from a fulfilled PO.
   poId             String?  @unique
   po               PurchaseOrder? @relation("SaleFromPO", fields: [poId], references: [id])
@@ -406,6 +411,20 @@ model Sale {
   @@index([channel])
   @@index([distributionType])
   @@index([createdAt])
+}
+
+// A payment received from a distributor against their Accounts Receivable balance.
+model DistributorPayment {
+  id          String   @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id])
+  amount      Float
+  date        DateTime
+  note        String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([orgId])
 }
 
 model SaleItem {

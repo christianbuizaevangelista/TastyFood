@@ -117,3 +117,41 @@ export async function postSaleToBooks(p: {
     console.error('[postSaleToBooks] failed', err);
   }
 }
+
+// Posts a distributor A/R payment to the books: Debit Cash, Credit Accounts
+// Receivable. Idempotent per payment. Best-effort.
+export async function postArPaymentToBooks(p: {
+  paymentId: string;
+  amount: number;
+  date: Date;
+  label: string;
+  createdById: string;
+}): Promise<void> {
+  try {
+    if (!p.amount || p.amount <= 0) return;
+    const existing = await prisma.journalEntry.findFirst({ where: { sourceType: 'AR_PAYMENT', sourceId: p.paymentId } });
+    if (existing) return;
+    await ensureDefaultAccounts();
+    const cash = await accountByCode('1000', 'Cash on Hand', 'ASSET', null, true);
+    const ar = await accountByCode('1100', 'Accounts Receivable', 'ASSET', 'OPERATING', false);
+    const number = await nextEntryNumber();
+    await prisma.journalEntry.create({
+      data: {
+        number,
+        date: p.date,
+        memo: p.label,
+        sourceType: 'AR_PAYMENT',
+        sourceId: p.paymentId,
+        createdById: p.createdById,
+        lines: {
+          create: [
+            { accountId: cash.id, debit: round2(p.amount) },
+            { accountId: ar.id, credit: round2(p.amount) },
+          ],
+        },
+      },
+    });
+  } catch (err) {
+    console.error('[postArPaymentToBooks] failed', err);
+  }
+}

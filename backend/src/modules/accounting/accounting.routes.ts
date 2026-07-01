@@ -11,6 +11,7 @@ import {
   nextEntryNumber,
   normalBalance,
   round2,
+  postArPaymentToBooks,
 } from './accounting.service';
 
 export const accountingRouter = Router();
@@ -431,5 +432,76 @@ accountingRouter.get(
       beginningCash,
       endingCash: round2(beginningCash + netChange),
     });
+  })
+);
+
+// =============================================================================
+// Distributor Financials (per-distributor Accounts Receivable statement)
+// =============================================================================
+
+// GET /accounting/distributor-financials — every distributor with A/R activity,
+// showing charges (on-account sales), payments, and outstanding balance.
+accountingRouter.get(
+  '/distributor-financials',
+  asyncHandler(async (_req, res) => {
+    const [chargeAgg, payAgg] = await Promise.all([
+      prisma.sale.groupBy({ by: ['buyerOrgId'], where: { onAccount: true, buyerOrgId: { not: null } }, _sum: { total: true } }),
+      prisma.distributorPayment.groupBy({ by: ['orgId'], _sum: { amount: true } }),
+    ]);
+    const ids = new Set<string>();
+    chargeAgg.forEach((c) => c.buyerOrgId && ids.add(c.buyerOrgId));
+    payAgg.forEach((p) => ids.add(p.orgId));
+    const orgs = await prisma.organization.findMany({
+      where: { id: { in: [...ids] } },
+      select: { id: true, name: true, type: true, segment: true },
+    });
+    const chargeById = new Map(chargeAgg.map((c) => [c.buyerOrgId!, c._sum.total ?? 0]));
+    const payById = new Map(payAgg.map((p) => [p.orgId, p._sum.amount ?? 0]));
+    const distributors = orgs
+      .map((o) => {
+        const charges = round2(chargeById.get(o.id) ?? 0);
+        const payments = round2(payById.get(o.id) ?? 0);
+        return { ...o, charges, payments, balance: round2(charges - payments) };
+      })
+      .sort((a, b) => b.balance - a.balance);
+    res.json({ distributors });
+  })
+);
+
+// GET /accounting/distributor-financials/:orgId — one distributor's statement.
+accountingRouter.get(
+  '/distributor-financials/:orgId',
+  asyncHandler(async (req, res) => {
+    const org = await prisma.organization.findUnique({ where: { id: req.params.orgId }, select: { id: true, name: true, type: true, segment: true } });
+    if (!org) throw notFound('Distributor not found');
+    const [sales, payments] = await Promise.all([
+      prisma.sale.findMany({ where: { buyerOrgId: org.id, onAccount: true }, select: { id: true, number: true, total: true, createdAt: true }, orderBy: { createdAt: 'desc' } }),
+      prisma.distributorPayment.findMany({ where: { orgId: org.id }, orderBy: { date: 'desc' } }),
+    ]);
+    const charges = round2(sales.reduce((s, x) => s + x.total, 0));
+    const paid = round2(payments.reduce((s, x) => s + x.amount, 0));
+    res.json({ distributor: org, sales, payments, charges, paid, balance: round2(charges - paid) });
+  })
+);
+
+// POST /accounting/distributor-financials/:orgId/payments — record a payment
+// (reduces A/R; posts Debit Cash / Credit Accounts Receivable to the books).
+accountingRouter.post(
+  '/distributor-financials/:orgId/payments',
+  asyncHandler(async (req, res) => {
+    const org = await prisma.organization.findUnique({ where: { id: req.params.orgId }, select: { id: true, name: true } });
+    if (!org) throw notFound('Distributor not found');
+    const b = z.object({ amount: z.number().positive(), date: z.coerce.date(), note: z.string().max(300).optional() }).parse(req.body);
+    const payment = await prisma.distributorPayment.create({
+      data: { orgId: org.id, amount: round2(b.amount), date: b.date, note: b.note ?? null, createdById: req.auth!.sub },
+    });
+    await postArPaymentToBooks({
+      paymentId: payment.id,
+      amount: payment.amount,
+      date: payment.date,
+      label: `Payment received — ${org.name}`,
+      createdById: req.auth!.sub,
+    });
+    res.status(201).json(payment);
   })
 );
