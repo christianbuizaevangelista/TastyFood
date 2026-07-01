@@ -11,6 +11,7 @@ import { applyStockMovement, notifyLowStock } from '../inventory/inventory.servi
 import { adjustMana } from '../mana/mana.service';
 import { sendPoSubmittedEmail, sendStockRequestEmail, sendPoStatusEmail } from '../../lib/email';
 import { notifyRecipients } from '../../lib/notify';
+import { postSaleToBooks } from '../accounting/accounting.service';
 
 // Email the buyer (owner + active staff with 'purchase-orders') that their PO
 // changed status. Skips internal stock-in POs (buyer == seller). Best-effort.
@@ -452,6 +453,20 @@ poRouter.post(
         await notifyLowStock(po.sellerOrgId, po.items.map((i) => i.productId));
       }
       await notifyBuyerPoStatus(po, 'FULFILLED');
+      // Auto-post the fulfilled PO's sale to the finance books (on account). Best-effort.
+      if (!isStockIn) {
+        const genSale = await prisma.sale.findUnique({ where: { poId: po.id }, select: { id: true, total: true, createdAt: true } });
+        if (genSale) {
+          await postSaleToBooks({
+            saleId: genSale.id,
+            total: genSale.total,
+            date: genSale.createdAt,
+            onAccount: true,
+            label: `PO ${po.number} fulfilled — ${po.buyerOrg.name}`,
+            createdById: req.auth!.sub,
+          });
+        }
+      }
       res.json(updated);
     } catch (err: any) {
       if (typeof err?.message === 'string' && err.message.startsWith('Insufficient stock')) {

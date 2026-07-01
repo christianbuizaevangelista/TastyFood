@@ -610,11 +610,52 @@ model JournalEntry {
   distributorOrg    Organization? @relation("EntryDistributor", fields: [distributorOrgId], references: [id])
   deliveryReceiptNo String?
 
+  // When auto-generated from an operations event (a POS/PO sale), links back to it
+  // and guarantees a single posting. Manual entries leave these null.
+  sourceType String?
+  sourceId   String?
+
   lines       JournalLine[]
   attachments JournalAttachment[]
   items       JournalItem[]
 
+  @@unique([sourceType, sourceId])
   @@index([date])
+}
+
+// A retail distributor — a separate market segment, independent of the
+// Provincial/City/Reseller operations chain. Tracked only in Financials.
+model RetailDistributor {
+  id            String   @id @default(cuid())
+  name          String
+  contactPerson String?
+  phone         String?
+  address       String?
+  notes         String?
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  transactions  RetailTransaction[]
+
+  @@index([name])
+}
+
+// A financial transaction for a retail distributor (a charge/sale they owe, or a
+// payment they made). Running balance = cumulative (charge - payment).
+model RetailTransaction {
+  id            String   @id @default(cuid())
+  distributorId String
+  distributor   RetailDistributor @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  date          DateTime
+  type          String   // SALE | PAYMENT | ADJUSTMENT
+  description   String?
+  reference     String?
+  charge        Float    @default(0) // amount owed (a sale/delivery)
+  payment       Float    @default(0) // amount received
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  @@index([distributorId])
 }
 
 // Per-SKU line of a distributor delivery recorded in a journal entry.

@@ -68,3 +68,52 @@ export async function nextEntryNumber(): Promise<string> {
   const count = await prisma.journalEntry.count();
   return `JE-${String(count + 1).padStart(6, '0')}`;
 }
+
+// Fetch an account by code, creating a sensible default if it doesn't exist.
+async function accountByCode(code: string, name: string, type: AccountType, cashflowSection: CashflowSection | null, isCash: boolean) {
+  const existing = await prisma.account.findUnique({ where: { code } });
+  if (existing) return existing;
+  return prisma.account.create({ data: { code, name, type, isCash, cashflowSection } });
+}
+
+// Auto-posts an operations sale (POS or fulfilled PO) into the finance books as
+// revenue. Idempotent per sale (via JournalEntry.sourceType/sourceId). Best-effort:
+// it must never break the originating sale/PO flow.
+export async function postSaleToBooks(p: {
+  saleId: string;
+  total: number;
+  date: Date;
+  onAccount: boolean; // true = credit sale (PO on account) -> Debit A/R; false = cash (POS) -> Debit Cash
+  label: string;
+  createdById: string;
+}): Promise<void> {
+  try {
+    if (!p.total || p.total <= 0) return;
+    const existing = await prisma.journalEntry.findFirst({ where: { sourceType: 'SALE', sourceId: p.saleId } });
+    if (existing) return;
+    await ensureDefaultAccounts();
+    const revenue = await accountByCode('4000', 'Sales Revenue', 'INCOME', 'OPERATING', false);
+    const debit = p.onAccount
+      ? await accountByCode('1100', 'Accounts Receivable', 'ASSET', 'OPERATING', false)
+      : await accountByCode('1000', 'Cash on Hand', 'ASSET', null, true);
+    const number = await nextEntryNumber();
+    await prisma.journalEntry.create({
+      data: {
+        number,
+        date: p.date,
+        memo: p.label,
+        sourceType: 'SALE',
+        sourceId: p.saleId,
+        createdById: p.createdById,
+        lines: {
+          create: [
+            { accountId: debit.id, debit: round2(p.total) },
+            { accountId: revenue.id, credit: round2(p.total) },
+          ],
+        },
+      },
+    });
+  } catch (err) {
+    console.error('[postSaleToBooks] failed', err);
+  }
+}

@@ -8,6 +8,7 @@ import { badRequest, forbidden, notFound } from '../../lib/errors';
 import { priceLines } from '../../lib/pricing';
 import { saleNumber } from '../../lib/numbering';
 import { applyStockMovement, notifyLowStock } from '../inventory/inventory.service';
+import { postSaleToBooks } from '../accounting/accounting.service';
 
 export const posRouter = Router();
 posRouter.use(authenticate);
@@ -119,6 +120,15 @@ posRouter.post(
       if (body.distributionType === 'TRADE') {
         await notifyLowStock(seller.id, priced.items.map((i) => i.productId));
       }
+      // Auto-post the POS sale to the finance books (cash sale). Best-effort.
+      await postSaleToBooks({
+        saleId: sale.id,
+        total: sale.total,
+        date: sale.createdAt,
+        onAccount: false,
+        label: `POS sale ${sale.number} — ${sale.sellerOrg.name}`,
+        createdById: req.auth!.sub,
+      });
       res.status(201).json(buildReceipt(sale));
     } catch (err: any) {
       if (typeof err?.message === 'string' && err.message.startsWith('Insufficient stock')) {
