@@ -724,6 +724,7 @@ function DeliveryEntry({ accounts, onClose, onSaved }: { accounts: Account[]; on
 export function ChartOfAccounts() {
   const { data, loading, error, refetch } = useFetch<{ accounts: Account[] }>('/accounting/accounts');
   const [showAdd, setShowAdd] = useState(false);
+  const [ledger, setLedger] = useState<Account | null>(null);
 
   const accounts = data?.accounts ?? [];
   const byType = (t: AccountType) => accounts.filter((a) => a.type === t);
@@ -746,7 +747,9 @@ export function ChartOfAccounts() {
               <div className="space-y-1">
                 {byType(t).map((a) => (
                   <div key={a.id} className="flex items-center justify-between border-b border-slate-50 py-1 text-sm">
-                    <span><span className="font-mono text-xs text-slate-400">{a.code}</span> {a.name}</span>
+                    <button className="text-left hover:underline" onClick={() => setLedger(a)}>
+                      <span className="font-mono text-xs text-slate-400">{a.code}</span> <span className="text-brand-700">{a.name}</span>
+                    </button>
                     <span className="flex items-center gap-2 text-xs">
                       {a.isCash && <Badge value="CASH" />}
                       {a.cashflowSection && <span className="text-slate-400">{a.cashflowSection}</span>}
@@ -761,6 +764,91 @@ export function ChartOfAccounts() {
         </div>
       )}
       {showAdd && <AddAccount onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); refetch(); }} />}
+      {ledger && <AccountLedger account={ledger} onClose={() => setLedger(null)} />}
+    </div>
+  );
+}
+
+// All transactions for one account, with a running balance + date presets.
+function AccountLedger({ account, onClose }: { account: Account; onClose: () => void }) {
+  const [preset, setPreset] = useState<DatePreset>('all');
+  const [range, setRange] = useState(() => presetRange('all') ?? { from: '', to: '' });
+  const qs = range.from || range.to ? `?from=${range.from}&to=${range.to}` : '';
+  const url = `/accounting/accounts/${account.id}/ledger${qs}`;
+  const { data, loading, error } = useFetch<any>(url, [url]);
+
+  function applyPreset(p: DatePreset) {
+    setPreset(p);
+    const r = presetRange(p);
+    if (r) setRange(r);
+  }
+
+  return (
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-bold"><span className="font-mono text-sm text-slate-400">{account.code}</span> {account.name}</h2>
+        <p className="mb-3 text-xs text-slate-500">{account.type} · account ledger</p>
+
+        <div className="mb-3 flex flex-wrap items-end gap-2">
+          <div>
+            <label className="label">Date</label>
+            <select className="input text-sm" value={preset} onChange={(e) => applyPreset(e.target.value as DatePreset)}>
+              {DATE_PRESETS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+            </select>
+          </div>
+          {preset === 'custom' && (
+            <>
+              <input type="date" className="input text-sm" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} />
+              <span className="pb-2 text-xs text-slate-400">to</span>
+              <input type="date" className="input text-sm" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} />
+            </>
+          )}
+        </div>
+
+        {loading ? (
+          <Spinner />
+        ) : error ? (
+          <Alert>{error}</Alert>
+        ) : !data ? null : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
+                  <th className="td">Date</th><th className="td">Entry</th><th className="td">Memo</th>
+                  <th className="td text-right">Debit</th><th className="td text-right">Credit</th><th className="td text-right">Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-slate-50 text-slate-500">
+                  <td className="td" colSpan={5}>Opening balance</td>
+                  <td className="td text-right">{peso(data.openingBalance)}</td>
+                </tr>
+                {data.rows.map((r: any) => (
+                  <tr key={r.id} className="border-b border-slate-50">
+                    <td className="td text-xs">{new Date(r.date).toLocaleDateString()}</td>
+                    <td className="td font-mono text-xs">{r.number}</td>
+                    <td className="td text-xs text-slate-500">{r.memo}</td>
+                    <td className="td text-right">{r.debit ? peso(r.debit) : ''}</td>
+                    <td className="td text-right">{r.credit ? peso(r.credit) : ''}</td>
+                    <td className="td text-right font-medium">{peso(r.balance)}</td>
+                  </tr>
+                ))}
+                {data.rows.length === 0 && <tr><td className="td text-slate-400" colSpan={6}>No transactions in this period.</td></tr>}
+                <tr className="font-bold">
+                  <td className="td" colSpan={3}>Totals / Ending balance</td>
+                  <td className="td text-right">{peso(data.totalDebit)}</td>
+                  <td className="td text-right">{peso(data.totalCredit)}</td>
+                  <td className="td text-right">{peso(data.endingBalance)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="mt-5 flex justify-end">
+          <button className="btn-ghost" onClick={onClose}>Close</button>
+        </div>
+      </div>
     </div>
   );
 }

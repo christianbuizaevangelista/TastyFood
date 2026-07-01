@@ -106,6 +106,64 @@ accountingRouter.patch(
   })
 );
 
+// GET /accounting/accounts/:id/ledger?from&to — all transactions for one account,
+// with a running balance. No from/to = all-time.
+accountingRouter.get(
+  '/accounts/:id/ledger',
+  asyncHandler(async (req, res) => {
+    const account = await prisma.account.findUnique({ where: { id: req.params.id } });
+    if (!account) throw notFound('Account not found');
+    const from = req.query.from ? new Date(req.query.from as string) : null;
+    const to = req.query.to ? endOfDay(new Date(req.query.to as string)) : null;
+
+    // Opening balance = net of all lines before the period start.
+    let openDebit = 0;
+    let openCredit = 0;
+    if (from) {
+      const before = await prisma.journalLine.aggregate({
+        where: { accountId: account.id, entry: { date: { lt: from } } },
+        _sum: { debit: true, credit: true },
+      });
+      openDebit = before._sum.debit ?? 0;
+      openCredit = before._sum.credit ?? 0;
+    }
+
+    const dateFilter: any = {};
+    if (from) dateFilter.gte = from;
+    if (to) dateFilter.lte = to;
+    const lines = await prisma.journalLine.findMany({
+      where: { accountId: account.id, ...(from || to ? { entry: { date: dateFilter } } : {}) },
+      include: { entry: { select: { number: true, date: true, memo: true } } },
+      orderBy: [{ entry: { date: 'asc' } }, { entry: { createdAt: 'asc' } }],
+    });
+
+    let rd = openDebit;
+    let rc = openCredit;
+    const rows = lines.map((l) => {
+      rd += l.debit;
+      rc += l.credit;
+      return {
+        id: l.id,
+        date: l.entry.date,
+        number: l.entry.number,
+        memo: l.memo ?? l.entry.memo,
+        debit: round2(l.debit),
+        credit: round2(l.credit),
+        balance: round2(normalBalance(account.type, rd, rc)),
+      };
+    });
+
+    res.json({
+      account: { id: account.id, code: account.code, name: account.name, type: account.type },
+      openingBalance: round2(normalBalance(account.type, openDebit, openCredit)),
+      rows,
+      totalDebit: round2(lines.reduce((s, l) => s + l.debit, 0)),
+      totalCredit: round2(lines.reduce((s, l) => s + l.credit, 0)),
+      endingBalance: round2(normalBalance(account.type, rd, rc)),
+    });
+  })
+);
+
 // GET /accounting/distributors — accounts that can owe receivables (for A/R deliveries).
 accountingRouter.get(
   '/distributors',
