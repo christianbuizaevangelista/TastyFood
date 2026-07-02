@@ -50,6 +50,7 @@ export default function POS() {
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   // Payment terms for an account sale: false = Cash, true = Accounts Receivable.
   const [onAccount, setOnAccount] = useState(false);
+  const [dueDate, setDueDate] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -134,6 +135,7 @@ export default function POS() {
         // For Unofficial Reseller / Customer / Others / Walk-in, send the discount rate explicitly.
         discountRate: selected ? undefined : discountRate,
         onAccount: selected && isRetail ? onAccount : false, // Cash vs A/R — retail distributors only
+        dueDate: selected && isRetail && onAccount && dueDate ? dueDate : undefined,
         items: lines.map(([productId, quantity]) => ({ productId, quantity })),
       });
       setReceipt(r);
@@ -144,6 +146,7 @@ export default function POS() {
       setUnofficial(false);
       setDiscValue(0);
       setOnAccount(false);
+      setDueDate('');
     } catch (e) {
       setErr(apiError(e));
     } finally {
@@ -299,6 +302,12 @@ export default function POS() {
                 <p className="mt-1 text-[11px] text-slate-400">
                   {onAccount ? 'Records as a receivable (they owe) — tracked in Distributor Financials.' : 'Records as a cash sale in the finance books.'}
                 </p>
+                {onAccount && (
+                  <div className="mt-2">
+                    <label className="label">Due date <span className="font-normal text-slate-400">(for aging)</span></label>
+                    <input type="date" className="input text-sm" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                  </div>
+                )}
               </div>
               )}
             </div>

@@ -63,6 +63,8 @@ const accountSchema = z.object({
   type: z.enum(['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE']),
   isCash: z.boolean().optional(),
   cashflowSection: z.enum(['OPERATING', 'INVESTING', 'FINANCING']).nullable().optional(),
+  // Optional parent account id (creates a sub-account under it).
+  parentId: z.string().nullable().optional(),
 });
 
 // POST /accounting/accounts — add an account.
@@ -72,6 +74,10 @@ accountingRouter.post(
     const body = accountSchema.parse(req.body);
     if (await prisma.account.findUnique({ where: { code: body.code } }))
       throw conflict('An account with that code already exists');
+    if (body.parentId) {
+      const parent = await prisma.account.findUnique({ where: { id: body.parentId } });
+      if (!parent) throw badRequest('Parent account not found');
+    }
     const account = await prisma.account.create({
       data: {
         code: body.code,
@@ -79,6 +85,7 @@ accountingRouter.post(
         type: body.type as AccountType,
         isCash: body.isCash ?? false,
         cashflowSection: (body.cashflowSection ?? null) as CashflowSection | null,
+        parentId: body.parentId ?? null,
       },
     });
     res.status(201).json(account);
@@ -754,5 +761,86 @@ accountingRouter.get(
       expenseBreakdown,
       trend: buckets.map(({ label, revenue, expenses }) => ({ month: label, revenue, expenses })),
     });
+  })
+);
+
+// =============================================================================
+// A/R Aging Report (retail distributors)
+// =============================================================================
+
+// GET /accounting/aging — outstanding receivables per retail distributor, bucketed
+// by how overdue each unpaid charge is (payments applied oldest-first / FIFO).
+accountingRouter.get(
+  '/aging',
+  asyncHandler(async (_req, res) => {
+    const now = new Date();
+    const retail = await prisma.organization.findMany({
+      where: { segment: 'RETAIL', archivedAt: null },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+    const ids = retail.map((o) => o.id);
+    const [sales, payAgg] = await Promise.all([
+      prisma.sale.findMany({
+        where: { buyerOrgId: { in: ids }, onAccount: true },
+        select: { buyerOrgId: true, total: true, createdAt: true, dueDate: true },
+        orderBy: { createdAt: 'asc' },
+      }),
+      prisma.distributorPayment.groupBy({ by: ['orgId'], where: { orgId: { in: ids } }, _sum: { amount: true } }),
+    ]);
+    const payById = new Map(payAgg.map((p) => [p.orgId, p._sum.amount ?? 0]));
+    const salesByOrg = new Map<string, typeof sales>();
+    for (const s of sales) {
+      const arr = salesByOrg.get(s.buyerOrgId!) ?? [];
+      arr.push(s);
+      salesByOrg.set(s.buyerOrgId!, arr);
+    }
+    const bucketOf = (days: number) =>
+      days <= 0 ? 'current' : days <= 30 ? 'd1_30' : days <= 60 ? 'd31_60' : days <= 90 ? 'd61_90' : 'd90plus';
+
+    const rows: any[] = [];
+    const totals = { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90plus: 0, outstanding: 0 };
+    for (const o of retail) {
+      const os = salesByOrg.get(o.id) ?? [];
+      let pay = payById.get(o.id) ?? 0;
+      const b: any = { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90plus: 0 };
+      let outstanding = 0;
+      let maxDays = 0;
+      for (const s of os) {
+        let unpaid = s.total;
+        if (pay > 0) {
+          const applied = Math.min(pay, unpaid);
+          unpaid -= applied;
+          pay -= applied;
+        }
+        if (unpaid <= 0.005) continue;
+        const due = s.dueDate ?? s.createdAt;
+        const days = Math.floor((now.getTime() - new Date(due).getTime()) / 86400000);
+        b[bucketOf(days)] += unpaid;
+        outstanding += unpaid;
+        if (days > maxDays) maxDays = days;
+      }
+      if (outstanding <= 0.005) continue;
+      const row = {
+        id: o.id,
+        name: o.name,
+        current: round2(b.current),
+        d1_30: round2(b.d1_30),
+        d31_60: round2(b.d31_60),
+        d61_90: round2(b.d61_90),
+        d90plus: round2(b.d90plus),
+        outstanding: round2(outstanding),
+        maxDaysOverdue: Math.max(0, maxDays),
+      };
+      rows.push(row);
+      totals.current += row.current;
+      totals.d1_30 += row.d1_30;
+      totals.d31_60 += row.d31_60;
+      totals.d61_90 += row.d61_90;
+      totals.d90plus += row.d90plus;
+      totals.outstanding += row.outstanding;
+    }
+    (Object.keys(totals) as (keyof typeof totals)[]).forEach((k) => (totals[k] = round2(totals[k])));
+    res.json({ asOf: now, rows: rows.sort((a, b2) => b2.maxDaysOverdue - a.maxDaysOverdue), totals });
   })
 );

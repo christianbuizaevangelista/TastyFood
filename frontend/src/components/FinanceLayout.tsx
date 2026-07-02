@@ -8,6 +8,7 @@ const FINANCE_NAV = [
   { to: '/finance/reports', label: 'Reports', icon: '📈', exact: false },
   { to: '/finance/journal', label: 'Journal Entries', icon: '🧾', exact: false },
   { to: '/finance/distributors', label: 'Distributor Financials', icon: '🏬', exact: false },
+  { to: '/finance/aging', label: 'A/R Aging', icon: '⏰', exact: false },
   { to: '/finance/accounts', label: 'Chart of Accounts', icon: '📚', exact: false },
 ];
 

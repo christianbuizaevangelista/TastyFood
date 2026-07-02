@@ -401,6 +401,8 @@ model Sale {
   // Payment terms for a POS sale to a distributor: true = on account (Accounts
   // Receivable), false = cash. Drives the finance posting + per-distributor A/R.
   onAccount        Boolean  @default(false)
+  // When an on-account sale is expected to be paid (for the A/R aging report).
+  dueDate          DateTime?
 
   // If this sale was generated from a fulfilled PO.
   poId             String?  @unique
@@ -614,6 +616,10 @@ model Account {
   code            String  @unique
   name            String
   type            AccountType
+  // Optional parent for sub-accounts (chart-of-accounts hierarchy).
+  parentId        String?
+  parent          Account?  @relation("AccountTree", fields: [parentId], references: [id])
+  children        Account[] @relation("AccountTree")
   // Cash & cash equivalents — these accounts ARE the cash on the cash-flow statement.
   isCash          Boolean @default(false)
   // For non-cash accounts: which section a cash movement against it belongs to.

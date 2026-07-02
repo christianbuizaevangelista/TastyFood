@@ -26,6 +26,8 @@ const saleSchema = z.object({
   discountRate: z.number().min(0).max(1).optional(),
   // Payment terms for an account sale: true = Accounts Receivable, false = Cash.
   onAccount: z.boolean().optional(),
+  // Optional due date for an on-account sale (drives the A/R aging report).
+  dueDate: z.coerce.date().optional(),
   items: z
     .array(z.object({ productId: z.string(), quantity: z.number().int().positive() }))
     .min(1),
@@ -123,6 +125,7 @@ posRouter.post(
             subtotal: priced.subtotal,
             total: priced.total,
             onAccount: body.onAccount ?? false,
+            dueDate: body.onAccount ? body.dueDate ?? null : null,
             createdById: req.auth!.sub,
             items: { create: priced.items },
           },

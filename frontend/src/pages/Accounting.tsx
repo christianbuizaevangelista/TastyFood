@@ -15,6 +15,7 @@ interface Account {
   isCash: boolean;
   cashflowSection: 'OPERATING' | 'INVESTING' | 'FINANCING' | null;
   isActive: boolean;
+  parentId?: string | null;
 }
 
 const TYPE_LABEL: Record<AccountType, string> = {
@@ -728,17 +729,19 @@ function DeliveryEntry({ accounts, onClose, onSaved }: { accounts: Account[]; on
 // ======================= Chart of Accounts ==================================
 export function ChartOfAccounts() {
   const { data, loading, error, refetch } = useFetch<{ accounts: Account[] }>('/accounting/accounts');
-  const [showAdd, setShowAdd] = useState(false);
+  const [addState, setAddState] = useState<null | { parentId?: string; type?: AccountType }>(null);
   const [ledger, setLedger] = useState<Account | null>(null);
 
   const accounts = data?.accounts ?? [];
-  const byType = (t: AccountType) => accounts.filter((a) => a.type === t);
+  // Top-level accounts of a type, each followed by its sub-accounts.
+  const topLevel = (t: AccountType) => accounts.filter((a) => a.type === t && !a.parentId);
+  const childrenOf = (id: string) => accounts.filter((a) => a.parentId === id);
 
   return (
     <div>
       <PageHeader title="Chart of Accounts" subtitle="Your accounts, grouped by type" />
       <div className="mb-4 flex justify-end">
-        <button className="btn-primary" onClick={() => setShowAdd(true)}>+ Add account</button>
+        <button className="btn-primary" onClick={() => setAddState({})}>+ Add account</button>
       </div>
       {loading ? (
         <Spinner />
@@ -750,25 +753,21 @@ export function ChartOfAccounts() {
             <div key={t} className="card">
               <h3 className="mb-2 text-sm font-semibold text-slate-700">{TYPE_LABEL[t]}</h3>
               <div className="space-y-1">
-                {byType(t).map((a) => (
-                  <div key={a.id} className="flex items-center justify-between border-b border-slate-50 py-1 text-sm">
-                    <button className="text-left hover:underline" onClick={() => setLedger(a)}>
-                      <span className="font-mono text-xs text-slate-400">{a.code}</span> <span className="text-brand-700">{a.name}</span>
-                    </button>
-                    <span className="flex items-center gap-2 text-xs">
-                      {a.isCash && <Badge value="CASH" />}
-                      {a.cashflowSection && <span className="text-slate-400">{a.cashflowSection}</span>}
-                      {!a.isActive && <span className="text-red-400">inactive</span>}
-                    </span>
+                {topLevel(t).map((a) => (
+                  <div key={a.id}>
+                    <AccountRow a={a} indent={0} onView={setLedger} onAddSub={(p) => setAddState({ parentId: p.id, type: p.type })} />
+                    {childrenOf(a.id).map((c) => (
+                      <AccountRow key={c.id} a={c} indent={1} onView={setLedger} onAddSub={(p) => setAddState({ parentId: p.id, type: p.type })} />
+                    ))}
                   </div>
                 ))}
-                {byType(t).length === 0 && <div className="text-xs text-slate-400">None</div>}
+                {topLevel(t).length === 0 && <div className="text-xs text-slate-400">None</div>}
               </div>
             </div>
           ))}
         </div>
       )}
-      {showAdd && <AddAccount onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); refetch(); }} />}
+      {addState && <AddAccount accounts={accounts} defaults={addState} onClose={() => setAddState(null)} onSaved={() => { setAddState(null); refetch(); }} />}
       {ledger && <AccountLedger account={ledger} onClose={() => setLedger(null)} />}
     </div>
   );
@@ -858,10 +857,30 @@ function AccountLedger({ account, onClose }: { account: Account; onClose: () => 
   );
 }
 
-function AddAccount({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState({ code: '', name: '', type: 'EXPENSE' as AccountType, isCash: false, cashflowSection: 'OPERATING' as string });
+// One account row (top-level or indented sub-account) in the chart.
+function AccountRow({ a, indent, onView, onAddSub }: { a: Account; indent: number; onView: (a: Account) => void; onAddSub: (a: Account) => void }) {
+  return (
+    <div className="flex items-center justify-between border-b border-slate-50 py-1 text-sm" style={{ paddingLeft: indent * 18 }}>
+      <button className="text-left hover:underline" onClick={() => onView(a)}>
+        {indent > 0 && <span className="text-slate-300">↳ </span>}
+        <span className="font-mono text-xs text-slate-400">{a.code}</span> <span className="text-brand-700">{a.name}</span>
+      </button>
+      <span className="flex items-center gap-2 text-xs">
+        {a.isCash && <Badge value="CASH" />}
+        {a.cashflowSection && <span className="text-slate-400">{a.cashflowSection}</span>}
+        {!a.isActive && <span className="text-red-400">inactive</span>}
+        {indent === 0 && <button className="font-semibold text-brand-600 hover:underline" onClick={() => onAddSub(a)}>+ sub</button>}
+      </span>
+    </div>
+  );
+}
+
+function AddAccount({ accounts, defaults, onClose, onSaved }: { accounts: Account[]; defaults: { parentId?: string; type?: AccountType }; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState({ code: '', name: '', type: (defaults.type ?? 'EXPENSE') as AccountType, isCash: false, cashflowSection: 'OPERATING' as string, parentId: defaults.parentId ?? '' });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Only top-level accounts of the same type can be a parent (keeps a 2-level tree).
+  const parentOptions = accounts.filter((a) => a.type === form.type && !a.parentId);
 
   async function save() {
     setErr(null);
@@ -874,6 +893,7 @@ function AddAccount({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
         type: form.type,
         isCash: form.isCash,
         cashflowSection: form.isCash ? null : (form.cashflowSection as any),
+        parentId: form.parentId || undefined,
       });
       onSaved();
     } catch (e) {
@@ -883,7 +903,7 @@ function AddAccount({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
   }
 
   return (
-    <Modal title="Add account" onClose={onClose}>
+    <Modal title={defaults.parentId ? 'Add sub-account' : 'Add account'} onClose={onClose}>
       {err && <div className="mb-3"><Alert>{err}</Alert></div>}
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -892,8 +912,15 @@ function AddAccount({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
         </div>
         <div>
           <label className="label">Type</label>
-          <select className="input" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as AccountType })}>
+          <select className="input" value={form.type} disabled={!!defaults.parentId} onChange={(e) => setForm({ ...form, type: e.target.value as AccountType, parentId: '' })}>
             {(['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE'] as AccountType[]).map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
+          </select>
+        </div>
+        <div className="col-span-2">
+          <label className="label">Parent account <span className="font-normal text-slate-400">(optional — makes this a sub-account)</span></label>
+          <select className="input" value={form.parentId} onChange={(e) => setForm({ ...form, parentId: e.target.value })}>
+            <option value="">None (top-level)</option>
+            {parentOptions.map((p) => <option key={p.id} value={p.id}>{p.code} {p.name}</option>)}
           </select>
         </div>
         <div className="col-span-2">
