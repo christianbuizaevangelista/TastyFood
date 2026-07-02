@@ -36,6 +36,7 @@ const DEFAULT_ACCOUNTS: SeedAccount[] = [
   // Liabilities
   { code: '2000', name: 'Accounts Payable', type: 'LIABILITY', cashflowSection: 'OPERATING' },
   { code: '2100', name: 'Loans Payable', type: 'LIABILITY', cashflowSection: 'FINANCING' },
+  { code: '2150', name: 'Due to Officers', type: 'LIABILITY', cashflowSection: 'FINANCING' },
   { code: '2200', name: 'Taxes Payable', type: 'LIABILITY', cashflowSection: 'OPERATING' },
   // Equity
   { code: '3000', name: "Owner's Capital", type: 'EQUITY', cashflowSection: 'FINANCING' },

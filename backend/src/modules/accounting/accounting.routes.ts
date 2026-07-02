@@ -46,6 +46,12 @@ accountingRouter.get(
   '/accounts',
   asyncHandler(async (_req, res) => {
     const seeded = await ensureDefaultAccounts();
+    // Ensure "Due to Officers" exists even in already-seeded books.
+    await prisma.account.upsert({
+      where: { code: '2150' },
+      update: {},
+      create: { code: '2150', name: 'Due to Officers', type: 'LIABILITY', cashflowSection: 'FINANCING' },
+    });
     const accounts = await prisma.account.findMany({ orderBy: { code: 'asc' } });
     res.json({ accounts, seeded });
   })

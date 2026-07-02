@@ -417,10 +417,15 @@ export function Journal() {
 // Quick income/expense: one cash account + one income/expense account.
 function QuickEntry({ kind, accounts, onClose, onSaved }: { kind: 'income' | 'expense'; accounts: Account[]; onClose: () => void; onSaved: () => void }) {
   const cashAccounts = accounts.filter((a) => a.isCash && a.isActive);
+  // Expenses can be "paid from" cash OR a liability (e.g. Due to Officers, A/P);
+  // income is only deposited to a cash/bank account.
+  const payAccounts = kind === 'expense'
+    ? accounts.filter((a) => a.isActive && (a.isCash || a.type === 'LIABILITY'))
+    : cashAccounts;
   const catAccounts = accounts.filter((a) => a.type === (kind === 'income' ? 'INCOME' : 'EXPENSE') && a.isActive);
   const [date, setDate] = useState(today());
   const [amount, setAmount] = useState('');
-  const [cashId, setCashId] = useState(cashAccounts[0]?.id ?? '');
+  const [cashId, setCashId] = useState(payAccounts[0]?.id ?? '');
   const [catId, setCatId] = useState(catAccounts[0]?.id ?? '');
   const [memo, setMemo] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -460,9 +465,9 @@ function QuickEntry({ kind, accounts, onClose, onSaved }: { kind: 'income' | 'ex
       <select className="input mb-3" value={catId} onChange={(e) => setCatId(e.target.value)}>
         {catAccounts.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
       </select>
-      <label className="label">{kind === 'income' ? 'Deposit to' : 'Paid from'} (cash/bank)</label>
+      <label className="label">{kind === 'income' ? 'Deposit to (cash/bank)' : 'Paid from (cash or liability)'}</label>
       <select className="input mb-3" value={cashId} onChange={(e) => setCashId(e.target.value)}>
-        {cashAccounts.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
+        {payAccounts.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
       </select>
       <label className="label">Amount (₱)</label>
       <input type="number" min={0} step="0.01" className="input mb-3" value={amount} onChange={(e) => setAmount(e.target.value)} />
