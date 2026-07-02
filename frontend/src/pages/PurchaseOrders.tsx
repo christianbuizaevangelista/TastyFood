@@ -143,17 +143,18 @@ export default function PurchaseOrders() {
   const canCreate = true; // distributors order from supplier; Principal does stock-in
   const orders = data?.orders ?? [];
 
-  // POs I placed with my supplier (I'm the buyer, the tier above) vs POs my
-  // downstream customers placed (I'm the seller, or deeper in my chain).
+  // POs I placed with my supplier (I'm the buyer) vs POs my DIRECT customers
+  // placed with me (I'm the seller — i.e. the account one tier below me, or a
+  // City that reports directly to me when it has no Provincial).
   const supplierPOs = orders.filter((po) => po.buyerOrg.id === myOrgId);
-  const customerPOs = orders.filter((po) => po.buyerOrg.id !== myOrgId);
+  const customerPOs = orders.filter((po) => po.sellerOrg.id === myOrgId && po.buyerOrg.id !== myOrgId);
 
   const tabs = [
     { key: 'supplier' as const, label: 'To Supplier', hint: 'Orders you placed with the tier above you.', list: supplierPOs },
     // Resellers have no downstream that orders from them.
     ...(isReseller
       ? []
-      : [{ key: 'customer' as const, label: 'From Customers', hint: 'Orders your downstream (1–2 tiers below) placed with you.', list: customerPOs }]),
+      : [{ key: 'customer' as const, label: 'From Customers', hint: 'Orders your direct customers placed with you.', list: customerPOs }]),
   ];
 
   const renderTable = (list: PO[], counterpartyHeader: string, emptyText: string) => (
