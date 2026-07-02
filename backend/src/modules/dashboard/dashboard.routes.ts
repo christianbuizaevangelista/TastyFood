@@ -96,7 +96,10 @@ dashboardRouter.get(
         (c, x) =>
           c +
           x.items.reduce(
-            (ic, i) => ic + i.quantity * (costByOrgProduct.get(costKey(x.sellerOrgId, i.productId)) ?? 0),
+            (ic, i) =>
+              ic +
+              (i.quantity - (i.refundedQuantity ?? 0)) *
+                (costByOrgProduct.get(costKey(x.sellerOrgId, i.productId)) ?? 0),
             0
           ),
         0

@@ -8,6 +8,7 @@ import { requirePermission } from '../../middleware/rbac';
 import { forbidden, notFound, badRequest } from '../../lib/errors';
 import { sendSaleReceiptEmail } from '../../lib/email';
 import { applyStockMovement } from '../inventory/inventory.service';
+import { postSaleRefundToBooks } from '../accounting/accounting.service';
 
 export const salesRouter = Router();
 salesRouter.use(authenticate);
@@ -125,9 +126,12 @@ salesRouter.get(
     const ckey = (orgId: string, productId: string) => `${orgId}:${productId}`;
     const unitCostMap = new Map(invRows.map((r) => [ckey(r.orgId, r.productId), r.cost ?? 0]));
 
-    // Per-line COGS: quantity × the seller's inventory unit cost for the product.
+    // Units still counted (refunded units are excluded — they are returned).
+    const netQty = (it: (typeof sales)[number]['items'][number]) => it.quantity - (it.refundedQuantity ?? 0);
+
+    // Per-line COGS: net (non-refunded) qty × the seller's inventory unit cost.
     const itemCost = (s: (typeof sales)[number], it: (typeof sales)[number]['items'][number]) =>
-      it.quantity * (unitCostMap.get(ckey(s.sellerOrgId, it.productId)) ?? 0);
+      netQty(it) * (unitCostMap.get(ckey(s.sellerOrgId, it.productId)) ?? 0);
 
     // Per-sale COGS = sum of its line costs.
     const sellerCost = (s: (typeof sales)[number]) =>
@@ -139,8 +143,8 @@ salesRouter.get(
       for (const it of s.items) {
         const key = it.product.sku;
         const row = skuMap.get(key) ?? { sku: it.product.sku, name: it.product.name, units: 0, revenue: 0, cost: 0 };
-        row.units += it.quantity;
-        row.revenue += it.lineTotal;
+        row.units += netQty(it);
+        row.revenue += it.unitPrice * netQty(it);
         row.cost += itemCost(s, it);
         skuMap.set(key, row);
       }
@@ -154,7 +158,7 @@ salesRouter.get(
       const list = sales.filter((s) => s.channel === ch);
       return {
         count: list.length,
-        units: list.reduce((u, x) => u + x.items.reduce((q, i) => q + i.quantity, 0), 0),
+        units: list.reduce((u, x) => u + x.items.reduce((q, i) => q + netQty(i), 0), 0),
         revenue: round2(list.reduce((s, x) => s + x.total, 0)),
         grossProfit: round2(list.reduce((g, x) => g + (x.total - sellerCost(x)), 0)),
       };
@@ -163,9 +167,9 @@ salesRouter.get(
     const summary = {
       count: sales.length,
       revenue: round2(sales.reduce((s, x) => s + x.total, 0)),
-      // Gross income = sales (selling price) minus acquisition cost (price they got it).
+      // Gross income = net sales minus cost of goods sold (both exclude refunds).
       grossIncome: round2(sales.reduce((g, x) => g + (x.total - sellerCost(x)), 0)),
-      units: sales.reduce((s, x) => s + x.items.reduce((u, i) => u + i.quantity, 0), 0),
+      units: sales.reduce((s, x) => s + x.items.reduce((u, i) => u + netQty(i), 0), 0),
       // "Distribution" = trade (stock moves down the chain); kept key name `trade`.
       trade: {
         count: sales.filter((s) => s.distributionType === 'TRADE').length,
@@ -183,8 +187,13 @@ salesRouter.get(
       bySku,
     };
 
-    // Per-sale gross profit (revenue − acquisition cost) for the sales list.
-    const salesWithProfit = sales.map((s) => ({ ...s, grossProfit: round2(s.total - sellerCost(s)) }));
+    // Per-sale gross profit + refund status ('NONE' | 'PARTIAL' | 'FULL') for the list.
+    const salesWithProfit = sales.map((s) => {
+      const soldQty = s.items.reduce((q, i) => q + i.quantity, 0);
+      const refundedQty = s.items.reduce((q, i) => q + (i.refundedQuantity ?? 0), 0);
+      const refundStatus = refundedQty <= 0 ? 'NONE' : refundedQty >= soldQty ? 'FULL' : 'PARTIAL';
+      return { ...s, grossProfit: round2(s.total - sellerCost(s)), refundedQty, refundStatus };
+    });
 
     res.json({ summary, sales: salesWithProfit });
   })
@@ -310,7 +319,24 @@ salesRouter.post(
       return tx.sale.update({ where: { id: sale.id }, data: { subtotal, total } });
     });
 
-    res.json({ ok: true, refundedQty: totalRefundQty, newTotal: updated.total });
+    // Revenue value of this refund = Σ refunded qty × unit price.
+    const refundAmount = round2(
+      body.items.reduce((s, r) => s + r.quantity * (byId.get(r.itemId)!.unitPrice ?? 0), 0)
+    );
+    // Reverse Sales/AR in the finance books — ONLY the Principal's own sales are
+    // posted there, so only those get reversed. Best-effort (never breaks refund).
+    if (sale.sellerOrg.type === 'PRINCIPAL') {
+      await postSaleRefundToBooks({
+        refundId: `${sale.id}:${Date.now()}`,
+        amount: refundAmount,
+        date: new Date(),
+        onAccount: sale.onAccount,
+        label: `Refund on sale ${sale.number} — ${sale.sellerOrg.name}`,
+        createdById: req.auth!.sub,
+      });
+    }
+
+    res.json({ ok: true, refundedQty: totalRefundQty, refundAmount, newTotal: updated.total });
   })
 );
 

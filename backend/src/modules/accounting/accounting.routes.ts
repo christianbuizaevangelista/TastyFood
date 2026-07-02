@@ -49,10 +49,13 @@ async function periodCogs(principalId: string, from: Date, to: Date): Promise<nu
   const costByProduct = new Map(invRows.map((r) => [r.productId, r.cost ?? 0]));
   const sales = await prisma.sale.findMany({
     where: { sellerOrgId: principalId, createdAt: { gte: from, lte: to } },
-    select: { items: { select: { productId: true, quantity: true } } },
+    select: { items: { select: { productId: true, quantity: true, refundedQuantity: true } } },
   });
   let cogs = 0;
-  for (const s of sales) for (const it of s.items) cogs += it.quantity * (costByProduct.get(it.productId) ?? 0);
+  // Refunded units are returned to stock, so they are excluded from COGS.
+  for (const s of sales)
+    for (const it of s.items)
+      cogs += (it.quantity - (it.refundedQuantity ?? 0)) * (costByProduct.get(it.productId) ?? 0);
   return round2(cogs);
 }
 

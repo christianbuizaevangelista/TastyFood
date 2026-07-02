@@ -21,6 +21,8 @@ interface Sale {
   total: number;
   subtotal: number;
   grossProfit?: number;
+  refundStatus?: 'NONE' | 'PARTIAL' | 'FULL';
+  refundedQty?: number;
   createdAt: string;
   customerName?: string;
   sellerOrg: { id: string; name: string; type: string; discountRate: number };
@@ -280,6 +282,17 @@ export default function SalesReport() {
                           <button onClick={() => setDetailId(s.id)} className="font-mono text-xs font-semibold text-brand-600 hover:underline">
                             {s.number}
                           </button>
+                          {s.refundStatus && s.refundStatus !== 'NONE' && (
+                            <span
+                              className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                s.refundStatus === 'FULL'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-amber-100 text-amber-700'
+                              }`}
+                            >
+                              {s.refundStatus === 'FULL' ? 'Refunded' : 'Partial refund'}
+                            </span>
+                          )}
                         </td>
                         <td className="td whitespace-nowrap text-xs text-slate-500">{date(s.createdAt)}</td>
                         <td className="td">{s.sellerOrg.name}</td>

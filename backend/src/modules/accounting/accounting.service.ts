@@ -119,6 +119,49 @@ export async function postSaleToBooks(p: {
   }
 }
 
+// Reverses the revenue portion of a refund in the finance books: Debit Sales
+// Revenue, Credit Cash/AR (the mirror of postSaleToBooks) for the refunded
+// amount. Idempotent per refund event (via JournalEntry.sourceType/sourceId).
+// Best-effort: it must never break the refund flow.
+export async function postSaleRefundToBooks(p: {
+  refundId: string;
+  amount: number;
+  date: Date;
+  onAccount: boolean; // matches the original sale: credit sale -> A/R, cash -> Cash
+  label: string;
+  createdById: string;
+}): Promise<void> {
+  try {
+    if (!p.amount || p.amount <= 0) return;
+    const existing = await prisma.journalEntry.findFirst({ where: { sourceType: 'SALE_REFUND', sourceId: p.refundId } });
+    if (existing) return;
+    await ensureDefaultAccounts();
+    const revenue = await accountByCode('4000', 'Sales Revenue', 'INCOME', 'OPERATING', false);
+    const credit = p.onAccount
+      ? await accountByCode('1100', 'Accounts Receivable', 'ASSET', 'OPERATING', false)
+      : await accountByCode('1000', 'Cash on Hand', 'ASSET', null, true);
+    const number = await nextEntryNumber();
+    await prisma.journalEntry.create({
+      data: {
+        number,
+        date: p.date,
+        memo: p.label,
+        sourceType: 'SALE_REFUND',
+        sourceId: p.refundId,
+        createdById: p.createdById,
+        lines: {
+          create: [
+            { accountId: revenue.id, debit: round2(p.amount) },
+            { accountId: credit.id, credit: round2(p.amount) },
+          ],
+        },
+      },
+    });
+  } catch (err) {
+    console.error('[postSaleRefundToBooks] failed', err);
+  }
+}
+
 // Posts a distributor A/R payment to the books: Debit Cash, Credit Accounts
 // Receivable. Idempotent per payment. Best-effort.
 export async function postArPaymentToBooks(p: {
