@@ -37,6 +37,25 @@ function parseRange(q: any): { from: Date; to: Date } {
   return { from, to };
 }
 
+// Live value of the Principal's inventory on hand (Σ qty × unit cost).
+async function principalInventoryValue(principalId: string): Promise<number> {
+  const rows = await prisma.inventory.findMany({ where: { orgId: principalId }, select: { quantity: true, cost: true } });
+  return round2(rows.reduce((s, r) => s + r.quantity * (r.cost ?? 0), 0));
+}
+
+// Cost of goods sold on the Principal's own sales in a period (Σ qty × unit cost).
+async function periodCogs(principalId: string, from: Date, to: Date): Promise<number> {
+  const invRows = await prisma.inventory.findMany({ where: { orgId: principalId }, select: { productId: true, cost: true } });
+  const costByProduct = new Map(invRows.map((r) => [r.productId, r.cost ?? 0]));
+  const sales = await prisma.sale.findMany({
+    where: { sellerOrgId: principalId, createdAt: { gte: from, lte: to } },
+    select: { items: { select: { productId: true, quantity: true } } },
+  });
+  let cogs = 0;
+  for (const s of sales) for (const it of s.items) cogs += it.quantity * (costByProduct.get(it.productId) ?? 0);
+  return round2(cogs);
+}
+
 // =============================================================================
 // Chart of Accounts
 // =============================================================================
@@ -462,6 +481,12 @@ accountingRouter.get(
       .filter((t) => t.account.type === 'EXPENSE')
       .map((t) => ({ code: t.account.code, name: t.account.name, amount: round2(t.debit - t.credit) }))
       .filter((r) => r.amount !== 0);
+
+    // Computed Cost of Sales: cost of goods sold on the Principal's own sales this
+    // period (Σ sold qty × the Principal's inventory unit cost).
+    const cogs = await periodCogs(req.auth!.orgId, from, to);
+    if (cogs > 0) expenses.push({ code: 'COGS', name: 'Cost of Sales', amount: cogs });
+
     const totalIncome = round2(income.reduce((s, r) => s + r.amount, 0));
     const totalExpenses = round2(expenses.reduce((s, r) => s + r.amount, 0));
     res.json({ from, to, income, expenses, totalIncome, totalExpenses, netIncome: round2(totalIncome - totalExpenses) });
@@ -488,6 +513,15 @@ accountingRouter.get(
       totals.filter((t) => t.account.type === 'INCOME').reduce((s, t) => s + (t.credit - t.debit), 0) -
         totals.filter((t) => t.account.type === 'EXPENSE').reduce((s, t) => s + (t.debit - t.credit), 0)
     );
+
+    // Live inventory on hand (Principal) reflected as an asset — offset in equity so
+    // the statement stays balanced. Decreases automatically as stock is sold.
+    const invValue = await principalInventoryValue(req.auth!.orgId);
+    if (invValue > 0) {
+      assets.push({ code: 'INV', name: 'Inventory (on hand)', amount: invValue });
+      equity.push({ code: 'INV-EQ', name: 'Inventory on hand', amount: invValue });
+    }
+
     const totalAssets = round2(assets.reduce((s, r) => s + r.amount, 0));
     const totalLiabilities = round2(liabilities.reduce((s, r) => s + r.amount, 0));
     const totalEquity = round2(equity.reduce((s, r) => s + r.amount, 0) + netIncomeToDate);

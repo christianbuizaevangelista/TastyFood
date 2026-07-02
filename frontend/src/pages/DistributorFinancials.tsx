@@ -6,6 +6,7 @@ import { useFetch } from '../lib/useFetch';
 import { PageHeader, Spinner, Alert, EmptyState } from '../components/ui';
 import { peso } from '../lib/format';
 import { DATE_PRESETS, presetRange, DatePreset } from '../lib/datePresets';
+import { exportSaleReceiptPdf } from '../lib/poPdf';
 
 // jsPDF's standard fonts can't render ₱, so use an ASCII money format for PDF/Excel.
 const money = (n: number) => 'PHP ' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -105,6 +106,7 @@ function Statement({ dist, onClose }: { dist: Dist; onClose: () => void }) {
   const url = `/accounting/distributor-financials/${dist.id}${qs}`;
   const { data, loading, error, refetch } = useFetch<StmtData>(url, [url]);
   const [modal, setModal] = useState<null | 'payment' | 'expense'>(null);
+  const [saleId, setSaleId] = useState<string | null>(null);
 
   function applyPreset(p: DatePreset) {
     setPreset(p);
@@ -210,7 +212,13 @@ function Statement({ dist, onClose }: { dist: Dist; onClose: () => void }) {
             <div className="grid gap-4 md:grid-cols-3">
               <Section title="Sales">
                 {data.sales.length === 0 ? <Empty /> : data.sales.map((s) => (
-                  <Line key={s.id} left={<span className="font-mono text-xs">{s.number}{s.onAccount && <span className="ml-1 text-amber-600">A/R</span>}</span>} sub={new Date(s.createdAt).toLocaleDateString()} amount={s.total} />
+                  <button key={s.id} className="flex w-full items-center justify-between border-b border-slate-50 py-1 text-left text-sm hover:bg-slate-50" onClick={() => setSaleId(s.id)}>
+                    <div className="min-w-0">
+                      <div className="truncate font-mono text-xs text-brand-700 hover:underline">{s.number}{s.onAccount && <span className="ml-1 text-amber-600">A/R</span>}</div>
+                      <div className="text-xs text-slate-400">{new Date(s.createdAt).toLocaleDateString()}</div>
+                    </div>
+                    <span>{peso(s.total)}</span>
+                  </button>
                 ))}
               </Section>
               <Section title="Expenses">
@@ -234,6 +242,7 @@ function Statement({ dist, onClose }: { dist: Dist; onClose: () => void }) {
 
       {modal === 'payment' && <RecordPayment distId={dist.id} onClose={() => setModal(null)} onSaved={() => { setModal(null); refetch(); }} />}
       {modal === 'expense' && <RecordExpense distId={dist.id} onClose={() => setModal(null)} onSaved={() => { setModal(null); refetch(); }} />}
+      {saleId && <SaleReceipt id={saleId} onClose={() => setSaleId(null)} />}
     </div>
   );
 }
@@ -340,6 +349,59 @@ function RecordExpense({ distId, onClose, onSaved }: { distId: string; onClose: 
         <button className="btn-primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
       </div>
     </Modal>
+  );
+}
+
+function SaleReceipt({ id, onClose }: { id: string; onClose: () => void }) {
+  const { data, loading, error } = useFetch<any>(`/sales/${id}`);
+  return (
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        {loading ? (
+          <Spinner />
+        ) : error ? (
+          <Alert>{error}</Alert>
+        ) : !data ? null : (
+          <>
+            <div className="flex items-start justify-between">
+              <div>
+                <h2 className="text-lg font-bold">{data.number}</h2>
+                <p className="text-xs text-slate-500">Sales Receipt · {new Date(data.createdAt).toLocaleString()}</p>
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-600">
+              <div><div className="font-semibold text-slate-400">SELLER</div>{data.seller?.name}</div>
+              <div><div className="font-semibold text-slate-400">CUSTOMER</div>{data.customerName ?? 'Walk-in'}</div>
+            </div>
+            <table className="mt-4 w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
+                  <th className="td">Product</th><th className="td text-right">Qty</th><th className="td text-right">Unit</th><th className="td text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data.lines ?? []).map((l: any, i: number) => (
+                  <tr key={i} className="border-b border-slate-50">
+                    <td className="td"><div>{l.name}</div><div className="font-mono text-xs text-slate-400">{l.sku}</div></td>
+                    <td className="td text-right">{l.quantity}</td>
+                    <td className="td text-right">{peso(l.unitPrice)}</td>
+                    <td className="td text-right">{peso(l.lineTotal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="mt-3 text-right text-sm">
+              <div className="text-slate-500">Subtotal: {peso(data.subtotal)}</div>
+              <div className="text-lg font-bold">Total: {peso(data.total)}</div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button className="btn-ghost" onClick={onClose}>Close</button>
+              <button className="btn-primary" onClick={() => exportSaleReceiptPdf(data)}>Export PDF</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
