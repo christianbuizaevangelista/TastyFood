@@ -488,11 +488,13 @@ function QuickEntry({ kind, accounts, onClose, onSaved }: { kind: 'income' | 'ex
 // Manual multi-line balanced journal entry.
 function ManualEntry({ accounts, onClose, onSaved }: { accounts: Account[]; onClose: () => void; onSaved: () => void }) {
   const active = accounts.filter((a) => a.isActive);
+  const topLevel = active.filter((a) => !a.parentId);
+  const childrenOf = (id: string) => active.filter((a) => a.parentId === id);
   const [date, setDate] = useState(today());
   const [memo, setMemo] = useState('');
   const [lines, setLines] = useState([
-    { accountId: '', debit: '', credit: '' },
-    { accountId: '', debit: '', credit: '' },
+    { accountId: '', subId: '', debit: '', credit: '' },
+    { accountId: '', subId: '', debit: '', credit: '' },
   ]);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -502,8 +504,8 @@ function ManualEntry({ accounts, onClose, onSaved }: { accounts: Account[]; onCl
   const totalCredit = lines.reduce((s, l) => s + (Number(l.credit) || 0), 0);
   const balanced = Math.abs(totalDebit - totalCredit) < 0.005 && totalDebit > 0;
 
-  const setLine = (i: number, k: 'accountId' | 'debit' | 'credit', v: string) =>
-    setLines(lines.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
+  const setLine = (i: number, patch: Partial<{ accountId: string; subId: string; debit: string; credit: string }>) =>
+    setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
 
   async function save() {
     setErr(null);
@@ -518,7 +520,8 @@ function ManualEntry({ accounts, onClose, onSaved }: { accounts: Account[]; onCl
       await api.post('/accounting/entries', {
         date,
         memo: memo || undefined,
-        lines: lines.map((l) => ({ accountId: l.accountId, debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 })),
+        // Post to the sub-account when one is chosen, otherwise the parent account.
+        lines: lines.map((l) => ({ accountId: l.subId || l.accountId, debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 })),
         attachments,
       });
       onSaved();
@@ -546,26 +549,35 @@ function ManualEntry({ accounts, onClose, onSaved }: { accounts: Account[]; onCl
           <th className="pb-1">Account</th><th className="pb-1 text-right">Debit</th><th className="pb-1 text-right">Credit</th><th></th>
         </tr></thead>
         <tbody>
-          {lines.map((l, i) => (
+          {lines.map((l, i) => {
+            const subs = l.accountId ? childrenOf(l.accountId) : [];
+            return (
             <tr key={i}>
               <td className="py-1 pr-2">
-                <select className="input" value={l.accountId} onChange={(e) => setLine(i, 'accountId', e.target.value)}>
-                  <option value="">Select…</option>
-                  {active.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
+                <select className="input" value={l.accountId} onChange={(e) => setLine(i, { accountId: e.target.value, subId: '' })}>
+                  <option value="">Select account…</option>
+                  {topLevel.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
                 </select>
+                {subs.length > 0 && (
+                  <select className="input mt-1" value={l.subId} onChange={(e) => setLine(i, { subId: e.target.value })}>
+                    <option value="">↳ (post to parent)</option>
+                    {subs.map((a) => <option key={a.id} value={a.id}>↳ {a.code} {a.name}</option>)}
+                  </select>
+                )}
               </td>
-              <td className="py-1"><input type="number" min={0} step="0.01" className="input text-right" value={l.debit} onChange={(e) => setLine(i, 'debit', e.target.value)} /></td>
-              <td className="py-1 pl-2"><input type="number" min={0} step="0.01" className="input text-right" value={l.credit} onChange={(e) => setLine(i, 'credit', e.target.value)} /></td>
-              <td className="pl-2">
+              <td className="py-1"><input type="number" min={0} step="0.01" className="input text-right" value={l.debit} onChange={(e) => setLine(i, { debit: e.target.value })} /></td>
+              <td className="py-1 pl-2"><input type="number" min={0} step="0.01" className="input text-right" value={l.credit} onChange={(e) => setLine(i, { credit: e.target.value })} /></td>
+              <td className="pl-2 align-top">
                 {lines.length > 2 && <button className="text-xs text-red-600" onClick={() => setLines(lines.filter((_, j) => j !== i))}>✕</button>}
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
-      <button className="mt-2 text-xs font-semibold text-brand-700 hover:underline" onClick={() => setLines([...lines, { accountId: '', debit: '', credit: '' }])}>+ Add line</button>
+      <button className="mt-2 text-xs font-semibold text-brand-700 hover:underline" onClick={() => setLines([...lines, { accountId: '', subId: '', debit: '', credit: '' }])}>+ Add line</button>
       <div className="mt-3">
-        <label className="label">Receipt / attachment (optional, max 4 MB)</label>
+        <label className="label">Receipt / attachment for this entry (optional, max 4 MB)</label>
         <input type="file" className="text-xs" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         {file && <span className="ml-2 text-xs text-green-600">📎 {file.name}</span>}
       </div>
@@ -730,7 +742,7 @@ function DeliveryEntry({ accounts, onClose, onSaved }: { accounts: Account[]; on
 export function ChartOfAccounts() {
   const { data, loading, error, refetch } = useFetch<{ accounts: Account[] }>('/accounting/accounts');
   const [addState, setAddState] = useState<null | { parentId?: string; type?: AccountType }>(null);
-  const [ledger, setLedger] = useState<Account | null>(null);
+  const [editing, setEditing] = useState<Account | null>(null);
 
   const accounts = data?.accounts ?? [];
   // Top-level accounts of a type, each followed by its sub-accounts.
@@ -755,9 +767,9 @@ export function ChartOfAccounts() {
               <div className="space-y-1">
                 {topLevel(t).map((a) => (
                   <div key={a.id}>
-                    <AccountRow a={a} indent={0} onView={setLedger} onAddSub={(p) => setAddState({ parentId: p.id, type: p.type })} />
+                    <AccountRow a={a} indent={0} onEdit={setEditing} onAddSub={(p) => setAddState({ parentId: p.id, type: p.type })} />
                     {childrenOf(a.id).map((c) => (
-                      <AccountRow key={c.id} a={c} indent={1} onView={setLedger} onAddSub={(p) => setAddState({ parentId: p.id, type: p.type })} />
+                      <AccountRow key={c.id} a={c} indent={1} onEdit={setEditing} onAddSub={(p) => setAddState({ parentId: p.id, type: p.type })} />
                     ))}
                   </div>
                 ))}
@@ -768,8 +780,68 @@ export function ChartOfAccounts() {
         </div>
       )}
       {addState && <AddAccount accounts={accounts} defaults={addState} onClose={() => setAddState(null)} onSaved={() => { setAddState(null); refetch(); }} />}
-      {ledger && <AccountLedger account={ledger} onClose={() => setLedger(null)} />}
+      {editing && <EditAccount account={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refetch(); }} />}
     </div>
+  );
+}
+
+// Edit an existing account (name, cash flag, cash-flow section, active).
+function EditAccount({ account, onClose, onSaved }: { account: Account; onClose: () => void; onSaved: () => void }) {
+  const [name, setName] = useState(account.name);
+  const [isCash, setIsCash] = useState(account.isCash);
+  const [cashflowSection, setCashflowSection] = useState<string>(account.cashflowSection ?? 'OPERATING');
+  const [isActive, setIsActive] = useState(account.isActive);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function save() {
+    setErr(null);
+    if (!name.trim()) return setErr('Name is required.');
+    setBusy(true);
+    try {
+      await api.patch(`/accounting/accounts/${account.id}`, {
+        name: name.trim(),
+        isCash: account.type === 'ASSET' ? isCash : false,
+        cashflowSection: isCash ? null : (cashflowSection as any),
+        isActive,
+      });
+      onSaved();
+    } catch (e) {
+      setErr(apiError(e));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title={`Edit ${account.code} ${account.name}`} onClose={onClose}>
+      {err && <div className="mb-3"><Alert>{err}</Alert></div>}
+      <label className="label">Name</label>
+      <input className="input mb-3" value={name} onChange={(e) => setName(e.target.value)} />
+      {account.type === 'ASSET' && (
+        <label className="mb-3 flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={isCash} onChange={(e) => setIsCash(e.target.checked)} />
+          Cash / bank account
+        </label>
+      )}
+      {!isCash && (
+        <>
+          <label className="label">Cash-flow section</label>
+          <select className="input mb-3" value={cashflowSection} onChange={(e) => setCashflowSection(e.target.value)}>
+            <option value="OPERATING">Operating</option>
+            <option value="INVESTING">Investing</option>
+            <option value="FINANCING">Financing</option>
+          </select>
+        </>
+      )}
+      <label className="mb-4 flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
+        Active
+      </label>
+      <div className="flex justify-end gap-2">
+        <button className="btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn-primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
+      </div>
+    </Modal>
   );
 }
 
@@ -858,18 +930,19 @@ function AccountLedger({ account, onClose }: { account: Account; onClose: () => 
 }
 
 // One account row (top-level or indented sub-account) in the chart.
-function AccountRow({ a, indent, onView, onAddSub }: { a: Account; indent: number; onView: (a: Account) => void; onAddSub: (a: Account) => void }) {
+function AccountRow({ a, indent, onEdit, onAddSub }: { a: Account; indent: number; onEdit: (a: Account) => void; onAddSub: (a: Account) => void }) {
   return (
     <div className="flex items-center justify-between border-b border-slate-50 py-1 text-sm" style={{ paddingLeft: indent * 18 }}>
-      <button className="text-left hover:underline" onClick={() => onView(a)}>
+      <span className={a.isActive ? '' : 'text-slate-400'}>
         {indent > 0 && <span className="text-slate-300">↳ </span>}
-        <span className="font-mono text-xs text-slate-400">{a.code}</span> <span className="text-brand-700">{a.name}</span>
-      </button>
+        <span className="font-mono text-xs text-slate-400">{a.code}</span> {a.name}
+      </span>
       <span className="flex items-center gap-2 text-xs">
         {a.isCash && <Badge value="CASH" />}
         {a.cashflowSection && <span className="text-slate-400">{a.cashflowSection}</span>}
         {!a.isActive && <span className="text-red-400">inactive</span>}
         {indent === 0 && <button className="font-semibold text-brand-600 hover:underline" onClick={() => onAddSub(a)}>+ sub</button>}
+        <button className="font-semibold text-slate-500 hover:underline" onClick={() => onEdit(a)}>Edit</button>
       </span>
     </div>
   );
