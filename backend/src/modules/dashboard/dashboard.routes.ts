@@ -77,7 +77,8 @@ dashboardRouter.get(
       ]);
 
     const revenue = round2(sales.reduce((s, x) => s + x.total, 0));
-    const units = sales.reduce((s, x) => s + x.items.reduce((u, i) => u + i.quantity, 0), 0);
+    // Units sold, net of refunds (refunded quantity is deducted).
+    const units = sales.reduce((s, x) => s + x.items.reduce((u, i) => u + (i.quantity - (i.refundedQuantity ?? 0)), 0), 0);
     // Gross margin = sales minus acquisition cost. Acquisition cost for a seller
     // is their buy price (SRP minus their own tier discount); the Principal
     // manufactures, so its cost basis is 0.
