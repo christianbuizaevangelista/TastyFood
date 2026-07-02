@@ -227,7 +227,7 @@ export default function SalesReport() {
               <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <KpiCard label="Total Revenue" value={peso(data!.summary.revenue)} accent="text-brand-600" hint="net, after discounts" />
                 <KpiCard label="Number of Transactions" value={num(data!.summary.count)} />
-                <KpiCard label="Gross Income" value={peso(data!.summary.grossIncome)} hint="sales − acquisition cost" />
+                <KpiCard label="Gross Income" value={peso(data!.summary.grossIncome)} hint="net sales − cost" />
               </div>
 
               <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-3">

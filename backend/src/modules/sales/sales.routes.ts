@@ -114,15 +114,24 @@ salesRouter.get(
       take: 500,
     });
 
-    // Acquisition cost for the seller = SRP minus the seller's own tier discount.
-    // The Principal manufactures (no upstream cost), so its cost basis is 0.
-    const sellerCost = (s: (typeof sales)[number]) =>
-      s.sellerOrg.type === 'PRINCIPAL' ? 0 : s.subtotal * (1 - s.sellerOrg.discountRate);
+    // Cost of goods sold = the units sold × the seller's own inventory unit cost
+    // for that product (keyed by seller org + product). Gross income = net sales
+    // − COGS. This matches the Dashboard's gross margin basis.
+    const sellerOrgIds = [...new Set(sales.map((s) => s.sellerOrgId))];
+    const invRows = await prisma.inventory.findMany({
+      where: { orgId: { in: sellerOrgIds } },
+      select: { orgId: true, productId: true, cost: true },
+    });
+    const ckey = (orgId: string, productId: string) => `${orgId}:${productId}`;
+    const unitCostMap = new Map(invRows.map((r) => [ckey(r.orgId, r.productId), r.cost ?? 0]));
 
-    // Per-line acquisition cost (same basis as sellerCost): SRP × (1 − seller
-    // discount); Principal has no upstream cost.
+    // Per-line COGS: quantity × the seller's inventory unit cost for the product.
     const itemCost = (s: (typeof sales)[number], it: (typeof sales)[number]['items'][number]) =>
-      s.sellerOrg.type === 'PRINCIPAL' ? 0 : it.unitSrp * it.quantity * (1 - s.sellerOrg.discountRate);
+      it.quantity * (unitCostMap.get(ckey(s.sellerOrgId, it.productId)) ?? 0);
+
+    // Per-sale COGS = sum of its line costs.
+    const sellerCost = (s: (typeof sales)[number]) =>
+      s.items.reduce((c, it) => c + itemCost(s, it), 0);
 
     // Per-SKU aggregation (revenue + gross profit).
     const skuMap = new Map<string, { sku: string; name: string; units: number; revenue: number; cost: number }>();
