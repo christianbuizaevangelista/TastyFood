@@ -558,17 +558,17 @@ accountingRouter.get(
 accountingRouter.get(
   '/distributor-financials',
   asyncHandler(async (_req, res) => {
-    const [chargeAgg, payAgg] = await Promise.all([
-      prisma.sale.groupBy({ by: ['buyerOrgId'], where: { onAccount: true, buyerOrgId: { not: null } }, _sum: { total: true } }),
-      prisma.distributorPayment.groupBy({ by: ['orgId'], _sum: { amount: true } }),
-    ]);
-    const ids = new Set<string>();
-    chargeAgg.forEach((c) => c.buyerOrgId && ids.add(c.buyerOrgId));
-    payAgg.forEach((p) => ids.add(p.orgId));
+    // Only RETAIL-segment distributors are tracked here.
     const orgs = await prisma.organization.findMany({
-      where: { id: { in: [...ids] } },
+      where: { segment: 'RETAIL', archivedAt: null },
       select: { id: true, name: true, type: true, segment: true },
+      orderBy: { name: 'asc' },
     });
+    const retailIds = orgs.map((o) => o.id);
+    const [chargeAgg, payAgg] = await Promise.all([
+      prisma.sale.groupBy({ by: ['buyerOrgId'], where: { onAccount: true, buyerOrgId: { in: retailIds } }, _sum: { total: true } }),
+      prisma.distributorPayment.groupBy({ by: ['orgId'], where: { orgId: { in: retailIds } }, _sum: { amount: true } }),
+    ]);
     const chargeById = new Map(chargeAgg.map((c) => [c.buyerOrgId!, c._sum.total ?? 0]));
     const payById = new Map(payAgg.map((p) => [p.orgId, p._sum.amount ?? 0]));
     const distributors = orgs

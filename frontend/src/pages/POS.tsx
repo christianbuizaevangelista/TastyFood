@@ -133,7 +133,7 @@ export default function POS() {
         customerName: selected ? selected.name : customer ? customer.name : unofficial ? 'Unofficial Reseller' : query.trim() || 'Walk-in',
         // For Unofficial Reseller / Customer / Others / Walk-in, send the discount rate explicitly.
         discountRate: selected ? undefined : discountRate,
-        onAccount: selected ? onAccount : false, // Cash vs Accounts Receivable (account sales only)
+        onAccount: selected && isRetail ? onAccount : false, // Cash vs A/R — retail distributors only
         items: lines.map(([productId, quantity]) => ({ productId, quantity })),
       });
       setReceipt(r);
@@ -279,6 +279,7 @@ export default function POS() {
                 <span className="font-semibold text-brand-600">{Math.round(selected.discountRate * 100)}% discount</span>
                 {isRetail && <span className="ml-1 text-amber-600">· retail pricing</span>}
               </div>
+              {isRetail && (
               <div className="mt-2">
                 <div className="mb-1 font-semibold text-slate-500">Payment</div>
                 <div className="flex overflow-hidden rounded-md border border-slate-300">
@@ -299,6 +300,7 @@ export default function POS() {
                   {onAccount ? 'Records as a receivable (they owe) — tracked in Distributor Financials.' : 'Records as a cash sale in the finance books.'}
                 </p>
               </div>
+              )}
             </div>
           ) : unofficial ? (
             <div className="mb-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
