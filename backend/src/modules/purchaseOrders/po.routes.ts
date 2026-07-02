@@ -421,6 +421,8 @@ poRouter.post(
               reason: 'PO_FULFILLED',
               refType: 'PurchaseOrder',
               refId: po.id,
+              // Allow fulfilling beyond stock — the seller's stock may go negative.
+              allowNegative: true,
             });
           }
         }
@@ -716,6 +718,19 @@ poRouter.post(
       },
     });
     res.status(201).json({ id: att.id, fileName: att.fileName, mimeType: att.mimeType, size: att.size });
+  })
+);
+
+// Delete a proof-of-payment attachment — only the buyer (who uploaded it) may remove it.
+poRouter.delete(
+  '/:id/attachments/:attId',
+  asyncHandler(async (req, res) => {
+    const po = await loadScopedPo(req, req.params.id);
+    requireBuyer(req, po);
+    const att = await prisma.poAttachment.findFirst({ where: { id: req.params.attId, poId: po.id } });
+    if (!att) throw notFound('Attachment not found');
+    await prisma.poAttachment.delete({ where: { id: att.id } });
+    res.json({ ok: true });
   })
 );
 

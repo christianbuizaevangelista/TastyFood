@@ -427,6 +427,17 @@ function PoDetails({ po, onClose }: { po: PO; onClose: () => void }) {
     }
   }
 
+  async function deleteAttachment(attId: string) {
+    if (!confirm('Delete this proof of payment?')) return;
+    setErr(null);
+    try {
+      await api.delete(`/purchase-orders/${po.id}/attachments/${attId}`);
+      attachments.refetch();
+    } catch (e2) {
+      setErr(apiError(e2));
+    }
+  }
+
   const party = (p: typeof po.buyerOrg) => (
     <div className="text-sm text-slate-600">
       <div className="font-semibold text-slate-800">{p.name}</div>
@@ -562,9 +573,16 @@ function PoDetails({ po, onClose }: { po: PO; onClose: () => void }) {
                       {(a.size / 1024).toFixed(0)} KB · by {a.uploadedBy.name} · {date(a.createdAt)}
                     </div>
                   </div>
-                  <button onClick={() => viewAttachment(a.id)} className="text-xs font-semibold text-brand-600 hover:underline">
-                    View
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => viewAttachment(a.id)} className="text-xs font-semibold text-brand-600 hover:underline">
+                      View
+                    </button>
+                    {isBuyer && (
+                      <button onClick={() => deleteAttachment(a.id)} className="text-xs font-semibold text-red-600 hover:underline">
+                        Delete
+                      </button>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
