@@ -27,7 +27,7 @@ dashboardRouter.get(
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
-    const [sales, ownInventory, activeDownstream, newMembers, lastMonthSales, downstreamKpis, myOrg] =
+    const [sales, ownInventory, scopeInventory, activeDownstream, newMembers, lastMonthSales, downstreamKpis, myOrg] =
       await Promise.all([
         prisma.sale.findMany({
           where: { sellerOrgId: { in: scope }, createdAt: { gte: from, lte: to } },
@@ -40,6 +40,11 @@ dashboardRouter.get(
         prisma.inventory.findMany({
           where: { orgId: myOrgId },
           include: { product: { select: { srp: true } } },
+        }),
+        // Unit costs per (seller org, product) across the scope — used for COGS / gross margin.
+        prisma.inventory.findMany({
+          where: { orgId: { in: scope } },
+          select: { orgId: true, productId: true, cost: true },
         }),
         // Active downstream accounts (not deleted) — used to count this month's performers per tier.
         prisma.organization.findMany({
@@ -79,12 +84,25 @@ dashboardRouter.get(
     const revenue = round2(sales.reduce((s, x) => s + x.total, 0));
     // Units sold, net of refunds (refunded quantity is deducted).
     const units = sales.reduce((s, x) => s + x.items.reduce((u, i) => u + (i.quantity - (i.refundedQuantity ?? 0)), 0), 0);
-    // Gross margin = sales minus acquisition cost. Acquisition cost for a seller
-    // is their buy price (SRP minus their own tier discount); the Principal
-    // manufactures, so its cost basis is 0.
-    const acquisitionCost = (s: (typeof sales)[number]) =>
-      s.sellerOrg.type === 'PRINCIPAL' ? 0 : s.subtotal * (1 - s.sellerOrg.discountRate);
-    const grossMargin = round2(sales.reduce((g, x) => g + (x.total - acquisitionCost(x)), 0));
+    // Gross margin = net sales minus cost of goods sold. COGS is the actual cost
+    // of the units sold, taken from the seller's own inventory unit cost per
+    // product (keyed by seller org + product).
+    const costKey = (orgId: string, productId: string) => `${orgId}:${productId}`;
+    const costByOrgProduct = new Map(
+      scopeInventory.map((r) => [costKey(r.orgId, r.productId), r.cost ?? 0])
+    );
+    const cogs = round2(
+      sales.reduce(
+        (c, x) =>
+          c +
+          x.items.reduce(
+            (ic, i) => ic + i.quantity * (costByOrgProduct.get(costKey(x.sellerOrgId, i.productId)) ?? 0),
+            0
+          ),
+        0
+      )
+    );
+    const grossMargin = round2(revenue - cogs);
 
     // The logged-in org's own monthly sales vs its manually-set target.
     const ownRevenue = round2(

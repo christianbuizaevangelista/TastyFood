@@ -88,7 +88,7 @@ export default function Dashboard() {
       </div>
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 xl:grid-cols-4">
         <KpiCard label="Total Sales" value={peso(c.totalRevenue)} hint="this month" accent="text-brand-600" />
-        <KpiCard label="Gross Margin" value={peso(c.grossMargin)} hint="sales − acquisition cost" accent="text-green-600" />
+        <KpiCard label="Gross Margin" value={peso(c.grossMargin)} hint="net sales − cost" accent="text-green-600" />
         <KpiCard
           label="Monthly Target"
           value={c.targetAttainmentPct != null ? pct(c.targetAttainmentPct) : '—'}
