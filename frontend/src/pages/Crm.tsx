@@ -591,7 +591,7 @@ function EditAccount({
 
           {/* Right column: Sell-in (purchases from you) + order history */}
           <div>
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Total Purchases (from you)</div>
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Total Purchases (from assigned supplier)</div>
             <div className="rounded-lg bg-slate-50 p-3">
               <div className="flex items-baseline justify-between">
                 <span className="text-2xl font-bold text-brand-600">{peso(orders.data?.salesTotal ?? 0)}</span>

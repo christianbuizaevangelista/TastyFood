@@ -87,6 +87,14 @@ orgsRouter.get(
     }
     const range = createdAt.gte || createdAt.lte ? { createdAt } : {};
 
+    // The headline figure is this account's purchases from its ASSIGNED SUPPLIER
+    // (its parent) — not any incidental purchase from elsewhere.
+    const target = await prisma.organization.findUnique({
+      where: { id: req.params.id },
+      select: { parentId: true },
+    });
+    const supplierId = target?.parentId ?? undefined;
+
     const [purchases, sales, salesAgg] = await Promise.all([
       prisma.purchaseOrder.findMany({
         where: { buyerOrgId: req.params.id, ...range },
@@ -100,10 +108,11 @@ orgsRouter.get(
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
-      // "Sell-in" = value of goods this account purchased from its supplier
-      // (sales where it is the buyer — created when its POs are fulfilled).
+      // Sell-in = value of goods this account purchased from its assigned supplier
+      // (sales where it is the buyer AND its parent is the seller — created when
+      // its POs to that supplier are fulfilled).
       prisma.sale.aggregate({
-        where: { buyerOrgId: req.params.id, ...range },
+        where: { buyerOrgId: req.params.id, ...(supplierId ? { sellerOrgId: supplierId } : {}), ...range },
         _sum: { total: true },
         _count: true,
       }),
