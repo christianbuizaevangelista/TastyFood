@@ -66,8 +66,8 @@ export default function Dashboard() {
     { name: 'Reseller Distribution', value: seg.reseller },
     { name: 'Retail Distribution', value: seg.retail },
   ];
-  // Reseller-vs-Retail split is a Principal-only view.
-  const hasSegData = user!.role === 'PRINCIPAL' && (seg.reseller > 0 || seg.retail > 0);
+  // Reseller-vs-consumer (retail) split of the viewer's own sales.
+  const hasSegData = seg.reseller > 0 || seg.retail > 0;
 
   // Current month vs last month totals.
   const cm = data.charts.currentMonth;
@@ -80,7 +80,7 @@ export default function Dashboard() {
     <div>
       <PageHeader
         title={`Welcome, ${user?.name.split(' ')[0]}`}
-        subtitle={`${ROLE_LABEL[user!.role]} · ${user?.org.name} · figures cover your chain, this month`}
+        subtitle={`${ROLE_LABEL[user!.role]} · ${user?.org.name} · your own sales, this month`}
       />
 
       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">

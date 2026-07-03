@@ -165,21 +165,34 @@ export default function Crm() {
   const [deactivateTarget, setDeactivateTarget] = useState<Org | null>(null);
 
   const [query, setQuery] = useState('');
+  const [tierFilter, setTierFilter] = useState('');
 
   const downstream = useMemo(
     () => (data?.orgs ?? []).filter((o) => o.id !== user!.org.id),
     [data, user]
   );
 
-  // Quick search across person/business name, territory/area, tier, and parent.
+  // Tier filters available to this viewer = the tiers strictly below them.
+  // Principal: Provincial/City/Reseller; Provincial: City/Reseller; City: none.
+  const TIERS_BELOW: Record<string, OrgType[]> = {
+    PRINCIPAL: ['PROVINCIAL', 'CITY', 'RESELLER'],
+    PROVINCIAL: ['CITY', 'RESELLER'],
+    CITY: [],
+    RESELLER: [],
+  };
+  const tierOptions = TIERS_BELOW[user!.org.type] ?? [];
+
+  // Quick search across person/business name, territory/area, tier, and parent,
+  // plus an optional tier (Provincial/City/Reseller) filter.
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
-    if (!term) return downstream;
-    return downstream.filter((o) =>
-      [o.contactName, o.name, o.territory?.name, o.type, o.parent?.name]
-        .some((v) => v && v.toLowerCase().includes(term))
-    );
-  }, [downstream, query]);
+    return downstream.filter((o) => {
+      if (tierFilter && o.type !== tierFilter) return false;
+      if (!term) return true;
+      return [o.contactName, o.name, o.territory?.name, o.type, o.parent?.name]
+        .some((v) => v && v.toLowerCase().includes(term));
+    });
+  }, [downstream, query, tierFilter]);
 
   // Deactivating needs the Principal's password; activating is direct.
   async function toggleActive(org: Org) {
@@ -218,14 +231,22 @@ export default function Crm() {
 
       {actionErr && <div className="mb-4"><Alert>{actionErr}</Alert></div>}
 
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <input
           className="input max-w-sm"
           placeholder="🔍 Search name or territory…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        {query && (
+        {tierOptions.length > 0 && (
+          <select className="input max-w-[11rem] text-sm" value={tierFilter} onChange={(e) => setTierFilter(e.target.value)}>
+            <option value="">All tiers</option>
+            {tierOptions.map((t) => (
+              <option key={t} value={t}>{t.charAt(0) + t.slice(1).toLowerCase()}</option>
+            ))}
+          </select>
+        )}
+        {(query || tierFilter) && (
           <span className="text-xs text-slate-400">{filtered.length} result{filtered.length === 1 ? '' : 's'}</span>
         )}
       </div>

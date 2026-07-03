@@ -29,8 +29,10 @@ dashboardRouter.get(
 
     const [sales, ownInventory, scopeInventory, activeDownstream, newMembers, lastMonthSales, downstreamKpis, myOrg] =
       await Promise.all([
+        // The dashboard's sales figures are the viewer's OWN sales (sell-out) —
+        // what they sold to their City/Reseller/consumer — not the whole chain.
         prisma.sale.findMany({
-          where: { sellerOrgId: { in: scope }, createdAt: { gte: from, lte: to } },
+          where: { sellerOrgId: myOrgId, createdAt: { gte: from, lte: to } },
           include: {
             items: true,
             sellerOrg: { select: { type: true, discountRate: true } },
@@ -72,7 +74,7 @@ dashboardRouter.get(
         }),
         prisma.sale.findMany({
           where: {
-            sellerOrgId: { in: scope },
+            sellerOrgId: myOrgId,
             createdAt: { gte: lastMonthStart, lt: thisMonthStart },
           },
           select: { total: true, createdAt: true },
