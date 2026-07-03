@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { api, apiError } from '../api/client';
 import { useFetch } from '../lib/useFetch';
 import { PageHeader, Spinner, Alert, KpiCard } from '../components/ui';
@@ -73,6 +74,12 @@ export default function Budget() {
   const netBudget = r2(t.incomeBudget - t.expenseBudget);
   const netActual = r2(t.incomeActual - t.expenseActual);
   const netForecast = r2(t.incomeForecast - t.expenseForecast);
+
+  const chartData = [
+    { name: 'Income', Budget: t.incomeBudget, Actual: t.incomeActual, Forecast: t.incomeForecast },
+    { name: 'Expenses', Budget: t.expenseBudget, Actual: t.expenseActual, Forecast: t.expenseForecast },
+    { name: 'Net', Budget: netBudget, Actual: netActual, Forecast: netForecast },
+  ];
 
   const years = [thisYear - 1, thisYear, thisYear + 1];
 
@@ -150,6 +157,22 @@ export default function Budget() {
         <KpiCard label="Net Budget" value={peso(netBudget)} hint="income − expenses" accent="text-brand-600" />
         <KpiCard label="Net Actual (YTD)" value={peso(netActual)} accent={netActual >= 0 ? 'text-green-600' : 'text-red-600'} />
         <KpiCard label="Net Forecast (year)" value={peso(netForecast)} hint="annualised run-rate" accent={netForecast >= 0 ? 'text-green-600' : 'text-red-600'} />
+      </div>
+
+      <div className="card mb-4">
+        <h3 className="mb-3 text-sm font-semibold text-slate-700">Budget vs Actual vs Forecast</h3>
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={chartData} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+            <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+            <YAxis tick={{ fontSize: 12 }} width={70} tickFormatter={(v) => peso(v)} />
+            <Tooltip formatter={(v: number) => peso(v)} />
+            <Legend />
+            <Bar dataKey="Budget" fill="#94a3b8" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="Actual" fill="#e8521d" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="Forecast" fill="#0ea5e9" radius={[3, 3, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
       </div>
 
       <Section title="Income" rows={d.income} totalKey="income" />
