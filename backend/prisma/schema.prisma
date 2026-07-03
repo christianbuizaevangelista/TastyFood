@@ -744,6 +744,11 @@ model FbAdCampaign {
   startDate   DateTime?
   endDate     DateTime?
   notes       String?
+  // MANUAL entry vs pulled from Facebook. fbCampaignId links a synced row to its
+  // Meta campaign so re-syncing updates in place instead of duplicating.
+  source       String   @default("MANUAL")   // MANUAL | FACEBOOK
+  fbCampaignId String?  @unique
+  lastSyncedAt DateTime?
   createdById String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

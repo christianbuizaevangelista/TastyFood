@@ -21,6 +21,8 @@ interface Campaign {
   startDate: string | null;
   endDate: string | null;
   notes: string | null;
+  source?: 'MANUAL' | 'FACEBOOK';
+  lastSyncedAt?: string | null;
 }
 interface Summary {
   count: number; active: number; budget: number; spend: number;
@@ -49,9 +51,12 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
 export default function FacebookAds() {
   const { data, loading, error, refetch } = useFetch<{ campaigns: Campaign[]; summary: Summary }>('/marketing/fb-ads');
+  const conn = useFetch<{ connected: boolean }>('/marketing/fb-ads/connection');
   const [editing, setEditing] = useState<Campaign | null>(null);
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   async function del(c: Campaign) {
     if (!confirm(`Delete campaign "${c.name}"?`)) return;
@@ -64,6 +69,21 @@ export default function FacebookAds() {
     }
   }
 
+  async function sync() {
+    setErr(null);
+    setNote(null);
+    setSyncing(true);
+    try {
+      const { data: r } = await api.post<{ synced: number }>('/marketing/fb-ads/sync');
+      setNote(`Synced ${r.synced} campaign${r.synced === 1 ? '' : 's'} from Facebook.`);
+      refetch();
+    } catch (e) {
+      setErr(apiError(e));
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   if (loading) return <Spinner />;
   if (error) return <Alert>{error}</Alert>;
   const s = data!.summary;
@@ -73,9 +93,24 @@ export default function FacebookAds() {
       <PageHeader
         title="Facebook Ads Management"
         subtitle="Track your Facebook ad campaigns, spend, and results"
-        action={<button className="btn-primary" onClick={() => setCreating(true)}>+ New Campaign</button>}
+        action={
+          <div className="flex items-center gap-2">
+            {conn.data?.connected && (
+              <button className="btn-ghost" disabled={syncing} onClick={sync}>
+                {syncing ? 'Syncing…' : '🔄 Sync from Facebook'}
+              </button>
+            )}
+            <button className="btn-primary" onClick={() => setCreating(true)}>+ New Campaign</button>
+          </div>
+        }
       />
 
+      {conn.data && !conn.data.connected && (
+        <div className="mb-3">
+          <Alert kind="info">Facebook is not connected yet — you can still add campaigns manually. Ask your admin to connect the Meta ad account to enable auto-sync.</Alert>
+        </div>
+      )}
+      {note && <div className="mb-3"><Alert kind="success">{note}</Alert></div>}
       {err && <div className="mb-3"><Alert>{err}</Alert></div>}
 
       <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -109,7 +144,10 @@ export default function FacebookAds() {
               {data!.campaigns.map((c) => (
                 <tr key={c.id} className="border-b border-slate-50">
                   <td className="td">
-                    <div className="font-medium text-slate-800">{c.name}</div>
+                    <div className="font-medium text-slate-800">
+                      {c.name}
+                      {c.source === 'FACEBOOK' && <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">FB</span>}
+                    </div>
                     <div className="text-xs text-slate-400">
                       {c.startDate ? date(c.startDate) : '—'}{c.endDate ? ` → ${date(c.endDate)}` : ''}
                     </div>
