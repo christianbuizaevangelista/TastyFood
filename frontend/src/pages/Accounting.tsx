@@ -297,6 +297,7 @@ export function Journal() {
   const entries = useFetch<{ entries: any[] }>('/accounting/entries');
   const accounts = useFetch<{ accounts: Account[] }>('/accounting/accounts');
   const [modal, setModal] = useState<null | 'income' | 'expense' | 'entry' | 'delivery'>(null);
+  const [detail, setDetail] = useState<any | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   async function del(id: string) {
@@ -328,76 +329,46 @@ export function Journal() {
       ) : (entries.data?.entries.length ?? 0) === 0 ? (
         <EmptyState>No journal entries yet.</EmptyState>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           {entries.data!.entries.map((e) => {
             const total = e.lines.reduce((s: number, l: any) => s + l.debit, 0);
+            const title = e.distributorOrg
+              ? `🚚 ${e.distributorOrg.name}${e.deliveryReceiptNo ? ` · DR #${e.deliveryReceiptNo}` : ''}`
+              : e.memo || '—';
             return (
-              <div key={e.id} className="card py-3">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <span className="font-mono text-xs text-slate-500">{e.number}</span>
-                    <span className="ml-2 text-xs text-slate-400">{new Date(e.date).toLocaleDateString()}</span>
-                    {e.distributorOrg && (
-                      <div className="text-sm font-medium text-slate-700">
-                        🚚 {e.distributorOrg.name}
-                        {e.deliveryReceiptNo && <span className="ml-2 text-xs font-normal text-slate-400">DR #{e.deliveryReceiptNo}</span>}
-                      </div>
-                    )}
-                    {e.memo && <div className="text-sm text-slate-700">{e.memo}</div>}
+              <div
+                key={e.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => setDetail(e)}
+                onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setDetail(e); } }}
+                className="card flex cursor-pointer items-center justify-between gap-3 py-2.5 transition hover:border-brand-200 hover:bg-slate-50"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 text-xs text-slate-400">
+                    <span className="font-mono text-slate-500">{e.number}</span>
+                    <span>{new Date(e.date).toLocaleDateString()}</span>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-semibold">{peso(total)}</span>
-                    <button className="text-xs text-red-600 hover:underline" onClick={() => del(e.id)}>Delete</button>
-                  </div>
+                  <div className="truncate text-sm text-slate-700">{title}</div>
                 </div>
-                <table className="mt-2 w-full text-xs">
-                  <tbody>
-                    {e.lines.map((l: any) => (
-                      <tr key={l.id} className="text-slate-600">
-                        <td className="py-0.5">{l.account.code} {l.account.name}</td>
-                        <td className="py-0.5 text-right">{l.debit ? peso(l.debit) : ''}</td>
-                        <td className="py-0.5 text-right">{l.credit ? peso(l.credit) : ''}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {e.items?.length > 0 && (
-                  <table className="mt-2 w-full text-xs">
-                    <thead><tr className="text-left text-slate-400">
-                      <th className="font-normal">SKU</th><th className="font-normal">Item</th>
-                      <th className="font-normal text-right">Qty</th><th className="font-normal text-right">Unit</th><th className="font-normal text-right">Amount</th>
-                    </tr></thead>
-                    <tbody>
-                      {e.items.map((it: any) => (
-                        <tr key={it.id} className="text-slate-600">
-                          <td className="py-0.5 font-mono">{it.sku}</td>
-                          <td className="py-0.5">{it.name}</td>
-                          <td className="py-0.5 text-right">{it.quantity}</td>
-                          <td className="py-0.5 text-right">{peso(it.unitPrice)}</td>
-                          <td className="py-0.5 text-right">{peso(it.amount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-                {e.attachments?.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-2 border-t border-slate-50 pt-2">
-                    {e.attachments.map((a: any) => (
-                      <button
-                        key={a.id}
-                        className="rounded border border-slate-200 px-2 py-0.5 text-xs text-brand-700 hover:bg-slate-50"
-                        onClick={() => viewAttachment(e.id, a.id)}
-                      >
-                        📎 {a.fileName}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <div className="flex shrink-0 items-center gap-3 text-xs text-slate-400">
+                  {e.items?.length > 0 && <span title={`${e.items.length} item(s)`}>🧾 {e.items.length}</span>}
+                  {e.attachments?.length > 0 && <span title={`${e.attachments.length} attachment(s)`}>📎 {e.attachments.length}</span>}
+                  <span className="font-semibold text-slate-800">{peso(total)}</span>
+                  <button
+                    className="text-red-600 hover:underline"
+                    onClick={(ev) => { ev.stopPropagation(); del(e.id); }}
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             );
           })}
         </div>
       )}
+
+      {detail && <TransactionDetail entry={detail} onClose={() => setDetail(null)} />}
 
       {modal === 'income' && (
         <QuickEntry kind="income" accounts={accounts.data?.accounts ?? []} onClose={() => setModal(null)} onSaved={() => { setModal(null); entries.refetch(); }} />
@@ -412,6 +383,94 @@ export function Journal() {
         <DeliveryEntry accounts={accounts.data?.accounts ?? []} onClose={() => setModal(null)} onSaved={() => { setModal(null); entries.refetch(); }} />
       )}
     </div>
+  );
+}
+
+// Full breakdown of one journal entry: header, journal lines, per-SKU items,
+// and clickable receipt attachments.
+function TransactionDetail({ entry: e, onClose }: { entry: any; onClose: () => void }) {
+  const total = e.lines.reduce((s: number, l: any) => s + l.debit, 0);
+  return (
+    <Modal title={`Transaction ${e.number}`} onClose={onClose} wide>
+      <div className="mb-4 space-y-1 border-b border-slate-100 pb-3 text-sm">
+        <div className="flex justify-between text-xs text-slate-400">
+          <span>{new Date(e.date).toLocaleDateString()}</span>
+          {e.reference && <span>Ref: {e.reference}</span>}
+        </div>
+        {e.distributorOrg && (
+          <div className="font-medium text-slate-700">
+            🚚 {e.distributorOrg.name}
+            {e.deliveryReceiptNo && <span className="ml-2 text-xs font-normal text-slate-400">DR #{e.deliveryReceiptNo}</span>}
+          </div>
+        )}
+        {e.memo && <div className="text-slate-700">{e.memo}</div>}
+      </div>
+
+      <div className="mb-1 text-xs font-semibold uppercase text-slate-400">Journal lines</div>
+      <table className="w-full text-sm">
+        <thead><tr className="text-left text-xs text-slate-400">
+          <th className="pb-1 font-normal">Account</th><th className="pb-1 text-right font-normal">Debit</th><th className="pb-1 text-right font-normal">Credit</th>
+        </tr></thead>
+        <tbody>
+          {e.lines.map((l: any) => (
+            <tr key={l.id} className="border-t border-slate-50 text-slate-600">
+              <td className="py-1"><span className="font-mono text-xs text-slate-400">{l.account.code}</span> {l.account.name}</td>
+              <td className="py-1 text-right">{l.debit ? peso(l.debit) : ''}</td>
+              <td className="py-1 text-right">{l.credit ? peso(l.credit) : ''}</td>
+            </tr>
+          ))}
+          <tr className="border-t border-slate-200 font-bold">
+            <td className="py-1">Total</td>
+            <td className="py-1 text-right">{peso(total)}</td>
+            <td className="py-1 text-right">{peso(total)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {e.items?.length > 0 && (
+        <>
+          <div className="mb-1 mt-4 text-xs font-semibold uppercase text-slate-400">Items (per SKU)</div>
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-xs text-slate-400">
+              <th className="pb-1 font-normal">SKU</th><th className="pb-1 font-normal">Item</th>
+              <th className="pb-1 text-right font-normal">Qty</th><th className="pb-1 text-right font-normal">Unit</th><th className="pb-1 text-right font-normal">Amount</th>
+            </tr></thead>
+            <tbody>
+              {e.items.map((it: any) => (
+                <tr key={it.id} className="border-t border-slate-50 text-slate-600">
+                  <td className="py-1 font-mono text-xs">{it.sku}</td>
+                  <td className="py-1">{it.name}</td>
+                  <td className="py-1 text-right">{it.quantity}</td>
+                  <td className="py-1 text-right">{peso(it.unitPrice)}</td>
+                  <td className="py-1 text-right">{peso(it.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {e.attachments?.length > 0 && (
+        <>
+          <div className="mb-1 mt-4 text-xs font-semibold uppercase text-slate-400">Receipts &amp; attachments</div>
+          <div className="flex flex-wrap gap-2">
+            {e.attachments.map((a: any) => (
+              <button
+                key={a.id}
+                className="rounded border border-slate-200 px-2 py-1 text-xs text-brand-700 hover:bg-slate-50"
+                onClick={() => viewAttachment(e.id, a.id)}
+              >
+                📎 {a.fileName}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      <div className="mt-5 flex justify-end">
+        <button className="btn-ghost" onClick={onClose}>Close</button>
+      </div>
+    </Modal>
   );
 }
 
