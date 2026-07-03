@@ -66,8 +66,16 @@ export async function ensureDefaultAccounts(): Promise<number> {
 
 // Next sequential journal entry number, e.g. JE-000042.
 export async function nextEntryNumber(): Promise<string> {
-  const count = await prisma.journalEntry.count();
-  return `JE-${String(count + 1).padStart(6, '0')}`;
+  // Base the next number on the HIGHEST existing one, not the count — deleting an
+  // entry leaves a gap, and a count-based number would collide with a live entry
+  // (JE-number is unique). Zero-padding keeps lexical order == numeric order.
+  const last = await prisma.journalEntry.findFirst({
+    where: { number: { startsWith: 'JE-' } },
+    orderBy: { number: 'desc' },
+    select: { number: true },
+  });
+  const lastN = last ? parseInt(last.number.replace(/\D/g, ''), 10) || 0 : 0;
+  return `JE-${String(lastN + 1).padStart(6, '0')}`;
 }
 
 // Fetch an account by code, creating a sensible default if it doesn't exist.
