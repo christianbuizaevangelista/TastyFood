@@ -86,26 +86,28 @@ dashboardRouter.get(
     const revenue = round2(sales.reduce((s, x) => s + x.total, 0));
     // Units sold, net of refunds (refunded quantity is deducted).
     const units = sales.reduce((s, x) => s + x.items.reduce((u, i) => u + (i.quantity - (i.refundedQuantity ?? 0)), 0), 0);
-    // Gross margin = net sales minus cost of goods sold. COGS is the actual cost
-    // of the units sold, taken from the seller's own inventory unit cost per
-    // product (keyed by seller org + product).
+    // Gross margin = net sales minus cost of goods sold. COGS depends on who the
+    // seller is: the Principal manufactures, so its unit cost is the inventory
+    // cost it set; a distributor's unit cost is its ACQUISITION price — SRP minus
+    // its own tier discount (what it paid its supplier).
     const costKey = (orgId: string, productId: string) => `${orgId}:${productId}`;
     const costByOrgProduct = new Map(
       scopeInventory.map((r) => [costKey(r.orgId, r.productId), r.cost ?? 0])
     );
     const cogs = round2(
-      sales.reduce(
-        (c, x) =>
+      sales.reduce((c, x) => {
+        const isPrincipal = x.sellerOrg.type === 'PRINCIPAL';
+        return (
           c +
-          x.items.reduce(
-            (ic, i) =>
-              ic +
-              (i.quantity - (i.refundedQuantity ?? 0)) *
-                (costByOrgProduct.get(costKey(x.sellerOrgId, i.productId)) ?? 0),
-            0
-          ),
-        0
-      )
+          x.items.reduce((ic, i) => {
+            const netQty = i.quantity - (i.refundedQuantity ?? 0);
+            const unitCost = isPrincipal
+              ? costByOrgProduct.get(costKey(x.sellerOrgId, i.productId)) ?? 0
+              : i.unitSrp * (1 - x.sellerOrg.discountRate);
+            return ic + netQty * unitCost;
+          }, 0)
+        );
+      }, 0)
     );
     const grossMargin = round2(revenue - cogs);
 

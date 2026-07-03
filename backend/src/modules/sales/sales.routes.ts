@@ -129,9 +129,15 @@ salesRouter.get(
     // Units still counted (refunded units are excluded — they are returned).
     const netQty = (it: (typeof sales)[number]['items'][number]) => it.quantity - (it.refundedQuantity ?? 0);
 
-    // Per-line COGS: net (non-refunded) qty × the seller's inventory unit cost.
-    const itemCost = (s: (typeof sales)[number], it: (typeof sales)[number]['items'][number]) =>
-      netQty(it) * (unitCostMap.get(ckey(s.sellerOrgId, it.productId)) ?? 0);
+    // Per-line COGS: net qty × the seller's unit cost. The Principal manufactures
+    // (uses its inventory cost); a distributor's cost is its acquisition price —
+    // SRP minus its own tier discount (what it paid its supplier).
+    const itemCost = (s: (typeof sales)[number], it: (typeof sales)[number]['items'][number]) => {
+      const unit = s.sellerOrg.type === 'PRINCIPAL'
+        ? unitCostMap.get(ckey(s.sellerOrgId, it.productId)) ?? 0
+        : it.unitSrp * (1 - s.sellerOrg.discountRate);
+      return netQty(it) * unit;
+    };
 
     // Per-sale COGS = sum of its line costs.
     const sellerCost = (s: (typeof sales)[number]) =>
