@@ -726,3 +726,27 @@ model KPIRecord {
   @@index([orgId])
   @@index([periodStart, periodEnd])
 }
+
+// ---------------------------------------------------------------------------
+// Marketing System — Facebook Ads Management (separate from DMS & Finance)
+// ---------------------------------------------------------------------------
+model FbAdCampaign {
+  id          String   @id @default(cuid())
+  name        String
+  objective   String   @default("AWARENESS") // AWARENESS | TRAFFIC | ENGAGEMENT | LEADS | SALES
+  status      String   @default("ACTIVE")    // ACTIVE | PAUSED | COMPLETED
+  budget      Float    @default(0)            // planned budget
+  spend       Float    @default(0)            // amount spent so far
+  reach       Int      @default(0)
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  leads       Int      @default(0)            // results / conversions
+  startDate   DateTime?
+  endDate     DateTime?
+  notes       String?
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+}

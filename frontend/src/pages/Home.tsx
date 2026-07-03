@@ -1,6 +1,6 @@
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { canAccessFinance, hasDmsAccess, firstDmsPath } from '../lib/nav';
+import { canAccessFinance, canAccessMarketing, hasDmsAccess, firstDmsPath } from '../lib/nav';
 
 // A neutral launcher: pick a workspace. The "Distribution Management System"
 // label and its sidebar only appear once you enter that workspace.
@@ -11,11 +11,16 @@ export default function Home() {
 
   const dms = hasDmsAccess(user);
   const finance = canAccessFinance(user);
+  const marketing = canAccessMarketing(user);
+  const count = [dms, finance, marketing].filter(Boolean).length;
 
   // Single workspace → skip the launcher and go straight in.
-  if (dms && !finance) return <Navigate to={firstDmsPath(user)} replace />;
-  if (finance && !dms) return <Navigate to="/finance" replace />;
-  if (!dms && !finance) return <Navigate to="/account" replace />;
+  if (count === 1) {
+    if (dms) return <Navigate to={firstDmsPath(user)} replace />;
+    if (finance) return <Navigate to="/finance" replace />;
+    if (marketing) return <Navigate to="/marketing" replace />;
+  }
+  if (count === 0) return <Navigate to="/account" replace />;
 
   const Tile = ({ onClick, icon, title, desc, accent }: { onClick: () => void; icon: string; title: string; desc: string; accent: string }) => (
     <button
@@ -67,6 +72,15 @@ export default function Home() {
               title="Finance & Accounting"
               desc="Double-entry books, journal entries, and financial reports."
               accent="bg-emerald-50 text-emerald-600"
+            />
+          )}
+          {marketing && (
+            <Tile
+              onClick={() => navigate('/marketing')}
+              icon="📣"
+              title="Marketing System"
+              desc="Facebook Ads management — campaigns, spend, and results."
+              accent="bg-indigo-50 text-indigo-600"
             />
           )}
         </div>
