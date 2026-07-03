@@ -35,8 +35,7 @@ export default function Login() {
             <div className="text-lg font-bold text-slate-900">Tasty Food Manufacturing Inc.</div>
           </div>
         </div>
-        <h1 className="mb-1 text-xl font-bold text-slate-900">Sign in</h1>
-        <p className="mb-5 text-sm text-slate-500">Sign in to manage your distribution network.</p>
+        <h1 className="mb-5 text-xl font-bold text-slate-900">Sign in</h1>
 
         {error && (
           <div className="mb-4">
