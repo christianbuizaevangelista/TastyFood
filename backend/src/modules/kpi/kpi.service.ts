@@ -1,4 +1,9 @@
+import { PoStatus } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
+
+// A purchase is "committed" once the supplier approves it (through received);
+// DRAFT/SUBMITTED (not yet approved) and CANCELLED don't count.
+const COMMITTED_PO: PoStatus[] = ['APPROVED', 'FULFILLED', 'PARTIALLY_RECEIVED', 'RECEIVED'];
 
 export interface OrgKpi {
   orgId: string;
@@ -36,12 +41,14 @@ export async function computeOrgKpis(
 
   const [orgs, currentSales, prevSales, children, pos, inventory] = await Promise.all([
     prisma.organization.findMany({ where: { id: { in: orgIds } } }),
-    prisma.sale.findMany({
-      where: { buyerOrgId: { in: orgIds }, createdAt: { gte: from, lte: to } },
+    // Sell-in = committed purchase orders (APPROVED onward — includes fulfilled)
+    // that this org placed with its supplier, not just fulfilled sales.
+    prisma.purchaseOrder.findMany({
+      where: { buyerOrgId: { in: orgIds }, status: { in: COMMITTED_PO }, createdAt: { gte: from, lte: to } },
       include: { items: true },
     }),
-    prisma.sale.findMany({
-      where: { buyerOrgId: { in: orgIds }, createdAt: { gte: prevFrom, lt: from } },
+    prisma.purchaseOrder.findMany({
+      where: { buyerOrgId: { in: orgIds }, status: { in: COMMITTED_PO }, createdAt: { gte: prevFrom, lt: from } },
     }),
     prisma.organization.findMany({
       where: { parentId: { in: orgIds } },

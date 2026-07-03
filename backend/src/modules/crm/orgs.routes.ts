@@ -108,11 +108,16 @@ orgsRouter.get(
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
-      // Sell-in = value of goods this account purchased from its assigned supplier
-      // (sales where it is the buyer AND its parent is the seller — created when
-      // its POs to that supplier are fulfilled).
-      prisma.sale.aggregate({
-        where: { buyerOrgId: req.params.id, ...(supplierId ? { sellerOrgId: supplierId } : {}), ...range },
+      // Purchases from the assigned supplier = committed POs (APPROVED onward —
+      // includes fulfilled) placed by this account with its parent. Counts the
+      // order once it's approved, not only after it's fulfilled.
+      prisma.purchaseOrder.aggregate({
+        where: {
+          buyerOrgId: req.params.id,
+          ...(supplierId ? { sellerOrgId: supplierId } : {}),
+          status: { in: ['APPROVED', 'FULFILLED', 'PARTIALLY_RECEIVED', 'RECEIVED'] },
+          ...range,
+        },
         _sum: { total: true },
         _count: true,
       }),
