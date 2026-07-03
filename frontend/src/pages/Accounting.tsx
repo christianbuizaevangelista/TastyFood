@@ -298,6 +298,7 @@ export function Journal() {
   const accounts = useFetch<{ accounts: Account[] }>('/accounting/accounts');
   const [modal, setModal] = useState<null | 'income' | 'expense' | 'entry' | 'delivery'>(null);
   const [detail, setDetail] = useState<any | null>(null);
+  const [editEntry, setEditEntry] = useState<any | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   async function del(id: string) {
@@ -348,6 +349,7 @@ export function Journal() {
                   <div className="flex items-center gap-2 text-xs text-slate-400">
                     <span className="font-mono text-slate-500">{e.number}</span>
                     <span>{new Date(e.date).toLocaleDateString()}</span>
+                    {e.sourceType && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">🔒 Auto</span>}
                   </div>
                   <div className="truncate text-sm text-slate-700">{title}</div>
                 </div>
@@ -355,12 +357,14 @@ export function Journal() {
                   {e.items?.length > 0 && <span title={`${e.items.length} item(s)`}>🧾 {e.items.length}</span>}
                   {e.attachments?.length > 0 && <span title={`${e.attachments.length} attachment(s)`}>📎 {e.attachments.length}</span>}
                   <span className="font-semibold text-slate-800">{peso(total)}</span>
-                  <button
-                    className="text-red-600 hover:underline"
-                    onClick={(ev) => { ev.stopPropagation(); del(e.id); }}
-                  >
-                    Delete
-                  </button>
+                  {!e.sourceType && (
+                    <button
+                      className="text-red-600 hover:underline"
+                      onClick={(ev) => { ev.stopPropagation(); del(e.id); }}
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -368,7 +372,16 @@ export function Journal() {
         </div>
       )}
 
-      {detail && <TransactionDetail entry={detail} onClose={() => setDetail(null)} />}
+      {detail && (
+        <TransactionDetail
+          entry={detail}
+          onClose={() => setDetail(null)}
+          onEdit={detail.sourceType ? undefined : () => { setEditEntry(detail); setDetail(null); }}
+        />
+      )}
+      {editEntry && (
+        <ManualEntry entry={editEntry} accounts={accounts.data?.accounts ?? []} onClose={() => setEditEntry(null)} onSaved={() => { setEditEntry(null); entries.refetch(); }} />
+      )}
 
       {modal === 'income' && (
         <QuickEntry kind="income" accounts={accounts.data?.accounts ?? []} onClose={() => setModal(null)} onSaved={() => { setModal(null); entries.refetch(); }} />
@@ -388,7 +401,7 @@ export function Journal() {
 
 // Full breakdown of one journal entry: header, journal lines, per-SKU items,
 // and clickable receipt attachments.
-function TransactionDetail({ entry: e, onClose }: { entry: any; onClose: () => void }) {
+function TransactionDetail({ entry: e, onClose, onEdit }: { entry: any; onClose: () => void; onEdit?: () => void }) {
   const total = e.lines.reduce((s: number, l: any) => s + l.debit, 0);
   return (
     <Modal title={`Transaction ${e.number}`} onClose={onClose} wide>
@@ -467,8 +480,14 @@ function TransactionDetail({ entry: e, onClose }: { entry: any; onClose: () => v
         </>
       )}
 
-      <div className="mt-5 flex justify-end">
-        <button className="btn-ghost" onClick={onClose}>Close</button>
+      <div className="mt-5 flex items-center justify-between">
+        <span className="text-xs text-slate-400">
+          {e.sourceType ? '🔒 Auto-generated from an operations event — locked from editing.' : ''}
+        </span>
+        <div className="flex gap-2">
+          {onEdit && <button className="btn-primary" onClick={onEdit}>Edit</button>}
+          <button className="btn-ghost" onClick={onClose}>Close</button>
+        </div>
       </div>
     </Modal>
   );
@@ -544,17 +563,35 @@ function QuickEntry({ kind, accounts, onClose, onSaved }: { kind: 'income' | 'ex
   );
 }
 
-// Manual multi-line balanced journal entry.
-function ManualEntry({ accounts, onClose, onSaved }: { accounts: Account[]; onClose: () => void; onSaved: () => void }) {
+// Manual multi-line balanced journal entry. Pass `entry` to edit an existing one.
+function ManualEntry({ accounts, entry, onClose, onSaved }: { accounts: Account[]; entry?: any; onClose: () => void; onSaved: () => void }) {
   const active = accounts.filter((a) => a.isActive);
   const topLevel = active.filter((a) => !a.parentId);
   const childrenOf = (id: string) => active.filter((a) => a.parentId === id);
-  const [date, setDate] = useState(today());
-  const [memo, setMemo] = useState('');
-  const [lines, setLines] = useState([
-    { accountId: '', subId: '', debit: '', credit: '' },
-    { accountId: '', subId: '', debit: '', credit: '' },
-  ]);
+  const isEdit = !!entry;
+  type EntryLine = { accountId: string; subId: string; debit: string; credit: string };
+  // A line's account may be a sub-account; split into parent + sub for the pickers.
+  const initialLines = (): EntryLine[] => {
+    if (!entry) {
+      return [
+        { accountId: '', subId: '', debit: '', credit: '' },
+        { accountId: '', subId: '', debit: '', credit: '' },
+      ];
+    }
+    return entry.lines.map((l: any) => {
+      const acc = accounts.find((a) => a.id === l.accountId);
+      const parentId = acc?.parentId ?? '';
+      return {
+        accountId: parentId || l.accountId,
+        subId: parentId ? l.accountId : '',
+        debit: l.debit ? String(l.debit) : '',
+        credit: l.credit ? String(l.credit) : '',
+      };
+    });
+  };
+  const [date, setDate] = useState(entry ? String(entry.date).slice(0, 10) : today());
+  const [memo, setMemo] = useState<string>(entry?.memo ?? '');
+  const [lines, setLines] = useState<EntryLine[]>(initialLines());
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -573,16 +610,16 @@ function ManualEntry({ accounts, onClose, onSaved }: { accounts: Account[]; onCl
     if (file && file.size > 4 * 1024 * 1024) return setErr('Receipt too large (max 4 MB).');
     setBusy(true);
     try {
-      const attachments = file
-        ? [{ fileName: file.name, mimeType: file.type || 'application/octet-stream', dataBase64: await fileToDataUrl(file) }]
-        : undefined;
-      await api.post('/accounting/entries', {
-        date,
-        memo: memo || undefined,
-        // Post to the sub-account when one is chosen, otherwise the parent account.
-        lines: lines.map((l) => ({ accountId: l.subId || l.accountId, debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 })),
-        attachments,
-      });
+      // Post to the sub-account when one is chosen, otherwise the parent account.
+      const payloadLines = lines.map((l) => ({ accountId: l.subId || l.accountId, debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 }));
+      if (isEdit) {
+        await api.put(`/accounting/entries/${entry.id}`, { date, memo: memo || undefined, lines: payloadLines });
+      } else {
+        const attachments = file
+          ? [{ fileName: file.name, mimeType: file.type || 'application/octet-stream', dataBase64: await fileToDataUrl(file) }]
+          : undefined;
+        await api.post('/accounting/entries', { date, memo: memo || undefined, lines: payloadLines, attachments });
+      }
       onSaved();
     } catch (e) {
       setErr(apiError(e));
@@ -591,7 +628,7 @@ function ManualEntry({ accounts, onClose, onSaved }: { accounts: Account[]; onCl
   }
 
   return (
-    <Modal title="New Journal Entry" onClose={onClose} wide>
+    <Modal title={isEdit ? `Edit Journal Entry ${entry.number}` : 'New Journal Entry'} onClose={onClose} wide>
       {err && <div className="mb-3"><Alert>{err}</Alert></div>}
       <div className="mb-3 flex gap-2">
         <div className="flex-1">
@@ -635,11 +672,13 @@ function ManualEntry({ accounts, onClose, onSaved }: { accounts: Account[]; onCl
         </tbody>
       </table>
       <button className="mt-2 text-xs font-semibold text-brand-700 hover:underline" onClick={() => setLines([...lines, { accountId: '', subId: '', debit: '', credit: '' }])}>+ Add line</button>
-      <div className="mt-3">
-        <label className="label">Receipt / attachment for this entry (optional, max 4 MB)</label>
-        <input type="file" className="text-xs" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-        {file && <span className="ml-2 text-xs text-green-600">📎 {file.name}</span>}
-      </div>
+      {!isEdit && (
+        <div className="mt-3">
+          <label className="label">Receipt / attachment for this entry (optional, max 4 MB)</label>
+          <input type="file" className="text-xs" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          {file && <span className="ml-2 text-xs text-green-600">📎 {file.name}</span>}
+        </div>
+      )}
       <div className="mt-3 flex justify-end gap-6 text-sm">
         <span>Debits: <strong>{peso(totalDebit)}</strong></span>
         <span>Credits: <strong>{peso(totalCredit)}</strong></span>
@@ -647,7 +686,7 @@ function ManualEntry({ accounts, onClose, onSaved }: { accounts: Account[]; onCl
       </div>
       <div className="mt-4 flex justify-end gap-2">
         <button className="btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn-primary" disabled={busy || !balanced} onClick={save}>{busy ? 'Saving…' : 'Post entry'}</button>
+        <button className="btn-primary" disabled={busy || !balanced} onClick={save}>{busy ? 'Saving…' : isEdit ? 'Save changes' : 'Post entry'}</button>
       </div>
     </Modal>
   );

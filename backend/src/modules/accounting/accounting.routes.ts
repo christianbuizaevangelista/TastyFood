@@ -363,12 +363,75 @@ accountingRouter.get(
   })
 );
 
-// DELETE /accounting/entries/:id — remove an entry (and its lines).
+// PUT /accounting/entries/:id — edit a MANUAL entry's date, memo, reference and
+// lines (re-validated + re-balanced). Auto-generated entries (posted from a
+// sale, refund, or A/R payment) are locked to keep the books in sync.
+const editEntrySchema = z.object({
+  date: z.coerce.date(),
+  memo: z.string().max(300).optional(),
+  reference: z.string().max(120).optional(),
+  lines: z.array(lineSchema).min(2),
+});
+accountingRouter.put(
+  '/entries/:id',
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.journalEntry.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw notFound('Entry not found');
+    if (existing.sourceType) {
+      throw badRequest('This entry was auto-generated from an operations event (sale, refund, or payment) and cannot be edited.');
+    }
+    const body = editEntrySchema.parse(req.body);
+    const lines = body.lines.map((l) => ({
+      accountId: l.accountId,
+      debit: round2(l.debit ?? 0),
+      credit: round2(l.credit ?? 0),
+      memo: l.memo ?? null,
+    }));
+    for (const l of lines) {
+      if (l.debit > 0 && l.credit > 0) throw badRequest('A line cannot have both a debit and a credit');
+      if (l.debit === 0 && l.credit === 0) throw badRequest('Each line needs a debit or a credit amount');
+    }
+    const totalDebit = round2(lines.reduce((s, l) => s + l.debit, 0));
+    const totalCredit = round2(lines.reduce((s, l) => s + l.credit, 0));
+    if (totalDebit !== totalCredit) throw badRequest(`Entry is not balanced (debits ${totalDebit} ≠ credits ${totalCredit})`);
+    if (totalDebit === 0) throw badRequest('Entry total cannot be zero');
+
+    const ids = [...new Set(lines.map((l) => l.accountId))];
+    const found = await prisma.account.count({ where: { id: { in: ids } } });
+    if (found !== ids.length) throw badRequest('One or more accounts do not exist');
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.journalLine.deleteMany({ where: { entryId: existing.id } });
+      return tx.journalEntry.update({
+        where: { id: existing.id },
+        data: {
+          date: body.date,
+          memo: body.memo ?? null,
+          reference: body.reference ?? null,
+          lines: { create: lines },
+        },
+        include: {
+          lines: { include: { account: { select: { code: true, name: true, type: true } } } },
+          attachments: { select: { id: true, fileName: true, mimeType: true, size: true } },
+          items: true,
+          distributorOrg: { select: { id: true, name: true, type: true } },
+        },
+      });
+    });
+    res.json(updated);
+  })
+);
+
+// DELETE /accounting/entries/:id — remove an entry (and its lines). Auto-generated
+// entries are locked (deleting them would desync the books from operations).
 accountingRouter.delete(
   '/entries/:id',
   asyncHandler(async (req, res) => {
     const entry = await prisma.journalEntry.findUnique({ where: { id: req.params.id } });
     if (!entry) throw notFound('Entry not found');
+    if (entry.sourceType) {
+      throw badRequest('This entry was auto-generated from an operations event (sale, refund, or payment) and cannot be deleted.');
+    }
     await prisma.journalEntry.delete({ where: { id: entry.id } });
     res.json({ ok: true });
   })
