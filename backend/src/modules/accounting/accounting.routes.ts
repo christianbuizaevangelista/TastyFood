@@ -569,13 +569,27 @@ accountingRouter.get(
       .filter((r) => r.amount !== 0);
 
     // Computed Cost of Sales: cost of goods sold on the Principal's own sales this
-    // period (Σ sold qty × the Principal's inventory unit cost).
+    // period (Σ sold qty × the Principal's inventory unit cost). Kept SEPARATE
+    // from operating expenses so the P&L reads Revenue → COGS → Gross Profit →
+    // OpEx → Net Profit.
     const cogs = await periodCogs(req.auth!.orgId, from, to);
-    if (cogs > 0) expenses.push({ code: 'COGS', name: 'Cost of Sales', amount: cogs });
 
     const totalIncome = round2(income.reduce((s, r) => s + r.amount, 0));
-    const totalExpenses = round2(expenses.reduce((s, r) => s + r.amount, 0));
-    res.json({ from, to, income, expenses, totalIncome, totalExpenses, netIncome: round2(totalIncome - totalExpenses) });
+    const grossProfit = round2(totalIncome - cogs);
+    const totalOpex = round2(expenses.reduce((s, r) => s + r.amount, 0));
+    const netIncome = round2(grossProfit - totalOpex);
+    res.json({
+      from,
+      to,
+      income,
+      totalIncome,
+      cogs,
+      grossProfit,
+      // Operating expenses (everything except COGS).
+      opex: expenses,
+      totalOpex,
+      netIncome,
+    });
   })
 );
 

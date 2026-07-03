@@ -53,11 +53,13 @@ function reportToCsv(report: string, d: any): (string | number)[][] {
   const rows: (string | number)[][] = [];
   if (report === 'pnl') {
     rows.push(['Profit & Loss'], ['From', new Date(d.from).toLocaleDateString(), 'To', new Date(d.to).toLocaleDateString()], []);
-    rows.push(['Income']);
+    rows.push(['Revenue']);
     (d.income ?? []).forEach((r: any) => rows.push([`${r.code} ${r.name}`, r.amount]));
-    rows.push(['Total Income', d.totalIncome], [], ['Expenses']);
-    (d.expenses ?? []).forEach((r: any) => rows.push([`${r.code} ${r.name}`, r.amount]));
-    rows.push(['Total Expenses', d.totalExpenses], [], ['Net Income', d.netIncome]);
+    rows.push(['Total Revenue', d.totalIncome], []);
+    rows.push(['Cost of Goods Sold'], ['Cost of Sales', d.cogs ?? 0], ['Gross Profit', d.grossProfit ?? 0], []);
+    rows.push(['Operating Expenses']);
+    (d.opex ?? []).forEach((r: any) => rows.push([`${r.code} ${r.name}`, r.amount]));
+    rows.push(['Total OpEx', d.totalOpex ?? 0], [], ['Net Profit', d.netIncome]);
   } else if (report === 'balance-sheet') {
     rows.push(['Balance Sheet'], ['As of', new Date(d.asOf).toLocaleDateString()], [], ['Assets']);
     (d.assets ?? []).forEach((r: any) => rows.push([`${r.code} ${r.name}`, r.amount]));
@@ -206,15 +208,24 @@ function Pnl({ d }: { d: any }) {
     <div className="card max-w-xl">
       <h3 className="mb-1 text-base font-bold">Profit &amp; Loss</h3>
       <p className="mb-3 text-xs text-slate-400">{new Date(d.from).toLocaleDateString()} – {new Date(d.to).toLocaleDateString()}</p>
-      <div className="text-xs font-semibold uppercase text-slate-400">Income</div>
+      <div className="text-xs font-semibold uppercase text-slate-400">Revenue</div>
       {(d.income ?? []).length ? (d.income ?? []).map((r: any) => <Row key={r.code} label={`${r.code} ${r.name}`} value={r.amount} indent />) : <div className="py-1 pl-3 text-sm text-slate-400">None</div>}
-      <Row label="Total Income" value={d.totalIncome} bold />
-      <div className="mt-3 text-xs font-semibold uppercase text-slate-400">Expenses</div>
-      {(d.expenses ?? []).length ? (d.expenses ?? []).map((r: any) => <Row key={r.code} label={`${r.code} ${r.name}`} value={r.amount} indent />) : <div className="py-1 pl-3 text-sm text-slate-400">None</div>}
-      <Row label="Total Expenses" value={d.totalExpenses} bold />
+      <Row label="Total Revenue" value={d.totalIncome} bold />
+
+      <div className="mt-3 text-xs font-semibold uppercase text-slate-400">Cost of Goods Sold</div>
+      <Row label="Cost of Sales" value={d.cogs ?? 0} indent />
+
+      <div className="mt-2 border-t border-slate-100 pt-2">
+        <Row label="Gross Profit" value={d.grossProfit ?? 0} bold />
+      </div>
+
+      <div className="mt-3 text-xs font-semibold uppercase text-slate-400">Operating Expenses</div>
+      {(d.opex ?? []).length ? (d.opex ?? []).map((r: any) => <Row key={r.code} label={`${r.code} ${r.name}`} value={r.amount} indent />) : <div className="py-1 pl-3 text-sm text-slate-400">None</div>}
+      <Row label="Total OpEx" value={d.totalOpex ?? 0} bold />
+
       <div className="mt-2 border-t border-slate-200 pt-2">
         <div className={`flex justify-between text-lg font-bold ${d.netIncome >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-          <span>Net Income</span><span>{peso(d.netIncome)}</span>
+          <span>Net Profit</span><span>{peso(d.netIncome)}</span>
         </div>
       </div>
     </div>
