@@ -28,7 +28,9 @@ export async function applyStockMovement(
   const current = existing?.quantity ?? 0;
   const balance = current + change;
 
-  if (!allowNegative && balance < 0) {
+  // Only a deduction can be "insufficient" — a stock-in (change >= 0) never is,
+  // even if the balance stays negative from earlier oversold transactions.
+  if (!allowNegative && change < 0 && balance < 0) {
     throw new Error(
       `Insufficient stock for product ${productId} at org ${orgId} (have ${current}, need ${-change})`
     );

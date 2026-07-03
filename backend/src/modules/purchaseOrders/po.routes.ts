@@ -559,6 +559,9 @@ poRouter.post(
               reason: 'PO_RECEIVED',
               refType: 'PurchaseOrder',
               refId: po.id,
+              // Receiving only adds stock — never block it, even if the buyer's
+              // balance is still negative from earlier oversold POS transactions.
+              allowNegative: true,
             });
           }
           await tx.purchaseOrderItem.update({
