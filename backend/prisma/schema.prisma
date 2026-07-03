@@ -755,3 +755,17 @@ model FbAdCampaign {
 
   @@index([status])
 }
+
+// Annual budget per account (Finance — Budgeting & Forecasting). Actuals come
+// from the journal; forecast is an annualized run-rate of actuals-to-date.
+model Budget {
+  id          String   @id @default(cuid())
+  accountId   String
+  year        Int
+  amount      Float    @default(0)
+  createdById String
+  updatedAt   DateTime @updatedAt
+
+  @@unique([accountId, year])
+  @@index([year])
+}

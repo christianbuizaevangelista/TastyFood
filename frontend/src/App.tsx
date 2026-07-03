@@ -28,6 +28,7 @@ import { Reports, Journal, ChartOfAccounts } from './pages/Accounting';
 import DistributorFinancials from './pages/DistributorFinancials';
 import FinanceDashboard from './pages/FinanceDashboard';
 import AgingReport from './pages/AgingReport';
+import Budget from './pages/Budget';
 import ResellerSale from './pages/ResellerSale';
 import FacebookAds from './pages/FacebookAds';
 import Users from './pages/Users';
@@ -84,6 +85,7 @@ export default function App() {
       <Route path="/referrals" element={<Protected path="/referrals"><Referrals /></Protected>} />
       <Route path="/finance" element={<FinanceProtected><FinanceDashboard /></FinanceProtected>} />
       <Route path="/finance/reports" element={<FinanceProtected><Reports /></FinanceProtected>} />
+      <Route path="/finance/budget" element={<FinanceProtected><Budget /></FinanceProtected>} />
       <Route path="/finance/journal" element={<FinanceProtected><Journal /></FinanceProtected>} />
       <Route path="/finance/distributors" element={<FinanceProtected><DistributorFinancials /></FinanceProtected>} />
       <Route path="/finance/aging" element={<FinanceProtected><AgingReport /></FinanceProtected>} />

@@ -553,6 +553,88 @@ accountingRouter.get(
   })
 );
 
+// =============================================================================
+// Budgeting & Forecasting
+// =============================================================================
+
+// GET /accounting/budget?year=YYYY — per income/expense account: budget vs
+// actual-to-date, plus a run-rate forecast for the full year.
+accountingRouter.get(
+  '/budget',
+  asyncHandler(async (req, res) => {
+    const now = new Date();
+    const year = Number(req.query.year) || now.getFullYear();
+    const from = new Date(year, 0, 1);
+    const yearEnd = new Date(year, 11, 31, 23, 59, 59, 999);
+    const to = now < yearEnd ? now : yearEnd;
+    // Months of actuals available this year (12 for a past year, 0 for a future one).
+    const monthsElapsed = year < now.getFullYear() ? 12 : year > now.getFullYear() ? 0 : now.getMonth() + 1;
+
+    const totals = await accountTotals({ date: { gte: from, lte: to } });
+    const budgets = await prisma.budget.findMany({ where: { year } });
+    const budgetByAcct = new Map(budgets.map((b) => [b.accountId, b.amount]));
+
+    const rowFor = (t: (typeof totals)[number]) => {
+      const isIncome = t.account.type === 'INCOME';
+      const actual = round2(isIncome ? t.credit - t.debit : t.debit - t.credit);
+      const budget = round2(budgetByAcct.get(t.account.id) ?? 0);
+      // Forecast the full year by annualising actuals-to-date; if the year hasn't
+      // started yet, fall back to the budget.
+      const forecast = monthsElapsed > 0 ? round2((actual / monthsElapsed) * 12) : budget;
+      return {
+        accountId: t.account.id,
+        code: t.account.code,
+        name: t.account.name,
+        type: t.account.type,
+        budget,
+        actual,
+        forecast,
+        variance: round2(actual - budget),
+      };
+    };
+    const active = totals.filter((t) => t.account.isActive);
+    const income = active.filter((t) => t.account.type === 'INCOME').map(rowFor);
+    const expenses = active.filter((t) => t.account.type === 'EXPENSE').map(rowFor);
+
+    const sum = (arr: ReturnType<typeof rowFor>[], k: 'budget' | 'actual' | 'forecast') =>
+      round2(arr.reduce((s, r) => s + r[k], 0));
+    res.json({
+      year,
+      monthsElapsed,
+      income,
+      expenses,
+      totals: {
+        incomeBudget: sum(income, 'budget'),
+        incomeActual: sum(income, 'actual'),
+        incomeForecast: sum(income, 'forecast'),
+        expenseBudget: sum(expenses, 'budget'),
+        expenseActual: sum(expenses, 'actual'),
+        expenseForecast: sum(expenses, 'forecast'),
+      },
+    });
+  })
+);
+
+// PUT /accounting/budget — upsert budget amounts for a year.
+const budgetSchema = z.object({
+  year: z.number().int().min(2000).max(2100),
+  items: z.array(z.object({ accountId: z.string().min(1), amount: z.number().min(0) })).max(500),
+});
+accountingRouter.put(
+  '/budget',
+  asyncHandler(async (req, res) => {
+    const body = budgetSchema.parse(req.body);
+    for (const it of body.items) {
+      await prisma.budget.upsert({
+        where: { accountId_year: { accountId: it.accountId, year: body.year } },
+        update: { amount: round2(it.amount) },
+        create: { accountId: it.accountId, year: body.year, amount: round2(it.amount), createdById: req.auth!.sub },
+      });
+    }
+    res.json({ ok: true, saved: body.items.length });
+  })
+);
+
 // GET /accounting/reports/pnl?from&to — Profit & Loss (income statement).
 accountingRouter.get(
   '/reports/pnl',
