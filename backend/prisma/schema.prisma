@@ -694,6 +694,10 @@ model JournalAttachment {
   id           String  @id @default(cuid())
   entryId      String
   entry        JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  // Optional: the account this receipt belongs to (a per-line attachment). Null =
+  // an entry-level attachment. Keyed by account (not line id) so it survives edits
+  // that recreate the entry's lines.
+  accountId    String?
   fileName     String
   mimeType     String
   size         Int

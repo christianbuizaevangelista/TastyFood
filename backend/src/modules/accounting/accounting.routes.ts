@@ -243,7 +243,7 @@ accountingRouter.get(
       where,
       include: {
         lines: { include: { account: { select: { code: true, name: true, type: true } } } },
-        attachments: { select: { id: true, fileName: true, mimeType: true, size: true } },
+        attachments: { select: { id: true, accountId: true, fileName: true, mimeType: true, size: true } },
         items: true,
         distributorOrg: { select: { id: true, name: true, type: true } },
       },
@@ -254,16 +254,18 @@ accountingRouter.get(
   })
 );
 
+const attachmentSchema = z.object({
+  fileName: z.string().min(1),
+  mimeType: z.string().min(1),
+  dataBase64: z.string().min(1),
+});
 const lineSchema = z.object({
   accountId: z.string().min(1),
   debit: z.number().min(0).optional(),
   credit: z.number().min(0).optional(),
   memo: z.string().max(200).optional(),
-});
-const attachmentSchema = z.object({
-  fileName: z.string().min(1),
-  mimeType: z.string().min(1),
-  dataBase64: z.string().min(1),
+  // Optional receipt for THIS account line (per-account attachment).
+  attachment: attachmentSchema.optional(),
 });
 const itemSchema = z.object({
   productId: z.string().optional(),
@@ -285,6 +287,19 @@ const entrySchema = z.object({
 });
 
 const ATTACH_MAX_BYTES = 4 * 1024 * 1024; // 4 MB per receipt
+
+// Normalise an uploaded receipt: strip the data-URL prefix, size-check, and tag
+// it with the account it belongs to (null = entry-level).
+function prepAttachment(
+  a: { fileName: string; mimeType: string; dataBase64: string },
+  uploadedById: string,
+  accountId: string | null
+) {
+  const data = a.dataBase64.replace(/^data:[^;]+;base64,/, '');
+  const size = Math.floor((data.length * 3) / 4);
+  if (size > ATTACH_MAX_BYTES) throw badRequest(`Receipt "${a.fileName}" is too large (max 4 MB)`);
+  return { accountId, fileName: a.fileName, mimeType: a.mimeType, size, data, uploadedById };
+}
 
 // POST /accounting/entries — record a balanced journal entry.
 accountingRouter.post(
@@ -310,13 +325,11 @@ accountingRouter.post(
     const found = await prisma.account.count({ where: { id: { in: ids } } });
     if (found !== ids.length) throw badRequest('One or more accounts do not exist');
 
-    // Prepare any attached receipts (base64, size-checked).
-    const attachData = (body.attachments ?? []).map((a) => {
-      const data = a.dataBase64.replace(/^data:[^;]+;base64,/, '');
-      const size = Math.floor((data.length * 3) / 4);
-      if (size > ATTACH_MAX_BYTES) throw badRequest(`Receipt "${a.fileName}" is too large (max 4 MB)`);
-      return { fileName: a.fileName, mimeType: a.mimeType, size, data, uploadedById: req.auth!.sub };
-    });
+    // Prepare attached receipts: entry-level (accountId null) + per-account-line.
+    const attachData = [
+      ...(body.attachments ?? []).map((a) => prepAttachment(a, req.auth!.sub, null)),
+      ...body.lines.filter((l) => l.attachment).map((l) => prepAttachment(l.attachment!, req.auth!.sub, l.accountId)),
+    ];
 
     const number = await nextEntryNumber();
     const itemsData = (body.items ?? []).map((it) => ({
@@ -342,7 +355,7 @@ accountingRouter.post(
       },
       include: {
         lines: { include: { account: { select: { code: true, name: true, type: true } } } },
-        attachments: { select: { id: true, fileName: true, mimeType: true, size: true } },
+        attachments: { select: { id: true, accountId: true, fileName: true, mimeType: true, size: true } },
         items: true,
         distributorOrg: { select: { id: true, name: true, type: true } },
       },
@@ -400,8 +413,15 @@ accountingRouter.put(
     const found = await prisma.account.count({ where: { id: { in: ids } } });
     if (found !== ids.length) throw badRequest('One or more accounts do not exist');
 
+    // New per-account receipts added during this edit (existing ones are kept —
+    // they key off the account, not the recreated line rows).
+    const newAttach = body.lines
+      .filter((l) => l.attachment)
+      .map((l) => ({ ...prepAttachment(l.attachment!, req.auth!.sub, l.accountId), entryId: existing.id }));
+
     const updated = await prisma.$transaction(async (tx) => {
       await tx.journalLine.deleteMany({ where: { entryId: existing.id } });
+      if (newAttach.length) await tx.journalAttachment.createMany({ data: newAttach });
       return tx.journalEntry.update({
         where: { id: existing.id },
         data: {
@@ -412,7 +432,7 @@ accountingRouter.put(
         },
         include: {
           lines: { include: { account: { select: { code: true, name: true, type: true } } } },
-          attachments: { select: { id: true, fileName: true, mimeType: true, size: true } },
+          attachments: { select: { id: true, accountId: true, fileName: true, mimeType: true, size: true } },
           items: true,
           distributorOrg: { select: { id: true, name: true, type: true } },
         },

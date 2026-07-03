@@ -425,13 +425,23 @@ function TransactionDetail({ entry: e, onClose, onEdit }: { entry: any; onClose:
           <th className="pb-1 font-normal">Account</th><th className="pb-1 text-right font-normal">Debit</th><th className="pb-1 text-right font-normal">Credit</th>
         </tr></thead>
         <tbody>
-          {e.lines.map((l: any) => (
+          {e.lines.map((l: any) => {
+            const lineAtts = (e.attachments ?? []).filter((a: any) => a.accountId === l.accountId);
+            return (
             <tr key={l.id} className="border-t border-slate-50 text-slate-600">
-              <td className="py-1"><span className="font-mono text-xs text-slate-400">{l.account.code}</span> {l.account.name}</td>
+              <td className="py-1">
+                {l.account.name}
+                {lineAtts.map((a: any) => (
+                  <button key={a.id} className="ml-2 text-xs text-brand-700 hover:underline" onClick={() => viewAttachment(e.id, a.id)}>
+                    📎 {a.fileName}
+                  </button>
+                ))}
+              </td>
               <td className="py-1 text-right">{l.debit ? peso(l.debit) : ''}</td>
               <td className="py-1 text-right">{l.credit ? peso(l.credit) : ''}</td>
             </tr>
-          ))}
+            );
+          })}
           <tr className="border-t border-slate-200 font-bold">
             <td className="py-1">Total</td>
             <td className="py-1 text-right">{peso(total)}</td>
@@ -463,22 +473,25 @@ function TransactionDetail({ entry: e, onClose, onEdit }: { entry: any; onClose:
         </>
       )}
 
-      {e.attachments?.length > 0 && (
-        <>
-          <div className="mb-1 mt-4 text-xs font-semibold uppercase text-slate-400">Receipts &amp; attachments</div>
-          <div className="flex flex-wrap gap-2">
-            {e.attachments.map((a: any) => (
-              <button
-                key={a.id}
-                className="rounded border border-slate-200 px-2 py-1 text-xs text-brand-700 hover:bg-slate-50"
-                onClick={() => viewAttachment(e.id, a.id)}
-              >
-                📎 {a.fileName}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+      {(() => {
+        const entryAtts = (e.attachments ?? []).filter((a: any) => !a.accountId);
+        return entryAtts.length > 0 ? (
+          <>
+            <div className="mb-1 mt-4 text-xs font-semibold uppercase text-slate-400">Other receipts &amp; attachments</div>
+            <div className="flex flex-wrap gap-2">
+              {entryAtts.map((a: any) => (
+                <button
+                  key={a.id}
+                  className="rounded border border-slate-200 px-2 py-1 text-xs text-brand-700 hover:bg-slate-50"
+                  onClick={() => viewAttachment(e.id, a.id)}
+                >
+                  📎 {a.fileName}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : null;
+      })()}
 
       <div className="mt-5 flex items-center justify-between">
         <span className="text-xs text-slate-400">
@@ -519,15 +532,15 @@ function QuickEntry({ kind, accounts, onClose, onSaved }: { kind: 'income' | 'ex
     if (file && file.size > 4 * 1024 * 1024) return setErr('Receipt too large (max 4 MB).');
     setBusy(true);
     try {
-      // Income: Dr Cash, Cr Income. Expense: Dr Expense, Cr Cash.
-      const lines =
-        kind === 'income'
-          ? [{ accountId: cashId, debit: amt }, { accountId: catId, credit: amt }]
-          : [{ accountId: catId, debit: amt }, { accountId: cashId, credit: amt }];
-      const attachments = file
-        ? [{ fileName: file.name, mimeType: file.type || 'application/octet-stream', dataBase64: await fileToDataUrl(file) }]
+      // Income: Dr Cash, Cr Income. Expense: Dr Expense, Cr Cash. The receipt is
+      // attached to the income/expense (category) account line.
+      const attachment = file
+        ? { fileName: file.name, mimeType: file.type || 'application/octet-stream', dataBase64: await fileToDataUrl(file) }
         : undefined;
-      await api.post('/accounting/entries', { date, memo: memo || undefined, lines, attachments });
+      const catLine = { accountId: catId, ...(kind === 'income' ? { credit: amt } : { debit: amt }), ...(attachment ? { attachment } : {}) };
+      const cashLine = { accountId: cashId, ...(kind === 'income' ? { debit: amt } : { credit: amt }) };
+      const lines = kind === 'income' ? [cashLine, catLine] : [catLine, cashLine];
+      await api.post('/accounting/entries', { date, memo: memo || undefined, lines });
       onSaved();
     } catch (e) {
       setErr(apiError(e));
@@ -542,11 +555,11 @@ function QuickEntry({ kind, accounts, onClose, onSaved }: { kind: 'income' | 'ex
       <input type="date" className="input mb-3" value={date} onChange={(e) => setDate(e.target.value)} />
       <label className="label">{kind === 'income' ? 'Income account' : 'Expense account'}</label>
       <select className="input mb-3" value={catId} onChange={(e) => setCatId(e.target.value)}>
-        {catAccounts.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
+        {catAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
       </select>
       <label className="label">{kind === 'income' ? 'Deposit to (cash/bank)' : 'Paid from (cash or liability)'}</label>
       <select className="input mb-3" value={cashId} onChange={(e) => setCashId(e.target.value)}>
-        {payAccounts.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
+        {payAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
       </select>
       <label className="label">Amount (₱)</label>
       <input type="number" min={0} step="0.01" className="input mb-3" value={amount} onChange={(e) => setAmount(e.target.value)} />
@@ -569,13 +582,13 @@ function ManualEntry({ accounts, entry, onClose, onSaved }: { accounts: Account[
   const topLevel = active.filter((a) => !a.parentId);
   const childrenOf = (id: string) => active.filter((a) => a.parentId === id);
   const isEdit = !!entry;
-  type EntryLine = { accountId: string; subId: string; debit: string; credit: string };
+  type EntryLine = { accountId: string; subId: string; debit: string; credit: string; file: File | null };
   // A line's account may be a sub-account; split into parent + sub for the pickers.
   const initialLines = (): EntryLine[] => {
     if (!entry) {
       return [
-        { accountId: '', subId: '', debit: '', credit: '' },
-        { accountId: '', subId: '', debit: '', credit: '' },
+        { accountId: '', subId: '', debit: '', credit: '', file: null },
+        { accountId: '', subId: '', debit: '', credit: '', file: null },
       ];
     }
     return entry.lines.map((l: any) => {
@@ -586,13 +599,16 @@ function ManualEntry({ accounts, entry, onClose, onSaved }: { accounts: Account[
         subId: parentId ? l.accountId : '',
         debit: l.debit ? String(l.debit) : '',
         credit: l.credit ? String(l.credit) : '',
+        file: null,
       };
     });
   };
+  // Existing per-account receipts (edit mode), grouped by the account they belong to.
+  const attachmentsForAccount = (accountId: string) =>
+    (entry?.attachments ?? []).filter((a: any) => a.accountId === accountId);
   const [date, setDate] = useState(entry ? String(entry.date).slice(0, 10) : today());
   const [memo, setMemo] = useState<string>(entry?.memo ?? '');
   const [lines, setLines] = useState<EntryLine[]>(initialLines());
-  const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -600,25 +616,32 @@ function ManualEntry({ accounts, entry, onClose, onSaved }: { accounts: Account[
   const totalCredit = lines.reduce((s, l) => s + (Number(l.credit) || 0), 0);
   const balanced = Math.abs(totalDebit - totalCredit) < 0.005 && totalDebit > 0;
 
-  const setLine = (i: number, patch: Partial<{ accountId: string; subId: string; debit: string; credit: string }>) =>
+  const setLine = (i: number, patch: Partial<EntryLine>) =>
     setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
 
   async function save() {
     setErr(null);
     if (!balanced) return setErr('Debits must equal credits (and be greater than zero).');
     if (lines.some((l) => !l.accountId)) return setErr('Pick an account on every line.');
-    if (file && file.size > 4 * 1024 * 1024) return setErr('Receipt too large (max 4 MB).');
+    if (lines.some((l) => l.file && l.file.size > 4 * 1024 * 1024)) return setErr('Each receipt must be under 4 MB.');
     setBusy(true);
     try {
       // Post to the sub-account when one is chosen, otherwise the parent account.
-      const payloadLines = lines.map((l) => ({ accountId: l.subId || l.accountId, debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 }));
+      // Each line may carry its own receipt (per-account attachment).
+      const payloadLines = await Promise.all(
+        lines.map(async (l) => ({
+          accountId: l.subId || l.accountId,
+          debit: Number(l.debit) || 0,
+          credit: Number(l.credit) || 0,
+          ...(l.file
+            ? { attachment: { fileName: l.file.name, mimeType: l.file.type || 'application/octet-stream', dataBase64: await fileToDataUrl(l.file) } }
+            : {}),
+        }))
+      );
       if (isEdit) {
         await api.put(`/accounting/entries/${entry.id}`, { date, memo: memo || undefined, lines: payloadLines });
       } else {
-        const attachments = file
-          ? [{ fileName: file.name, mimeType: file.type || 'application/octet-stream', dataBase64: await fileToDataUrl(file) }]
-          : undefined;
-        await api.post('/accounting/entries', { date, memo: memo || undefined, lines: payloadLines, attachments });
+        await api.post('/accounting/entries', { date, memo: memo || undefined, lines: payloadLines });
       }
       onSaved();
     } catch (e) {
@@ -647,22 +670,38 @@ function ManualEntry({ accounts, entry, onClose, onSaved }: { accounts: Account[
         <tbody>
           {lines.map((l, i) => {
             const subs = l.accountId ? childrenOf(l.accountId) : [];
+            const postedId = l.subId || l.accountId;
+            const existing = postedId ? attachmentsForAccount(postedId) : [];
             return (
             <tr key={i}>
-              <td className="py-1 pr-2">
+              <td className="py-1 pr-2 align-top">
                 <select className="input" value={l.accountId} onChange={(e) => setLine(i, { accountId: e.target.value, subId: '' })}>
                   <option value="">Select account…</option>
-                  {topLevel.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
+                  {topLevel.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
                 {subs.length > 0 && (
                   <select className="input mt-1" value={l.subId} onChange={(e) => setLine(i, { subId: e.target.value })}>
                     <option value="">↳ (post to parent)</option>
-                    {subs.map((a) => <option key={a.id} value={a.id}>↳ {a.code} {a.name}</option>)}
+                    {subs.map((a) => <option key={a.id} value={a.id}>↳ {a.name}</option>)}
                   </select>
                 )}
+                {/* Per-account receipt */}
+                {l.accountId && (
+                  <div className="mt-1">
+                    <label className="cursor-pointer text-xs text-brand-700 hover:underline">
+                      📎 {l.file ? l.file.name : 'Attach receipt'}
+                      <input type="file" className="hidden" onChange={(e) => setLine(i, { file: e.target.files?.[0] ?? null })} />
+                    </label>
+                    {existing.map((a: any) => (
+                      <button key={a.id} type="button" className="ml-2 text-xs text-slate-500 hover:underline" onClick={() => viewAttachment(entry.id, a.id)}>
+                        📎 {a.fileName}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </td>
-              <td className="py-1"><input type="number" min={0} step="0.01" className="input text-right" value={l.debit} onChange={(e) => setLine(i, { debit: e.target.value })} /></td>
-              <td className="py-1 pl-2"><input type="number" min={0} step="0.01" className="input text-right" value={l.credit} onChange={(e) => setLine(i, { credit: e.target.value })} /></td>
+              <td className="py-1 align-top"><input type="number" min={0} step="0.01" className="input text-right" value={l.debit} onChange={(e) => setLine(i, { debit: e.target.value })} /></td>
+              <td className="py-1 pl-2 align-top"><input type="number" min={0} step="0.01" className="input text-right" value={l.credit} onChange={(e) => setLine(i, { credit: e.target.value })} /></td>
               <td className="pl-2 align-top">
                 {lines.length > 2 && <button className="text-xs text-red-600" onClick={() => setLines(lines.filter((_, j) => j !== i))}>✕</button>}
               </td>
@@ -671,14 +710,7 @@ function ManualEntry({ accounts, entry, onClose, onSaved }: { accounts: Account[
           })}
         </tbody>
       </table>
-      <button className="mt-2 text-xs font-semibold text-brand-700 hover:underline" onClick={() => setLines([...lines, { accountId: '', subId: '', debit: '', credit: '' }])}>+ Add line</button>
-      {!isEdit && (
-        <div className="mt-3">
-          <label className="label">Receipt / attachment for this entry (optional, max 4 MB)</label>
-          <input type="file" className="text-xs" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-          {file && <span className="ml-2 text-xs text-green-600">📎 {file.name}</span>}
-        </div>
-      )}
+      <button className="mt-2 text-xs font-semibold text-brand-700 hover:underline" onClick={() => setLines([...lines, { accountId: '', subId: '', debit: '', credit: '', file: null }])}>+ Add line</button>
       <div className="mt-3 flex justify-end gap-6 text-sm">
         <span>Debits: <strong>{peso(totalDebit)}</strong></span>
         <span>Credits: <strong>{peso(totalCredit)}</strong></span>
@@ -786,13 +818,13 @@ function DeliveryEntry({ accounts, onClose, onSaved }: { accounts: Account[]; on
         <div>
           <label className="label">Debit — Accounts Receivable</label>
           <select className="input" value={arId} onChange={(e) => setArId(e.target.value)}>
-            {arAccounts.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
+            {arAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
         </div>
         <div>
           <label className="label">Credit — Revenue</label>
           <select className="input" value={revId} onChange={(e) => setRevId(e.target.value)}>
-            {revAccounts.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
+            {revAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
         </div>
       </div>
