@@ -39,6 +39,7 @@ const orgSelect = {
   id: true,
   name: true,
   type: true,
+  segment: true,
   contactName: true,
   contactEmail: true,
   contactPhone: true,
@@ -410,6 +411,10 @@ poRouter.post(
     // deducted and no sale is recorded — it only adds stock on receipt.
     const isStockIn = po.buyerOrgId === po.sellerOrgId;
 
+    // Only RETAIL distributors buy on account (Accounts Receivable). Reseller-
+    // channel distributors (Provincial/City/Reseller) pay cash.
+    const buyerIsRetail = po.buyerOrg.segment === 'RETAIL';
+
     try {
       const updated = await prisma.$transaction(async (tx) => {
         if (po.distributionType === 'TRADE' && !isStockIn) {
@@ -439,6 +444,7 @@ poRouter.post(
             subtotal: po.subtotal,
             total: po.total,
             poId: po.id,
+            onAccount: buyerIsRetail,
             createdById: req.auth!.sub,
             items: {
               create: po.items.map((i) => ({
@@ -461,8 +467,9 @@ poRouter.post(
         await notifyLowStock(po.sellerOrgId, po.items.map((i) => i.productId));
       }
       await notifyBuyerPoStatus(po, 'FULFILLED');
-      // Auto-post the fulfilled PO's sale to the finance books (on account) —
-      // ONLY when the Principal is the seller. Best-effort.
+      // Auto-post the fulfilled PO's sale to the finance books — ONLY when the
+      // Principal is the seller. Retail buyers post to A/R; reseller-channel
+      // distributors pay cash. Best-effort.
       if (!isStockIn && po.sellerOrg.type === 'PRINCIPAL') {
         const genSale = await prisma.sale.findUnique({ where: { poId: po.id }, select: { id: true, total: true, createdAt: true } });
         if (genSale) {
@@ -470,7 +477,7 @@ poRouter.post(
             saleId: genSale.id,
             total: genSale.total,
             date: genSale.createdAt,
-            onAccount: true,
+            onAccount: buyerIsRetail,
             label: `PO ${po.number} fulfilled — ${po.buyerOrg.name}`,
             createdById: req.auth!.sub,
           });
