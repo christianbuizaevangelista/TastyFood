@@ -57,6 +57,10 @@ export async function computeOrgKpis(
     }),
   ]);
 
+  // Each org's parent = its assigned supplier. Sell-in only counts purchases
+  // from that supplier (sales where the parent is the seller).
+  const parentById = new Map(orgs.map((o) => [o.id, o.parentId]));
+
   const byOrg = new Map<string, OrgKpi>();
   for (const o of orgs) {
     byOrg.set(o.id, {
@@ -78,12 +82,13 @@ export async function computeOrgKpis(
   for (const s of currentSales) {
     const k = s.buyerOrgId ? byOrg.get(s.buyerOrgId) : undefined;
     if (!k) continue;
+    if (s.sellerOrgId !== parentById.get(s.buyerOrgId!)) continue; // only from assigned supplier
     k.revenue += s.total;
     k.salesVolume += s.items.reduce((u, i) => u + i.quantity, 0);
   }
   for (const s of prevSales) {
     const k = s.buyerOrgId ? byOrg.get(s.buyerOrgId) : undefined;
-    if (k) k.prevRevenue += s.total;
+    if (k && s.sellerOrgId === parentById.get(s.buyerOrgId!)) k.prevRevenue += s.total;
   }
   for (const c of children) {
     const k = c.parentId ? byOrg.get(c.parentId) : undefined;
