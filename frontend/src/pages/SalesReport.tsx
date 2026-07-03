@@ -87,6 +87,9 @@ export default function SalesReport() {
       .map(([, v]) => ({ label: v.label, revenue: round2(v.revenue), gross: round2(v.gross) }));
   }, [data]);
 
+  // Distribution type (Regular/Dropship) is a Principal-only concern — distributors
+  // only trade, so hide the By-Type pie, column, and filter for them.
+  const showType = user!.role === 'PRINCIPAL';
   const typePie = data
     ? [
         { name: 'Regular', value: data.summary.trade.revenue },
@@ -180,14 +183,16 @@ export default function SalesReport() {
             </select>
           </div>
         )}
-        <div>
-          <label className="label">Type</label>
-          <select className="input" value={filters.distributionType} onChange={(e) => setFilters({ ...filters, distributionType: e.target.value })}>
-            <option value="">All</option>
-            <option value="TRADE">Regular</option>
-            <option value="DROP_SHIP">Dropship</option>
-          </select>
-        </div>
+        {showType && (
+          <div>
+            <label className="label">Type</label>
+            <select className="input" value={filters.distributionType} onChange={(e) => setFilters({ ...filters, distributionType: e.target.value })}>
+              <option value="">All</option>
+              <option value="TRADE">Regular</option>
+              <option value="DROP_SHIP">Dropship</option>
+            </select>
+          </div>
+        )}
         <div>
           <label className="label">Channel</label>
           <select className="input" value={filters.channel} onChange={(e) => setFilters({ ...filters, channel: e.target.value })}>
@@ -233,7 +238,7 @@ export default function SalesReport() {
               </div>
 
               <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-                <div className="card lg:col-span-2">
+                <div className={`card ${showType ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
                   <h3 className="mb-3 text-sm font-semibold text-slate-700">Revenue vs Gross Income</h3>
                   <ResponsiveContainer width="100%" height={240}>
                     <LineChart data={daily} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
@@ -247,18 +252,20 @@ export default function SalesReport() {
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="card">
-                  <h3 className="mb-3 text-sm font-semibold text-slate-700">By Type</h3>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <PieChart>
-                      <Pie data={typePie} dataKey="value" nameKey="name" outerRadius={80} label>
-                        {typePie.map((_, i) => <Cell key={i} fill={PIE_TYPE[i]} />)}
-                      </Pie>
-                      <Legend />
-                      <Tooltip formatter={(v: number) => peso(v)} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
+                {showType && (
+                  <div className="card">
+                    <h3 className="mb-3 text-sm font-semibold text-slate-700">By Type</h3>
+                    <ResponsiveContainer width="100%" height={240}>
+                      <PieChart>
+                        <Pie data={typePie} dataKey="value" nameKey="name" outerRadius={80} label>
+                          {typePie.map((_, i) => <Cell key={i} fill={PIE_TYPE[i]} />)}
+                        </Pie>
+                        <Legend />
+                        <Tooltip formatter={(v: number) => peso(v)} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </div>
 
               <div className="card overflow-x-auto">
@@ -270,7 +277,7 @@ export default function SalesReport() {
                       <th className="th">Seller</th>
                       <th className="th">Buyer / Customer</th>
                       <th className="th">Channel</th>
-                      <th className="th">Type</th>
+                      {showType && <th className="th">Type</th>}
                       <th className="th text-right">Total</th>
                       <th className="th text-right">Gross Profit</th>
                     </tr>
@@ -298,13 +305,13 @@ export default function SalesReport() {
                         <td className="td">{s.sellerOrg.name}</td>
                         <td className="td">{s.buyerOrg?.name || s.customerName || 'Walk-in'}</td>
                         <td className="td text-xs">{s.channel}</td>
-                        <td className="td"><Badge value={s.distributionType} /></td>
+                        {showType && <td className="td"><Badge value={s.distributionType} /></td>}
                         <td className="td text-right font-semibold">{peso(s.total)}</td>
                         <td className="td text-right font-semibold text-green-600">{peso(s.grossProfit ?? 0)}</td>
                       </tr>
                     ))}
                     {!data!.sales.length && (
-                      <tr><td className="td text-slate-400" colSpan={8}>No sales match these filters.</td></tr>
+                      <tr><td className="td text-slate-400" colSpan={showType ? 8 : 7}>No sales match these filters.</td></tr>
                     )}
                   </tbody>
                 </table>
