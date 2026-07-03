@@ -131,8 +131,8 @@ export default function Kpi() {
           {/* Two categories: Sales leader and Growth-vs-Target leader. */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <Leaderboard
-              title="🏆 Sales Leader"
-              subtitle="Ranked by total revenue this month"
+              title="🏆 Purchase Leader"
+              subtitle="Ranked by purchases from you (sell-in) this month"
               rows={bySales}
               metric={(k) => ({ value: peso(k.revenue), sub: `${num(k.salesVolume)} units`, className: 'text-brand-600' })}
             />
@@ -156,7 +156,7 @@ export default function Kpi() {
                 <tr className="border-b border-slate-100">
                   <th className="th">Organization</th>
                   <th className="th">Tier</th>
-                  <th className="th text-right">Revenue</th>
+                  <th className="th text-right">Purchases</th>
                   <th className="th text-right">Target</th>
                   <th className="th text-right">Attainment</th>
                   <th className="th text-right">Growth</th>

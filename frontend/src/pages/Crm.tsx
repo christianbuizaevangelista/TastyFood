@@ -568,13 +568,13 @@ function EditAccount({
             )}
           </div>
 
-          {/* Right column: Total Sales + Purchase history */}
+          {/* Right column: Sell-in (purchases from you) + order history */}
           <div>
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Total Sales</div>
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Total Purchases (from you)</div>
             <div className="rounded-lg bg-slate-50 p-3">
               <div className="flex items-baseline justify-between">
                 <span className="text-2xl font-bold text-brand-600">{peso(orders.data?.salesTotal ?? 0)}</span>
-                <span className="text-xs text-slate-400">{orders.data?.salesCount ?? 0} sale{(orders.data?.salesCount ?? 0) === 1 ? '' : 's'}</span>
+                <span className="text-xs text-slate-400">{orders.data?.salesCount ?? 0} order{(orders.data?.salesCount ?? 0) === 1 ? '' : 's'}</span>
               </div>
               <select className="input mt-2 text-sm" value={preset} onChange={(e) => applyPreset(e.target.value as DatePreset)}>
                 {DATE_PRESETS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}

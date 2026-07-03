@@ -20,7 +20,10 @@ function round2(n: number): number {
 }
 
 // Computes KPIs for a set of orgs over [from, to], comparing against the
-// equally-sized immediately-preceding window for growth.
+// equally-sized immediately-preceding window for growth. A distributor's
+// "revenue" here is its SELL-IN: the value of goods it purchased from its
+// supplier (i.e. sales where it is the buyer), which is what the Principal
+// tracks per account.
 export async function computeOrgKpis(
   orgIds: string[],
   from: Date,
@@ -34,11 +37,11 @@ export async function computeOrgKpis(
   const [orgs, currentSales, prevSales, children, pos, inventory] = await Promise.all([
     prisma.organization.findMany({ where: { id: { in: orgIds } } }),
     prisma.sale.findMany({
-      where: { sellerOrgId: { in: orgIds }, createdAt: { gte: from, lte: to } },
+      where: { buyerOrgId: { in: orgIds }, createdAt: { gte: from, lte: to } },
       include: { items: true },
     }),
     prisma.sale.findMany({
-      where: { sellerOrgId: { in: orgIds }, createdAt: { gte: prevFrom, lt: from } },
+      where: { buyerOrgId: { in: orgIds }, createdAt: { gte: prevFrom, lt: from } },
     }),
     prisma.organization.findMany({
       where: { parentId: { in: orgIds } },
@@ -73,13 +76,13 @@ export async function computeOrgKpis(
   }
 
   for (const s of currentSales) {
-    const k = byOrg.get(s.sellerOrgId);
+    const k = s.buyerOrgId ? byOrg.get(s.buyerOrgId) : undefined;
     if (!k) continue;
     k.revenue += s.total;
     k.salesVolume += s.items.reduce((u, i) => u + i.quantity, 0);
   }
   for (const s of prevSales) {
-    const k = byOrg.get(s.sellerOrgId);
+    const k = s.buyerOrgId ? byOrg.get(s.buyerOrgId) : undefined;
     if (k) k.prevRevenue += s.total;
   }
   for (const c of children) {

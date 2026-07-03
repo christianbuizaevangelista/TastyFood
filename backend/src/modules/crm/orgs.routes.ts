@@ -100,8 +100,10 @@ orgsRouter.get(
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
+      // "Sell-in" = value of goods this account purchased from its supplier
+      // (sales where it is the buyer — created when its POs are fulfilled).
       prisma.sale.aggregate({
-        where: { sellerOrgId: req.params.id, ...range },
+        where: { buyerOrgId: req.params.id, ...range },
         _sum: { total: true },
         _count: true,
       }),
