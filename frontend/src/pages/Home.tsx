@@ -1,6 +1,6 @@
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { canAccessFinance, canAccessMarketing, hasDmsAccess, firstDmsPath } from '../lib/nav';
+import { canAccessFinance, canAccessMarketing, canAccessHr, hasDmsAccess, firstDmsPath } from '../lib/nav';
 
 // A neutral launcher: pick a workspace. The "Distribution Management System"
 // label and its sidebar only appear once you enter that workspace.
@@ -12,13 +12,15 @@ export default function Home() {
   const dms = hasDmsAccess(user);
   const finance = canAccessFinance(user);
   const marketing = canAccessMarketing(user);
-  const count = [dms, finance, marketing].filter(Boolean).length;
+  const hr = canAccessHr(user);
+  const count = [dms, finance, marketing, hr].filter(Boolean).length;
 
   // Single workspace → skip the launcher and go straight in.
   if (count === 1) {
     if (dms) return <Navigate to={firstDmsPath(user)} replace />;
     if (finance) return <Navigate to="/finance" replace />;
     if (marketing) return <Navigate to="/marketing" replace />;
+    if (hr) return <Navigate to="/hr" replace />;
   }
   if (count === 0) return <Navigate to="/account" replace />;
 
@@ -55,7 +57,7 @@ export default function Home() {
       <main className="flex flex-1 flex-col items-center justify-center p-6">
         <h1 className="mb-1 text-2xl font-bold text-slate-900">Welcome, {user.name.split(' ')[0]}</h1>
         <p className="mb-8 text-sm text-slate-500">Choose a system to open.</p>
-        <div className="flex flex-col items-stretch gap-5 sm:flex-row">
+        <div className="flex flex-col items-stretch justify-center gap-5 sm:flex-row sm:flex-wrap">
           {dms && (
             <Tile
               onClick={() => navigate(firstDmsPath(user))}
@@ -81,6 +83,15 @@ export default function Home() {
               title="Marketing System"
               desc="Facebook Ads management — campaigns, spend, and results."
               accent="bg-indigo-50 text-indigo-600"
+            />
+          )}
+          {hr && (
+            <Tile
+              onClick={() => navigate('/hr')}
+              icon="🧑‍💼"
+              title="HR System"
+              desc="Employees, attendance, leave, and payroll."
+              accent="bg-teal-50 text-teal-600"
             />
           )}
         </div>

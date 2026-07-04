@@ -66,6 +66,11 @@ export function canAccessMarketing(user: Pick<AuthUser, 'role' | 'isOwner' | 'pe
   return user.role === 'PRINCIPAL' && (user.isOwner || (user.permissions ?? []).includes('marketing'));
 }
 
+// Can the user open the separate HR System workspace?
+export function canAccessHr(user: Pick<AuthUser, 'role' | 'isOwner' | 'permissions'>): boolean {
+  return user.role === 'PRINCIPAL' && (user.isOwner || (user.permissions ?? []).includes('hr'));
+}
+
 // Does the user have a real Distribution module (beyond just Account settings)?
 export function hasDmsAccess(user: Pick<AuthUser, 'role' | 'isOwner' | 'permissions'>): boolean {
   return dmsNavForUser(user).some((n) => n.to !== '/account');

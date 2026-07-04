@@ -23,6 +23,7 @@ import { customersRouter } from './modules/customers/customers.routes';
 import { referralsRouter } from './modules/referrals/referrals.routes';
 import { accountingRouter } from './modules/accounting/accounting.routes';
 import { marketingRouter } from './modules/marketing/marketing.routes';
+import { hrRouter } from './modules/hr/hr.routes';
 
 export function createApp() {
   const app = express();
@@ -53,6 +54,7 @@ export function createApp() {
   app.use('/api/referrals', referralsRouter);
   app.use('/api/accounting', accountingRouter);
   app.use('/api/marketing', marketingRouter);
+  app.use('/api/hr', hrRouter);
 
   app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
   app.use(errorHandler);

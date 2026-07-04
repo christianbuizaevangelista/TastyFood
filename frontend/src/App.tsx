@@ -1,10 +1,11 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { ReactNode } from 'react';
 import { useAuth } from './auth/AuthContext';
-import { canAccessPath, canAccessFinance, canAccessMarketing, firstAccessiblePath } from './lib/nav';
+import { canAccessPath, canAccessFinance, canAccessMarketing, canAccessHr, firstAccessiblePath } from './lib/nav';
 import Layout from './components/Layout';
 import FinanceLayout from './components/FinanceLayout';
 import MarketingLayout from './components/MarketingLayout';
+import HrLayout from './components/HrLayout';
 import { Spinner } from './components/ui';
 
 import Login from './pages/Login';
@@ -31,6 +32,7 @@ import AgingReport from './pages/AgingReport';
 import Budget from './pages/Budget';
 import ResellerSale from './pages/ResellerSale';
 import FacebookAds from './pages/FacebookAds';
+import { HrDashboard, Employees, Attendance, Leave, Payroll } from './pages/Hr';
 import Users from './pages/Users';
 
 // Guards a route by the user's role + permissions (path matched against NAV).
@@ -63,6 +65,15 @@ function MarketingProtected({ children }: { children: ReactNode }) {
   return <MarketingLayout>{children}</MarketingLayout>;
 }
 
+// Guards the separate HR System workspace (Principal + hr access).
+function HrProtected({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) return <Spinner />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!canAccessHr(user)) return <Navigate to={firstAccessiblePath(user)} replace />;
+  return <HrLayout>{children}</HrLayout>;
+}
+
 export default function App() {
   return (
     <Routes>
@@ -92,6 +103,11 @@ export default function App() {
       <Route path="/finance/accounts" element={<FinanceProtected><ChartOfAccounts /></FinanceProtected>} />
       <Route path="/marketing" element={<Navigate to="/marketing/facebook-ads" replace />} />
       <Route path="/marketing/facebook-ads" element={<MarketingProtected><FacebookAds /></MarketingProtected>} />
+      <Route path="/hr" element={<HrProtected><HrDashboard /></HrProtected>} />
+      <Route path="/hr/employees" element={<HrProtected><Employees /></HrProtected>} />
+      <Route path="/hr/attendance" element={<HrProtected><Attendance /></HrProtected>} />
+      <Route path="/hr/leave" element={<HrProtected><Leave /></HrProtected>} />
+      <Route path="/hr/payroll" element={<HrProtected><Payroll /></HrProtected>} />
       <Route path="/users" element={<Protected path="/users"><Users /></Protected>} />
       <Route path="/account" element={<Protected path="/account"><Account /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />

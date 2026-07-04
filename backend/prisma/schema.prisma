@@ -769,3 +769,65 @@ model Budget {
   @@unique([accountId, year])
   @@index([year])
 }
+
+// ---------------------------------------------------------------------------
+// HR System (separate workspace) — Employees, Attendance, Leave, Payroll
+// ---------------------------------------------------------------------------
+model Employee {
+  id             String   @id @default(cuid())
+  employeeNo     String   @unique
+  firstName      String
+  lastName       String
+  position       String?
+  department     String?
+  employmentType String   @default("REGULAR") // REGULAR | PROBATIONARY | CONTRACTUAL | PART_TIME
+  status         String   @default("ACTIVE")  // ACTIVE | INACTIVE | RESIGNED
+  dateHired      DateTime?
+  email          String?
+  phone          String?
+  address        String?
+  baseSalary     Float    @default(0) // monthly
+  notes          String?
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  attendance Attendance[]
+  leaves     LeaveRequest[]
+
+  @@index([status])
+  @@index([department])
+}
+
+model Attendance {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date       DateTime
+  status     String   @default("PRESENT") // PRESENT | ABSENT | LATE | HALF_DAY | LEAVE | HOLIDAY
+  timeIn     String?
+  timeOut    String?
+  notes      String?
+
+  @@unique([employeeId, date])
+  @@index([date])
+}
+
+model LeaveRequest {
+  id          String   @id @default(cuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  type        String   @default("VACATION") // VACATION | SICK | EMERGENCY | UNPAID
+  startDate   DateTime
+  endDate     DateTime
+  days        Float    @default(1)
+  reason      String?
+  status      String   @default("PENDING")  // PENDING | APPROVED | REJECTED
+  decidedById String?
+  decidedAt   DateTime?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([status])
+  @@index([employeeId])
+}
