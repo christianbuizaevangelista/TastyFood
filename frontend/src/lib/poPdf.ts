@@ -56,12 +56,13 @@ async function drawTastyHeader(doc: jsPDF, W: number, M: number, subtitle: strin
   doc.rect(0, 0, W, 64, 'F');
   const logo = await loadImage('/tasty-food-splash.png');
   if (logo) {
-    const bs = 46;
+    const bs = 54; // white chip behind the logo
     const bx = W - M - bs;
-    const by = 9;
+    const by = 5;
+    const pad = 11; // thicker white stroke/frame around the logo
     doc.setFillColor(255, 255, 255);
-    doc.roundedRect(bx, by, bs, bs, 6, 6, 'F');
-    doc.addImage(logo, 'PNG', bx + 4, by + 4, bs - 8, bs - 8);
+    doc.roundedRect(bx, by, bs, bs, 9, 9, 'F');
+    doc.addImage(logo, 'PNG', bx + pad, by + pad, bs - pad * 2, bs - pad * 2);
   }
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
