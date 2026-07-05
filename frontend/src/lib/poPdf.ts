@@ -37,6 +37,41 @@ interface PoLike {
   }[];
 }
 
+// Tasty Food brand fresh green (used for the Principal letterhead + table head).
+const TF_GREEN: [number, number, number] = [76, 175, 80];
+
+// Load the Tasty Food logo for embedding (resolves null if it can't load).
+function loadImage(src: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+// Draws the Tasty Food letterhead (green band + logo in a white box, upper right).
+async function drawTastyHeader(doc: jsPDF, W: number, M: number, subtitle: string) {
+  doc.setFillColor(...TF_GREEN);
+  doc.rect(0, 0, W, 64, 'F');
+  const logo = await loadImage('/tasty-food-splash.png');
+  if (logo) {
+    const bs = 46;
+    const bx = W - M - bs;
+    const by = 9;
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(bx, by, bs, bs, 6, 6, 'F');
+    doc.addImage(logo, 'PNG', bx + 4, by + 4, bs - 8, bs - 8);
+  }
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.text('Tasty Food Manufacturing Inc.', M, 30);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(subtitle, M, 48);
+}
+
 // jsPDF's standard fonts can't render the ₱ glyph, so use an ASCII money format.
 function money(n: number): string {
   return 'PHP ' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -54,7 +89,7 @@ function partyLines(p: Party): string[] {
 // Builds and downloads a one-page PDF for a purchase order.
 // Only orders supplied by the Principal carry the Tasty Food letterhead;
 // orders from any distributor tier use that distributor's own name.
-export function exportPoPdf(po: PoLike) {
+export async function exportPoPdf(po: PoLike) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const W = doc.internal.pageSize.getWidth();
   const M = 40;
@@ -62,15 +97,7 @@ export function exportPoPdf(po: PoLike) {
 
   if (isPrincipalSupplier) {
     // Tasty Food letterhead (manufacturer is the supplier).
-    doc.setFillColor(232, 82, 29);
-    doc.rect(0, 0, W, 64, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(18);
-    doc.text('Juan Palaman', M, 28);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.text('Tasty Food Manufacturing Inc. — Purchase Order', M, 46);
+    await drawTastyHeader(doc, W, M, 'Purchase Order');
   } else {
     // Distributor supplier: use their own name, no Tasty Food branding.
     doc.setTextColor(30, 30, 30);
@@ -165,7 +192,7 @@ export function exportPoPdf(po: PoLike) {
       money(it.lineTotal),
     ]),
     styles: { fontSize: 9, cellPadding: 5 },
-    headStyles: { fillColor: [232, 82, 29] },
+    headStyles: { fillColor: TF_GREEN },
     columnStyles: {
       2: { halign: 'right' },
       3: { halign: 'right' },
@@ -212,21 +239,13 @@ interface SaleLike {
 
 // Builds and downloads a one-page sales receipt. Principal seller carries the
 // Tasty Food letterhead; distributor sellers use their own name.
-export function exportSaleReceiptPdf(sale: SaleLike) {
+export async function exportSaleReceiptPdf(sale: SaleLike) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const W = doc.internal.pageSize.getWidth();
   const M = 40;
 
   if (sale.seller.type === 'PRINCIPAL') {
-    doc.setFillColor(232, 82, 29);
-    doc.rect(0, 0, W, 64, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(18);
-    doc.text('Juan Palaman', M, 28);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.text('Tasty Food Manufacturing Inc. — Sales Receipt', M, 46);
+    await drawTastyHeader(doc, W, M, 'Sales Receipt');
   } else {
     doc.setTextColor(30, 30, 30);
     doc.setFont('helvetica', 'bold');
@@ -263,7 +282,7 @@ export function exportSaleReceiptPdf(sale: SaleLike) {
       money(it.lineTotal),
     ]),
     styles: { fontSize: 9, cellPadding: 5 },
-    headStyles: { fillColor: [232, 82, 29] },
+    headStyles: { fillColor: TF_GREEN },
     columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
   });
 
