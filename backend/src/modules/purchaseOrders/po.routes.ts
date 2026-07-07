@@ -12,6 +12,7 @@ import { adjustMana } from '../mana/mana.service';
 import { sendPoSubmittedEmail, sendStockRequestEmail, sendPoStatusEmail } from '../../lib/email';
 import { notifyRecipients } from '../../lib/notify';
 import { postSaleToBooks } from '../accounting/accounting.service';
+import { verifyPassword } from '../../lib/auth';
 
 // Email the buyer (owner + active staff with 'purchase-orders') that their PO
 // changed status. Skips internal stock-in POs (buyer == seller). Best-effort.
@@ -415,6 +416,17 @@ poRouter.post(
     // channel distributors (Provincial/City/Reseller) pay cash.
     const buyerIsRetail = po.buyerOrg.segment === 'RETAIL';
 
+    // Fulfilling beyond stock (negative) is allowed ONLY when the Principal is
+    // the seller AND the OWNER confirms their password. Distributors can't.
+    let allowNegative = false;
+    if (req.body?.ownerPassword && po.sellerOrg.type === 'PRINCIPAL' && req.auth!.isOwner) {
+      const me = await prisma.user.findUnique({ where: { id: req.auth!.sub }, select: { passwordHash: true } });
+      if (!me?.passwordHash || !(await verifyPassword(String(req.body.ownerPassword), me.passwordHash))) {
+        throw forbidden('Incorrect owner password');
+      }
+      allowNegative = true;
+    }
+
     try {
       const updated = await prisma.$transaction(async (tx) => {
         if (po.distributionType === 'TRADE' && !isStockIn) {
@@ -426,8 +438,7 @@ poRouter.post(
               reason: 'PO_FULFILLED',
               refType: 'PurchaseOrder',
               refId: po.id,
-              // Allow fulfilling beyond stock — the seller's stock may go negative.
-              allowNegative: true,
+              allowNegative,
             });
           }
         }

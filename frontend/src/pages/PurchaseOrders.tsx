@@ -8,6 +8,7 @@ import { DistributionType, PoStatus, Product } from '../types';
 import { distLabel } from '../lib/labels';
 import { exportPoPdf } from '../lib/poPdf';
 import AddressPicker from '../components/AddressPicker';
+import { OwnerPasswordModal } from '../components/OwnerPasswordModal';
 
 interface POItem {
   id: string;
@@ -123,17 +124,32 @@ export default function PurchaseOrders() {
   const [receivePo, setReceivePo] = useState<PO | null>(null);
   const [detailsPo, setDetailsPo] = useState<PO | null>(null);
   const [actionErr, setActionErr] = useState<string | null>(null);
+  const [pwFulfill, setPwFulfill] = useState<PO | null>(null); // PO awaiting owner oversell auth
+  const [pwBusy, setPwBusy] = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
   const [tab, setTab] = useState<'supplier' | 'customer'>(
     user!.role === 'PRINCIPAL' ? 'customer' : 'supplier'
   );
 
-  async function runAction(po: PO, path: string) {
+  async function runAction(po: PO, path: string, ownerPassword?: string) {
     setActionErr(null);
+    if (ownerPassword) { setPwBusy(true); setPwError(null); }
     try {
-      await api.post(`/purchase-orders/${po.id}/${path}`);
+      await api.post(`/purchase-orders/${po.id}/${path}`, ownerPassword ? { ownerPassword } : undefined);
+      setPwFulfill(null);
       refetch();
     } catch (e) {
-      setActionErr(apiError(e));
+      const msg = apiError(e);
+      // Fulfilling beyond stock: only the Principal owner may override with a password.
+      if (!ownerPassword && path === 'fulfill' && /insufficient stock/i.test(msg) && user?.role === 'PRINCIPAL' && user?.isOwner) {
+        setPwFulfill(po);
+      } else if (ownerPassword) {
+        setPwError(msg);
+      } else {
+        setActionErr(msg);
+      }
+    } finally {
+      setPwBusy(false);
     }
   }
 
@@ -352,6 +368,15 @@ export default function PurchaseOrders() {
       )}
 
       {detailsPo && <PoDetails po={detailsPo} onClose={() => setDetailsPo(null)} />}
+      {pwFulfill && (
+        <OwnerPasswordModal
+          message="Not enough stock to fulfill this order. As the Principal owner, enter your password to proceed — the stock will go negative."
+          error={pwError}
+          busy={pwBusy}
+          onConfirm={(pw) => runAction(pwFulfill, 'fulfill', pw)}
+          onClose={() => { setPwFulfill(null); setPwError(null); }}
+        />
+      )}
     </div>
   );
 }

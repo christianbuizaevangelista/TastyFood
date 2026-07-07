@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { api, apiError } from '../api/client';
 import { useFetch } from '../lib/useFetch';
+import { useAuth } from '../auth/AuthContext';
 import { PageHeader, Spinner, Alert } from '../components/ui';
+import { OwnerPasswordModal } from '../components/OwnerPasswordModal';
 import { peso, dateTime } from '../lib/format';
 import { Customer, Org, Product } from '../types';
 
@@ -53,6 +55,11 @@ export default function POS() {
   const [dueDate, setDueDate] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { user } = useAuth();
+  // Owner-password override for overselling (Principal owner only).
+  const [pwPrompt, setPwPrompt] = useState(false);
+  const [pwBusy, setPwBusy] = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
 
   // Only active, approved downstream accounts are valid customers.
   const customers = useMemo(
@@ -123,9 +130,9 @@ export default function POS() {
     setShowList(false);
   }
 
-  async function checkout() {
+  async function checkout(ownerPassword?: string) {
     setErr(null);
-    setBusy(true);
+    if (ownerPassword) { setPwBusy(true); setPwError(null); } else setBusy(true);
     try {
       const { data: r } = await api.post('/pos/sales', {
         distributionType,
@@ -137,6 +144,7 @@ export default function POS() {
         onAccount: selected && isRetail ? onAccount : false, // Cash vs A/R — retail distributors only
         dueDate: selected && isRetail && onAccount && dueDate ? dueDate : undefined,
         items: lines.map(([productId, quantity]) => ({ productId, quantity })),
+        ownerPassword,
       });
       setReceipt(r);
       setCart({});
@@ -147,10 +155,20 @@ export default function POS() {
       setDiscValue(0);
       setOnAccount(false);
       setDueDate('');
+      setPwPrompt(false);
     } catch (e) {
-      setErr(apiError(e));
+      const msg = apiError(e);
+      // Insufficient stock: only the Principal owner may override with a password.
+      if (!ownerPassword && /insufficient stock/i.test(msg) && user?.role === 'PRINCIPAL' && user?.isOwner) {
+        setPwPrompt(true);
+      } else if (ownerPassword) {
+        setPwError(msg);
+      } else {
+        setErr(msg);
+      }
     } finally {
       setBusy(false);
+      setPwBusy(false);
     }
   }
 
@@ -362,7 +380,7 @@ export default function POS() {
               <span>{peso(total)}</span>
             </div>
           </div>
-          <button className="btn-primary w-full" disabled={busy || lines.length === 0} onClick={checkout}>
+          <button className="btn-primary w-full" disabled={busy || lines.length === 0} onClick={() => checkout()}>
             {busy ? 'Recording…' : 'Record sale'}
           </button>
         </div>
@@ -401,6 +419,15 @@ export default function POS() {
             <button className="btn-ghost mt-4 w-full" onClick={() => setReceipt(null)}>New sale</button>
           </div>
         </div>
+      )}
+      {pwPrompt && (
+        <OwnerPasswordModal
+          message="Not enough stock for this sale. As the Principal owner, enter your password to proceed — the stock will go negative."
+          error={pwError}
+          busy={pwBusy}
+          onConfirm={(pw) => checkout(pw)}
+          onClose={() => { setPwPrompt(false); setPwError(null); }}
+        />
       )}
     </div>
   );

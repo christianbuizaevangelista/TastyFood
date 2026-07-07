@@ -10,6 +10,7 @@ import { OrgType } from '@prisma/client';
 import { saleNumber } from '../../lib/numbering';
 import { applyStockMovement, notifyLowStock } from '../inventory/inventory.service';
 import { postSaleToBooks } from '../accounting/accounting.service';
+import { verifyPassword } from '../../lib/auth';
 
 export const posRouter = Router();
 posRouter.use(authenticate);
@@ -31,6 +32,9 @@ const saleSchema = z.object({
   items: z
     .array(z.object({ productId: z.string(), quantity: z.number().int().positive() }))
     .min(1),
+  // The Principal OWNER may oversell (go negative) only by confirming their
+  // password; distributors can never oversell.
+  ownerPassword: z.string().optional(),
 });
 
 // POST /pos/sales — record a direct sale at the requester's org.
@@ -95,6 +99,17 @@ posRouter.post(
       discountRate
     );
 
+    // Overselling (negative stock) is allowed ONLY for the Principal, and only
+    // when the OWNER confirms their password. Distributors can never oversell.
+    let allowNegative = false;
+    if (body.ownerPassword && seller.type === 'PRINCIPAL' && req.auth!.isOwner) {
+      const me = await prisma.user.findUnique({ where: { id: req.auth!.sub }, select: { passwordHash: true } });
+      if (!me?.passwordHash || !(await verifyPassword(body.ownerPassword, me.passwordHash))) {
+        throw forbidden('Incorrect owner password');
+      }
+      allowNegative = true;
+    }
+
     try {
       const sale = await prisma.$transaction(async (tx) => {
         // Trade deducts the seller's own inventory; drop-ship does not.
@@ -106,9 +121,7 @@ posRouter.post(
               change: -item.quantity,
               reason: 'POS_SALE',
               refType: 'Sale',
-              // Allow selling beyond stock — stock goes negative and is refilled
-              // once the goods are delivered/restocked.
-              allowNegative: true,
+              allowNegative,
             });
           }
         }
