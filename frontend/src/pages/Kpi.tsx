@@ -6,10 +6,12 @@ import { peso, num, pct } from '../lib/format';
 
 // Tiers each role may view — only those strictly below them in the hierarchy.
 const TIERS_BELOW: Record<string, { value: string; label: string }[]> = {
+  // Retail Distributors are a SEPARATE board, visible only to the Principal.
   PRINCIPAL: [
     { value: 'PROVINCIAL', label: 'Provincial' },
     { value: 'CITY', label: 'City' },
     { value: 'RESELLER', label: 'Reseller' },
+    { value: 'RETAIL', label: 'Retail Distributor' },
   ],
   PROVINCIAL: [
     { value: 'CITY', label: 'City' },
@@ -18,10 +20,18 @@ const TIERS_BELOW: Record<string, { value: string; label: string }[]> = {
   CITY: [{ value: 'RESELLER', label: 'Reseller' }],
 };
 
+const TIER_LABEL: Record<string, string> = {
+  PRINCIPAL: 'Principal', PROVINCIAL: 'Provincial', CITY: 'City', RESELLER: 'Reseller',
+};
+// A retail-segment account is a "Retail Distributor" (not a Reseller).
+const orgLabel = (k: { orgType: string; segment: string }) =>
+  k.segment === 'RETAIL' ? 'Retail Distributor' : TIER_LABEL[k.orgType] ?? k.orgType;
+
 interface OrgKpi {
   orgId: string;
   orgName: string;
   orgType: string;
+  segment: string;
   revenue: number;
   growthPct: number;
   salesVolume: number;
@@ -74,7 +84,7 @@ function Leaderboard({
                   <span className="text-lg">{rankBadge(i)}</span>
                   <div>
                     <div className="text-sm font-medium text-slate-800">{k.orgName}</div>
-                    <div className="text-xs text-slate-400">{k.orgType}</div>
+                    <div className="text-xs text-slate-400">{orgLabel(k)}</div>
                   </div>
                 </div>
                 <div className="text-right">
@@ -170,7 +180,7 @@ export default function Kpi() {
                 {bySales.map((k) => (
                   <tr key={k.orgId} className="border-b border-slate-50">
                     <td className="td font-medium">{k.orgName}</td>
-                    <td className="td text-xs">{k.orgType}</td>
+                    <td className="td text-xs">{orgLabel(k)}</td>
                     <td className="td text-right font-semibold">{peso(k.revenue)}</td>
                     <td className="td text-right text-slate-400">{peso(k.target)}</td>
                     <td className="td text-right">

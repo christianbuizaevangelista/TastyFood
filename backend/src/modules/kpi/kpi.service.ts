@@ -9,6 +9,7 @@ export interface OrgKpi {
   orgId: string;
   orgName: string;
   orgType: string;
+  segment: string;
   revenue: number;
   prevRevenue: number;
   growthPct: number;
@@ -74,6 +75,7 @@ export async function computeOrgKpis(
       orgId: o.id,
       orgName: o.name,
       orgType: o.type,
+      segment: o.segment,
       revenue: 0,
       prevRevenue: 0,
       growthPct: 0,
