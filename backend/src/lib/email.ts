@@ -448,6 +448,54 @@ export async function sendManaApprovedEmail(p: {
   }
 }
 
+// Notifies an upline distributor (City / Provincial) that a Reseller under them
+// has been activated, including the reseller's name and assigned territory.
+export async function sendResellerActivatedEmail(p: {
+  to: string;
+  uplineName: string;
+  resellerName: string;
+  territory: string;
+}): Promise<{ sent: boolean; reason?: string }> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM || 'Tasty Food <onboarding@resend.dev>';
+  if (!p.to) return { sent: false, reason: 'no recipient email' };
+  if (!apiKey) {
+    console.log(`[email] RESEND_API_KEY not set — reseller activated for ${p.to}`);
+    return { sent: false, reason: 'RESEND_API_KEY not configured' };
+  }
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#333;line-height:1.55">
+      <div style="background:#0b9444;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
+        <strong style="font-size:16px">Tasty Food Manufacturing Inc.</strong>
+        <div style="font-size:11px;opacity:.9">Distribution Network</div>
+      </div>
+      <div style="border:1px solid #eee;border-top:none;padding:22px;border-radius:0 0 8px 8px">
+        <h2 style="margin:0 0 8px">✅ A Reseller has been activated</h2>
+        <p>Hi ${p.uplineName}, a Reseller in your network is now active:</p>
+        <table style="border-collapse:collapse;margin:10px 0;font-size:14px">
+          <tr><td style="padding:4px 12px 4px 0;color:#888">Reseller</td><td style="padding:4px 0"><strong>${p.resellerName}</strong></td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:#888">Territory</td><td style="padding:4px 0">${p.territory}</td></tr>
+        </table>
+        <p style="color:#888;font-size:13px">They can now transact within the distribution network.</p>
+      </div>
+    </div>`;
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: [p.to], subject: `Reseller activated: ${p.resellerName}`, html }),
+    });
+    if (!res.ok) {
+      console.error('[email] Resend error', res.status, await res.text());
+      return { sent: false, reason: `Resend responded ${res.status}` };
+    }
+    return { sent: true };
+  } catch (err: any) {
+    console.error('[email] reseller activated send failed', err?.message);
+    return { sent: false, reason: err?.message ?? 'send failed' };
+  }
+}
+
 export async function sendStockRequestEmail(p: {
   to: string;
   poNumber: string;

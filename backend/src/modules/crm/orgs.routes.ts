@@ -13,7 +13,8 @@ import { hashPassword, verifyPassword } from '../../lib/auth';
 import { canApproveOrgOnboarding } from './approvals.service';
 import { LEVEL_FOR_TYPE } from '../territories/territories.routes';
 import { env } from '../../lib/env';
-import { sendInviteEmail } from '../../lib/email';
+import { sendInviteEmail, sendResellerActivatedEmail } from '../../lib/email';
+import { notifyRecipients } from '../../lib/notify';
 
 // Shared helper: build the set-password link from an invite token.
 function inviteLink(token: string) {
@@ -488,7 +489,42 @@ function setActive(active: boolean) {
       data: { isActive: active },
     });
     res.json(updated);
+
+    // On activating a (reseller-channel) Reseller, notify its upline City and
+    // Provincial that the reseller is active, with its name + assigned territory.
+    // Best-effort — never blocks the response.
+    if (active && org.type === 'RESELLER' && org.segment !== 'RETAIL') {
+      notifyResellerActivated(org).catch((e) => console.error('[reseller-activated] notify failed', e?.message));
+    }
   });
+}
+
+// Emails the City and Provincial above a newly-activated reseller.
+async function notifyResellerActivated(reseller: { id: string; name: string; parentId: string | null }) {
+  // Assigned territory (blank if none).
+  const terr = await prisma.territory.findFirst({ where: { assignedOrgId: reseller.id }, select: { name: true } });
+  const territory = terr?.name ?? 'Not assigned';
+
+  // Walk up the chain, collecting the City and Provincial (stop at the Principal).
+  const upline: { id: string; name: string }[] = [];
+  let pid = reseller.parentId;
+  for (let guard = 0; pid && guard < 6; guard++) {
+    const p = await prisma.organization.findUnique({
+      where: { id: pid },
+      select: { id: true, name: true, type: true, parentId: true },
+    });
+    if (!p) break;
+    if (p.type === 'CITY' || p.type === 'PROVINCIAL') upline.push({ id: p.id, name: p.name });
+    if (p.type === 'PRINCIPAL') break;
+    pid = p.parentId;
+  }
+
+  for (const u of upline) {
+    const recipients = await notifyRecipients(u.id, 'crm');
+    for (const to of recipients) {
+      await sendResellerActivatedEmail({ to, uplineName: u.name, resellerName: reseller.name, territory });
+    }
+  }
 }
 
 orgsRouter.post('/:id/activate', setActive(true));
