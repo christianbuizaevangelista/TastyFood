@@ -6,14 +6,14 @@ import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
 import { assertInScope, requirePermission } from '../../middleware/rbac';
-import { getDescendantOrgIds } from '../../lib/scope';
+import { getDescendantOrgIds, getAncestorOrgIds } from '../../lib/scope';
 import { badRequest, forbidden, notFound, conflict } from '../../lib/errors';
 import { TIER_DISCOUNT, RETAIL_DISCOUNT, ALLOWED_PARENTS } from '../../lib/pricing';
 import { hashPassword, verifyPassword } from '../../lib/auth';
 import { canApproveOrgOnboarding } from './approvals.service';
 import { LEVEL_FOR_TYPE } from '../territories/territories.routes';
 import { env } from '../../lib/env';
-import { sendInviteEmail, sendResellerActivatedEmail, sendCityOnboardedEmail } from '../../lib/email';
+import { sendInviteEmail, sendResellerActivatedEmail, sendNetworkChangeEmail } from '../../lib/email';
 import { notifyRecipients } from '../../lib/notify';
 
 // Shared helper: build the set-password link from an invite token.
@@ -88,13 +88,10 @@ orgsRouter.get(
     }
     const range = createdAt.gte || createdAt.lte ? { createdAt } : {};
 
-    // The headline figure is this account's purchases from its ASSIGNED SUPPLIER
-    // (its parent) — not any incidental purchase from elsewhere.
-    const target = await prisma.organization.findUnique({
-      where: { id: req.params.id },
-      select: { parentId: true },
-    });
-    const supplierId = target?.parentId ?? undefined;
+    // The headline figure is this account's purchases from its UPLINE — normally
+    // its parent, but orders route up to the nearest active upline whenever the
+    // parent is deactivated, and those still count as this account's purchases.
+    const upline = await getAncestorOrgIds(req.params.id);
 
     const [purchases, sales, salesAgg] = await Promise.all([
       prisma.purchaseOrder.findMany({
@@ -109,13 +106,13 @@ orgsRouter.get(
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
-      // Purchases from the assigned supplier = committed POs (APPROVED onward —
-      // includes fulfilled) placed by this account with its parent. Counts the
+      // Purchases from the upline = committed POs (APPROVED onward — includes
+      // fulfilled) placed by this account with anyone above it. Counts the
       // order once it's approved, not only after it's fulfilled.
       prisma.purchaseOrder.aggregate({
         where: {
           buyerOrgId: req.params.id,
-          ...(supplierId ? { sellerOrgId: supplierId } : {}),
+          ...(upline.length > 0 ? { sellerOrgId: { in: upline } } : {}),
           status: { in: ['APPROVED', 'FULFILLED', 'PARTIALLY_RECEIVED', 'RECEIVED'] },
           ...range,
         },
@@ -288,52 +285,66 @@ orgsRouter.post(
 
     res.status(201).json({ ...org, inviteLink: link });
 
-    // On onboarding a City, notify its upline Provincial (if it reports to one)
-    // with the City's name, territory and contact. Best-effort — never blocks.
-    if (effectiveType === 'CITY') {
-      notifyCityOnboarded(org.id, body.parentId).catch((e) =>
-        console.error('[city-onboarded] notify failed', e?.message)
+    // Announce a new reseller-channel account to the other two tiers.
+    // Best-effort — never blocks the response.
+    if (!isRetail) {
+      const terr = body.territoryId
+        ? await prisma.territory.findUnique({ where: { id: body.territoryId }, select: { name: true } })
+        : null;
+      notifyNetworkChange(org, 'ONBOARDED', terr?.name ?? 'Not assigned').catch((e) =>
+        console.error('[network-change] onboard notify failed', e?.message)
       );
     }
   })
 );
 
-// Emails the Provincial above a newly-onboarded City distributor.
-async function notifyCityOnboarded(cityId: string, parentId: string) {
-  // A City may report directly to the Principal — only notify if the parent is a
-  // Provincial. Walk up to the first Provincial (stop at the Principal).
-  let provincial: { id: string; name: string } | null = null;
-  let pid: string | null = parentId;
-  for (let guard = 0; pid && guard < 6; guard++) {
-    const currentId: string = pid;
-    const p = await prisma.organization.findUnique({
-      where: { id: currentId },
-      select: { id: true, name: true, type: true, parentId: true },
-    });
-    if (!p) break;
-    if (p.type === 'PROVINCIAL') { provincial = { id: p.id, name: p.name }; break; }
-    if (p.type === 'PRINCIPAL') break;
-    pid = p.parentId;
-  }
-  if (!provincial) return;
+// When a reseller-channel account joins or leaves the network, announce it to
+// the OTHER two tiers across the whole network. Retail-segment accounts are a
+// separate channel — they neither trigger nor receive these.
+const OTHER_TIERS: Record<string, OrgType[]> = {
+  PROVINCIAL: ['CITY', 'RESELLER'],
+  CITY: ['PROVINCIAL', 'RESELLER'],
+  RESELLER: ['PROVINCIAL', 'CITY'],
+};
 
-  const city = await prisma.organization.findUnique({
-    where: { id: cityId },
-    select: { name: true, contactName: true, contactPhone: true },
+async function notifyNetworkChange(
+  org: { id: string; name: string; type: string; contactName?: string | null; contactPhone?: string | null },
+  event: 'ONBOARDED' | 'REMOVED',
+  territory: string
+) {
+  const tiers = OTHER_TIERS[org.type];
+  if (!tiers) return;
+
+  const audience = await prisma.organization.findMany({
+    where: {
+      type: { in: tiers },
+      segment: { not: 'RETAIL' },
+      status: 'APPROVED',
+      isActive: true,
+      archivedAt: null,
+      NOT: { id: org.id },
+    },
+    select: { id: true, name: true },
   });
-  if (!city) return;
-  const terr = await prisma.territory.findFirst({ where: { assignedOrgId: cityId }, select: { name: true } });
-  const territory = terr?.name ?? 'Not assigned';
 
-  const recipients = await notifyRecipients(provincial.id, 'crm');
-  for (const to of recipients) {
-    await sendCityOnboardedEmail({
+  // One email per unique address — a person on several accounts gets it once.
+  const byEmail = new Map<string, string>();
+  for (const a of audience) {
+    for (const to of await notifyRecipients(a.id, 'crm')) {
+      if (!byEmail.has(to)) byEmail.set(to, a.name);
+    }
+  }
+
+  for (const [to, recipientName] of byEmail) {
+    await sendNetworkChangeEmail({
       to,
-      provincialName: provincial.name,
-      cityName: city.name,
+      recipientName,
+      event,
+      orgName: org.name,
+      tier: org.type,
       territory,
-      contactName: city.contactName,
-      contactPhone: city.contactPhone,
+      contactName: org.contactName,
+      contactPhone: org.contactPhone,
     });
   }
 }
@@ -601,6 +612,10 @@ orgsRouter.delete(
     });
     if (activeChildren > 0) throw conflict('Remove its downstream accounts first');
 
+    // Capture the territory before the archive frees it — the announcement
+    // below reports it as the account's FORMER territory.
+    const terr = await prisma.territory.findFirst({ where: { assignedOrgId: org.id }, select: { name: true } });
+
     // Archive (soft delete): keep all records intact, but remove the account from
     // the CRM and Org Structure, free its territory, and block its login.
     await prisma.$transaction(async (tx) => {
@@ -611,5 +626,13 @@ orgsRouter.delete(
       });
     });
     res.json({ ok: true });
+
+    // Announce to the other two tiers that this account is no longer official.
+    // Best-effort — never blocks the response.
+    if (org.segment !== 'RETAIL') {
+      notifyNetworkChange(org, 'REMOVED', terr?.name ?? 'Not assigned').catch((e) =>
+        console.error('[network-change] remove notify failed', e?.message)
+      );
+    }
   })
 );

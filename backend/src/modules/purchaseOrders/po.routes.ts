@@ -125,7 +125,31 @@ poRouter.get(
   })
 );
 
-// POST /purchase-orders — buyer drafts a PO against its immediate parent.
+// Resolves who a distributor actually orders from: normally its parent, but a
+// deactivated account can't log in (see auth), so a PO addressed to one would
+// sit unapprovable forever. Skip up to the nearest ACTIVE ancestor instead.
+// Nothing is reparented — this is resolved per order, so once the account is
+// reactivated its downline's orders go back to it automatically.
+async function nearestActiveSupplier(parentId: string): Promise<string> {
+  let pid: string | null = parentId;
+  for (let guard = 0; pid && guard < 8; guard++) {
+    const currentId: string = pid;
+    const p = await prisma.organization.findUnique({
+      where: { id: currentId },
+      select: { id: true, parentId: true, status: true, isActive: true, archivedAt: true },
+    });
+    if (!p) break;
+    if (p.isActive && p.status === 'APPROVED' && !p.archivedAt) return p.id;
+    pid = p.parentId;
+  }
+  // Every ancestor is inactive/archived — fall back to the Principal, the root
+  // of the chain, so the order can still be placed.
+  const principal = await prisma.organization.findFirst({ where: { type: 'PRINCIPAL' }, select: { id: true } });
+  if (!principal) throw badRequest('No Principal organization configured');
+  return principal.id;
+}
+
+// POST /purchase-orders — buyer drafts a PO against its nearest active supplier.
 poRouter.post(
   '/',
   asyncHandler(async (req, res) => {
@@ -148,7 +172,8 @@ poRouter.post(
       if (!principal) throw badRequest('No Principal organization configured');
       sellerOrgId = principal.id;
     } else {
-      sellerOrgId = buyer.parentId!;
+      // Skips deactivated uplines — see nearestActiveSupplier.
+      sellerOrgId = await nearestActiveSupplier(buyer.parentId!);
     }
 
     const products = await prisma.product.findMany({

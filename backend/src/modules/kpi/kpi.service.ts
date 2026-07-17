@@ -40,8 +40,10 @@ export async function computeOrgKpis(
   const windowMs = to.getTime() - from.getTime();
   const prevFrom = new Date(from.getTime() - windowMs);
 
-  const [orgs, currentSales, prevSales, children, pos, inventory] = await Promise.all([
+  const [orgs, allOrgs, currentSales, prevSales, children, pos, inventory] = await Promise.all([
     prisma.organization.findMany({ where: { id: { in: orgIds } } }),
+    // The whole tree (id → parent) so we can resolve each buyer's full upline.
+    prisma.organization.findMany({ select: { id: true, parentId: true } }),
     // Sell-in = committed purchase orders (APPROVED onward — includes fulfilled)
     // that this org placed with its supplier, not just fulfilled sales.
     prisma.purchaseOrder.findMany({
@@ -65,9 +67,23 @@ export async function computeOrgKpis(
     }),
   ]);
 
-  // Each org's parent = its assigned supplier. Sell-in only counts purchases
-  // from that supplier (sales where the parent is the seller).
-  const parentById = new Map(orgs.map((o) => [o.id, o.parentId]));
+  // Sell-in counts purchases an org made from ANYONE above it in the chain, not
+  // just its parent: when its parent is deactivated, orders are routed up to the
+  // nearest active upline (see nearestActiveSupplier), and those are still the
+  // buyer's purchases. Matching the whole upline also keeps history stable —
+  // reactivating the parent later can't retroactively un-count an old order.
+  const parentOf = new Map(allOrgs.map((o) => [o.id, o.parentId]));
+  const uplineOf = (id: string): Set<string> => {
+    const out = new Set<string>();
+    let pid = parentOf.get(id) ?? null;
+    for (let guard = 0; pid && guard < 8 && !out.has(pid); guard++) {
+      out.add(pid);
+      pid = parentOf.get(pid) ?? null;
+    }
+    return out;
+  };
+  const uplineById = new Map(orgIds.map((id) => [id, uplineOf(id)]));
+  const fromUpline = (buyerId: string, sellerId: string) => !!uplineById.get(buyerId)?.has(sellerId);
 
   const byOrg = new Map<string, OrgKpi>();
   for (const o of orgs) {
@@ -91,13 +107,13 @@ export async function computeOrgKpis(
   for (const s of currentSales) {
     const k = s.buyerOrgId ? byOrg.get(s.buyerOrgId) : undefined;
     if (!k) continue;
-    if (s.sellerOrgId !== parentById.get(s.buyerOrgId!)) continue; // only from assigned supplier
+    if (!fromUpline(s.buyerOrgId!, s.sellerOrgId)) continue; // only from its upline
     k.revenue += s.total;
     k.salesVolume += s.items.reduce((u, i) => u + i.quantity, 0);
   }
   for (const s of prevSales) {
     const k = s.buyerOrgId ? byOrg.get(s.buyerOrgId) : undefined;
-    if (k && s.sellerOrgId === parentById.get(s.buyerOrgId!)) k.prevRevenue += s.total;
+    if (k && fromUpline(s.buyerOrgId!, s.sellerOrgId)) k.prevRevenue += s.total;
   }
   for (const c of children) {
     const k = c.parentId ? byOrg.get(c.parentId) : undefined;

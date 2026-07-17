@@ -496,29 +496,51 @@ export async function sendResellerActivatedEmail(p: {
   }
 }
 
-// Notifies a Provincial distributor that a new City distributor has been
-// onboarded under them, including the City's name, contact person, and territory.
-export async function sendCityOnboardedEmail(p: {
-  to: string;
-  provincialName: string;
-  cityName: string;
+// Network-wide announcement when a Provincial/City/Reseller joins or leaves the
+// distribution network. Sent to the OTHER two tiers (see notifyNetworkChange).
+export const TIER_LABEL: Record<string, string> = {
+  PROVINCIAL: 'Provincial Distributor',
+  CITY: 'City Distributor',
+  RESELLER: 'Reseller',
+};
+
+export function buildNetworkChangeEmail(p: {
+  recipientName: string;
+  event: 'ONBOARDED' | 'REMOVED';
+  orgName: string;
+  tier: string;
   territory: string;
   contactName?: string | null;
   contactPhone?: string | null;
-}): Promise<{ sent: boolean; reason?: string }> {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM || 'Tasty Food <onboarding@resend.dev>';
-  if (!p.to) return { sent: false, reason: 'no recipient email' };
-  if (!apiKey) {
-    console.log(`[email] RESEND_API_KEY not set — city onboarded for ${p.to}`);
-    return { sent: false, reason: 'RESEND_API_KEY not configured' };
-  }
-  const contactRow = p.contactName
-    ? `<tr><td style="padding:4px 12px 4px 0;color:#888">Contact person</td><td style="padding:4px 0">${p.contactName}</td></tr>`
-    : '';
-  const phoneRow = p.contactPhone
-    ? `<tr><td style="padding:4px 12px 4px 0;color:#888">Contact number</td><td style="padding:4px 0">${p.contactPhone}</td></tr>`
-    : '';
+}): { subject: string; html: string } {
+  const tier = TIER_LABEL[p.tier] ?? p.tier;
+  const onboarded = p.event === 'ONBOARDED';
+  const today = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  const row = (label: string, value: string, bold = false) =>
+    `<tr><td style="padding:4px 12px 4px 0;color:#888;white-space:nowrap">${label}</td><td style="padding:4px 0">${
+      bold ? `<strong>${value}</strong>` : value
+    }</td></tr>`;
+
+  const rows = [
+    row(tier, p.orgName, true),
+    row(onboarded ? 'Territory' : 'Former territory', p.territory),
+    ...(onboarded && p.contactName ? [row('Contact person', p.contactName)] : []),
+    ...(onboarded && p.contactPhone ? [row('Contact number', p.contactPhone)] : []),
+    row(onboarded ? 'Effective' : 'Effective', today),
+  ].join('');
+
+  const heading = onboarded
+    ? `A new ${tier} has joined the network`
+    : `${p.orgName} is no longer an official ${tier}`;
+  const lead = onboarded
+    ? `Hi ${p.recipientName}, please be advised that the following ${tier} is now part of the Tasty Food distribution network:`
+    : `Hi ${p.recipientName}, please be advised that the following account is <strong>no longer an official ${tier}</strong> of Tasty Food Manufacturing Inc.:`;
+  const footer = onboarded
+    ? `You can view them in your Distribution Network and Org Structure pages.`
+    : `Please stop transacting with them as an official ${tier} of Tasty Food Manufacturing Inc. effective immediately. For any questions, please contact us.`;
+  const accent = onboarded ? '#0b9444' : '#c0392b';
+
   const html = `
     <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#333;line-height:1.55">
       <div style="background:#0b9444;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
@@ -526,22 +548,35 @@ export async function sendCityOnboardedEmail(p: {
         <div style="font-size:11px;opacity:.9">Distribution Network</div>
       </div>
       <div style="border:1px solid #eee;border-top:none;padding:22px;border-radius:0 0 8px 8px">
-        <h2 style="margin:0 0 8px">🏙️ A new City Distributor has been onboarded</h2>
-        <p>Hi ${p.provincialName}, a new City Distributor has been added under your province:</p>
-        <table style="border-collapse:collapse;margin:10px 0;font-size:14px">
-          <tr><td style="padding:4px 12px 4px 0;color:#888">City Distributor</td><td style="padding:4px 0"><strong>${p.cityName}</strong></td></tr>
-          <tr><td style="padding:4px 12px 4px 0;color:#888">Territory</td><td style="padding:4px 0">${p.territory}</td></tr>
-          ${contactRow}
-          ${phoneRow}
-        </table>
-        <p style="color:#888;font-size:13px">You can view them in your Distribution Network and Org Structure pages.</p>
+        <h2 style="margin:0 0 8px;color:${accent};font-size:18px">${heading}</h2>
+        <p>${lead}</p>
+        <table style="border-collapse:collapse;margin:10px 0;font-size:14px">${rows}</table>
+        <p style="color:#888;font-size:13px">${footer}</p>
       </div>
     </div>`;
+
+  const subject = onboarded
+    ? `New ${tier} onboarded: ${p.orgName}`
+    : `${p.orgName} is no longer an official ${tier}`;
+  return { subject, html };
+}
+
+export async function sendNetworkChangeEmail(
+  p: Parameters<typeof buildNetworkChangeEmail>[0] & { to: string }
+): Promise<{ sent: boolean; reason?: string }> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM || 'Tasty Food <onboarding@resend.dev>';
+  if (!p.to) return { sent: false, reason: 'no recipient email' };
+  if (!apiKey) {
+    console.log(`[email] RESEND_API_KEY not set — network ${p.event} (${p.orgName}) for ${p.to}`);
+    return { sent: false, reason: 'RESEND_API_KEY not configured' };
+  }
+  const { subject, html } = buildNetworkChangeEmail(p);
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to: [p.to], subject: `New City Distributor onboarded: ${p.cityName}`, html }),
+      body: JSON.stringify({ from, to: [p.to], subject, html }),
     });
     if (!res.ok) {
       console.error('[email] Resend error', res.status, await res.text());
@@ -549,7 +584,7 @@ export async function sendCityOnboardedEmail(p: {
     }
     return { sent: true };
   } catch (err: any) {
-    console.error('[email] city onboarded send failed', err?.message);
+    console.error('[email] network change send failed', err?.message);
     return { sent: false, reason: err?.message ?? 'send failed' };
   }
 }
