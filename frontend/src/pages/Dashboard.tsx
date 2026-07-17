@@ -27,7 +27,7 @@ interface DashboardData {
     salesUnits: number;
     inventoryValue: number;
     newMembers: number;
-    activePerformers: { provincial: number; city: number; reseller: number };
+    activePerformers: { provincial: number; city: number; reseller: number; retail: number };
     lowStockItems: number;
   };
   charts: {
@@ -40,12 +40,19 @@ interface DashboardData {
     };
     byDistributionType: { trade: number; dropShip: number };
     byMarketSegment: { reseller: number; retail: number };
-    topPerformers: { orgId: string; name: string; type: string; revenue: number }[];
+    topPerformers: { orgId: string; name: string; type: string; segment: string; revenue: number }[];
   };
 }
 
 const PIE_COLORS = ['#0ea5e9', '#8b5cf6'];
 const SEG_COLORS = ['#0b9444', '#f59e0b'];
+
+const TIER_LABEL: Record<string, string> = {
+  PRINCIPAL: 'Principal', PROVINCIAL: 'Provincial', CITY: 'City', RESELLER: 'Reseller',
+};
+// A retail-segment account is a "Retail Distributor" (not a Reseller).
+const orgLabel = (p: { type: string; segment: string }) =>
+  p.segment === 'RETAIL' ? 'Retail Distributor' : TIER_LABEL[p.type] ?? p.type;
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -113,6 +120,10 @@ export default function Dashboard() {
           <KpiCard label="Active City" value={num(c.activePerformers.city)} hint="active · downstream" accent="text-brand-600" />
         )}
         <KpiCard label="Active Resellers" value={num(c.activePerformers.reseller)} hint="active · downstream" accent="text-brand-600" />
+        {/* Retail Distributors are a separate board — Principal only (they report to it). */}
+        {(user!.role === 'PRINCIPAL') && (
+          <KpiCard label="Active Retail Distributor" value={num(c.activePerformers.retail)} hint="active · downstream" accent="text-brand-600" />
+        )}
         <KpiCard
           label="New Members"
           value={num(c.newMembers)}
@@ -227,7 +238,7 @@ export default function Dashboard() {
                 <tr key={p.orgId} className="border-b border-slate-50">
                   <td className="td">{i + 1}</td>
                   <td className="td font-medium">{p.name}</td>
-                  <td className="td">{p.type}</td>
+                  <td className="td">{orgLabel(p)}</td>
                   <td className="td text-right font-semibold">{peso(p.revenue)}</td>
                 </tr>
               ))}

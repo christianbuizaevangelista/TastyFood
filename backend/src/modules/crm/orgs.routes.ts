@@ -13,7 +13,7 @@ import { hashPassword, verifyPassword } from '../../lib/auth';
 import { canApproveOrgOnboarding } from './approvals.service';
 import { LEVEL_FOR_TYPE } from '../territories/territories.routes';
 import { env } from '../../lib/env';
-import { sendInviteEmail, sendResellerActivatedEmail } from '../../lib/email';
+import { sendInviteEmail, sendResellerActivatedEmail, sendCityOnboardedEmail } from '../../lib/email';
 import { notifyRecipients } from '../../lib/notify';
 
 // Shared helper: build the set-password link from an invite token.
@@ -287,8 +287,56 @@ orgsRouter.post(
     }
 
     res.status(201).json({ ...org, inviteLink: link });
+
+    // On onboarding a City, notify its upline Provincial (if it reports to one)
+    // with the City's name, territory and contact. Best-effort — never blocks.
+    if (effectiveType === 'CITY') {
+      notifyCityOnboarded(org.id, body.parentId).catch((e) =>
+        console.error('[city-onboarded] notify failed', e?.message)
+      );
+    }
   })
 );
+
+// Emails the Provincial above a newly-onboarded City distributor.
+async function notifyCityOnboarded(cityId: string, parentId: string) {
+  // A City may report directly to the Principal — only notify if the parent is a
+  // Provincial. Walk up to the first Provincial (stop at the Principal).
+  let provincial: { id: string; name: string } | null = null;
+  let pid: string | null = parentId;
+  for (let guard = 0; pid && guard < 6; guard++) {
+    const currentId: string = pid;
+    const p = await prisma.organization.findUnique({
+      where: { id: currentId },
+      select: { id: true, name: true, type: true, parentId: true },
+    });
+    if (!p) break;
+    if (p.type === 'PROVINCIAL') { provincial = { id: p.id, name: p.name }; break; }
+    if (p.type === 'PRINCIPAL') break;
+    pid = p.parentId;
+  }
+  if (!provincial) return;
+
+  const city = await prisma.organization.findUnique({
+    where: { id: cityId },
+    select: { name: true, contactName: true, contactPhone: true },
+  });
+  if (!city) return;
+  const terr = await prisma.territory.findFirst({ where: { assignedOrgId: cityId }, select: { name: true } });
+  const territory = terr?.name ?? 'Not assigned';
+
+  const recipients = await notifyRecipients(provincial.id, 'crm');
+  for (const to of recipients) {
+    await sendCityOnboardedEmail({
+      to,
+      provincialName: provincial.name,
+      cityName: city.name,
+      territory,
+      contactName: city.contactName,
+      contactPhone: city.contactPhone,
+    });
+  }
+}
 
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
