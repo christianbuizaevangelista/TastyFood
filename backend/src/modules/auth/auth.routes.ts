@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { signToken, verifyPassword } from '../../lib/auth';
+import { setAuthCookie, clearAuthCookie } from '../../lib/cookie';
 import { unauthorized, forbidden } from '../../lib/errors';
 import { authenticate } from '../../middleware/auth';
 
@@ -74,6 +75,10 @@ authRouter.post(
       permissions: user.permissions,
     });
 
+    // Session lives in an httpOnly cookie (unreadable by page JS). The token is
+    // still returned for backward compatibility with any Bearer-based client.
+    setAuthCookie(res, token);
+
     res.json({
       token,
       user: {
@@ -120,6 +125,15 @@ authRouter.get(
         territory: user.org.territory,
       },
     });
+  })
+);
+
+// POST /auth/logout — clear the session cookie.
+authRouter.post(
+  '/logout',
+  asyncHandler(async (_req, res) => {
+    clearAuthCookie(res);
+    res.json({ ok: true });
   })
 );
 

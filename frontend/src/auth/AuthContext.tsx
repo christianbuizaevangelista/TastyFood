@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { api, setToken, getToken } from '../api/client';
+import { api } from '../api/client';
 import { AuthUser } from '../types';
 
 interface AuthState {
@@ -17,15 +17,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     async function bootstrap() {
-      if (!getToken()) {
-        setLoading(false);
-        return;
-      }
+      // The session cookie is httpOnly, so we can't read it — just ask the API
+      // who we are. 200 = still signed in, 401 = not.
       try {
         const { data } = await api.get('/auth/me');
         setUser(data);
       } catch {
-        setToken(null);
+        setUser(null);
       } finally {
         setLoading(false);
       }
@@ -35,12 +33,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function login(email: string, password: string) {
     const { data } = await api.post('/auth/login', { email, password });
-    setToken(data.token);
     setUser(data.user);
   }
 
-  function logout() {
-    setToken(null);
+  async function logout() {
+    try {
+      await api.post('/auth/logout');
+    } catch {
+      // ignore — clear locally regardless
+    }
     setUser(null);
     location.href = '/login';
   }

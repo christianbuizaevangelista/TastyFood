@@ -2,31 +2,17 @@ import axios from 'axios';
 
 const baseURL = import.meta.env.VITE_API_URL || '/api';
 
-export const api = axios.create({ baseURL });
-
-const TOKEN_KEY = 'tasty_token';
-
-export function setToken(token: string | null) {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
-}
-
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-api.interceptors.request.use((config) => {
-  const token = getToken();
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
+// The session is an httpOnly cookie (set by the API on login), so JS never
+// touches the token. withCredentials makes the browser attach that cookie to
+// every API request automatically.
+export const api = axios.create({ baseURL, withCredentials: true });
 
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401 && getToken()) {
-      setToken(null);
-      if (!location.pathname.startsWith('/login')) location.href = '/login';
+    // Session expired/invalid — bounce to login (unless already there).
+    if (err.response?.status === 401 && !location.pathname.startsWith('/login')) {
+      location.href = '/login';
     }
     return Promise.reject(err);
   }

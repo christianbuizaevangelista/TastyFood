@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '../lib/auth';
+import { readAuthToken } from '../lib/cookie';
 import { unauthorized, forbidden } from '../lib/errors';
 import { getDescendantOrgIds } from '../lib/scope';
 import { prisma } from '../lib/prisma';
@@ -8,11 +9,8 @@ import { prisma } from '../lib/prisma';
 // req.scopeOrgIds (the org chain this requester may access).
 export async function authenticate(req: Request, _res: Response, next: NextFunction) {
   try {
-    const header = req.headers.authorization;
-    if (!header || !header.startsWith('Bearer ')) {
-      throw unauthorized('Missing bearer token');
-    }
-    const token = header.slice('Bearer '.length).trim();
+    const token = readAuthToken(req);
+    if (!token) throw unauthorized('Not authenticated');
     const payload = verifyToken(token);
     // Legacy tokens (issued before staff roles existed) lack these fields —
     // treat them as the org owner so existing sessions aren't locked out.
