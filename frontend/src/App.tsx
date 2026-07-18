@@ -33,6 +33,8 @@ import Budget from './pages/Budget';
 import ResellerSale from './pages/ResellerSale';
 import FacebookAds from './pages/FacebookAds';
 import LeadFunnels from './pages/LeadFunnels';
+import LandingPage from './pages/LandingPage';
+import Join from './pages/Join';
 import { HrDashboard, Employees, Attendance, Leave, Payroll } from './pages/Hr';
 import Users from './pages/Users';
 
@@ -80,6 +82,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/set-password" element={<SetPassword />} />
+      {/* Public recruitment landing page — no login, this is where ads point. */}
+      <Route path="/join" element={<Join />} />
       <Route path="/home" element={<Home />} />
       <Route path="/" element={<Protected path="/"><Dashboard /></Protected>} />
       <Route path="/inventory" element={<Protected path="/inventory"><Inventory /></Protected>} />
@@ -105,6 +109,7 @@ export default function App() {
       <Route path="/marketing" element={<Navigate to="/marketing/facebook-ads" replace />} />
       <Route path="/marketing/facebook-ads" element={<MarketingProtected><FacebookAds /></MarketingProtected>} />
       <Route path="/marketing/lead-funnels" element={<MarketingProtected><LeadFunnels /></MarketingProtected>} />
+      <Route path="/marketing/landing-page" element={<MarketingProtected><LandingPage /></MarketingProtected>} />
       <Route path="/hr" element={<HrProtected><HrDashboard /></HrProtected>} />
       <Route path="/hr/employees" element={<HrProtected><Employees /></HrProtected>} />
       <Route path="/hr/attendance" element={<HrProtected><Attendance /></HrProtected>} />

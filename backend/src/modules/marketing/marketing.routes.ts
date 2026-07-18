@@ -480,3 +480,127 @@ marketingRouter.delete(
     res.json({ ok: true });
   })
 );
+
+// ---------------------------------------------------------------------------
+// Landing page / Zoom orientation. The public side lives in modules/public;
+// these routes are the Principal's control panel for it.
+// ---------------------------------------------------------------------------
+
+const webinarSchema = z.object({
+  title: z.string().min(1).max(160),
+  headline: z.string().max(300).nullable().optional(),
+  description: z.string().max(3000).nullable().optional(),
+  scheduledAt: z.coerce.date().nullable().optional(),
+  zoomLink: z.string().url().max(500).nullable().optional().or(z.literal('')),
+  zoomMeetingId: z.string().max(60).nullable().optional(),
+  zoomPasscode: z.string().max(60).nullable().optional(),
+  isActive: z.boolean().default(true),
+  funnelId: z.string().nullable().optional(),
+});
+
+// GET /marketing/webinar — the current landing-page configuration + sign-ups.
+marketingRouter.get(
+  '/webinar',
+  asyncHandler(async (_req, res) => {
+    const webinar = await prisma.webinar.findFirst({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        funnel: { select: { id: true, name: true } },
+        registrations: { orderBy: { createdAt: 'desc' } },
+      },
+    });
+    if (!webinar) return res.json({ webinar: null, summary: null });
+    const { registrations, ...w } = webinar;
+    res.json({
+      webinar: { ...w, registrations },
+      summary: {
+        total: registrations.length,
+        attended: registrations.filter((r) => r.attended).length,
+        converted: registrations.filter((r) => r.leadId).length,
+      },
+    });
+  })
+);
+
+// PUT /marketing/webinar — create or update the landing page configuration.
+marketingRouter.put(
+  '/webinar',
+  asyncHandler(async (req, res) => {
+    const b = webinarSchema.parse(req.body);
+    if (b.funnelId) {
+      const f = await prisma.leadFunnel.findUnique({ where: { id: b.funnelId } });
+      if (!f) throw notFound('Funnel not found');
+    }
+    const data = {
+      title: b.title,
+      headline: b.headline || null,
+      description: b.description || null,
+      scheduledAt: b.scheduledAt ?? null,
+      zoomLink: b.zoomLink || null,
+      zoomMeetingId: b.zoomMeetingId || null,
+      zoomPasscode: b.zoomPasscode || null,
+      isActive: b.isActive,
+      funnelId: b.funnelId || null,
+    };
+    // A single landing page is edited in place rather than versioned.
+    const existing = await prisma.webinar.findFirst({ orderBy: { createdAt: 'desc' } });
+    const webinar = existing
+      ? await prisma.webinar.update({ where: { id: existing.id }, data })
+      : await prisma.webinar.create({ data: { ...data, createdById: req.auth!.sub } });
+    res.json(webinar);
+  })
+);
+
+// PATCH /marketing/webinar/registrations/:id — mark attendance.
+marketingRouter.patch(
+  '/webinar/registrations/:id',
+  asyncHandler(async (req, res) => {
+    const { attended } = z.object({ attended: z.boolean() }).parse(req.body);
+    const existing = await prisma.webinarRegistration.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw notFound('Registration not found');
+    const reg = await prisma.webinarRegistration.update({
+      where: { id: existing.id },
+      data: { attended },
+    });
+    res.json(reg);
+  })
+);
+
+// GET /marketing/webinar/registrations.csv — export the sign-up list.
+marketingRouter.get(
+  '/webinar/registrations.csv',
+  asyncHandler(async (_req, res) => {
+    const webinar = await prisma.webinar.findFirst({ orderBy: { createdAt: 'desc' } });
+    const rows = webinar
+      ? await prisma.webinarRegistration.findMany({
+          where: { webinarId: webinar.id },
+          orderBy: { createdAt: 'desc' },
+        })
+      : [];
+    // Quote every field and double embedded quotes so commas in an address or
+    // message can't shift the columns.
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const header = ['Registered', 'Name', 'Email', 'Phone', 'City', 'Province', 'Interest', 'Attended', 'Message'];
+    const csv = [
+      header.join(','),
+      ...rows.map((r) =>
+        [
+          new Date(r.createdAt).toISOString(),
+          r.name,
+          r.email,
+          r.phone,
+          r.city,
+          r.province,
+          r.interest,
+          r.attended ? 'YES' : 'NO',
+          r.message,
+        ]
+          .map(esc)
+          .join(',')
+      ),
+    ].join('\n');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="webinar-registrations.csv"');
+    res.send(csv);
+  })
+);

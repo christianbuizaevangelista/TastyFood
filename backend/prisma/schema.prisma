@@ -856,8 +856,63 @@ model LeadFunnel {
   updatedAt   DateTime @updatedAt
 
   leads       Lead[]
+  webinars    Webinar[]
 
   @@index([isActive])
+}
+
+// ---------------------------------------------------------------------------
+// Marketing — public recruitment landing page + Zoom orientation sign-ups.
+// Ads point at /join; whoever registers there becomes a lead in `funnel`.
+// ---------------------------------------------------------------------------
+model Webinar {
+  id            String    @id @default(cuid())
+  // Landing-page copy, editable without a redeploy.
+  title         String    @default("Become a Tasty Food Distributor")
+  headline      String?
+  description   String?
+  scheduledAt   DateTime?
+  // Revealed only AFTER someone registers — never on the public page itself.
+  zoomLink      String?
+  zoomMeetingId String?
+  zoomPasscode  String?
+  // Only one webinar is live on the landing page at a time.
+  isActive      Boolean   @default(true)
+  // Registrations are pushed into this funnel as leads.
+  funnelId      String?
+  funnel        LeadFunnel? @relation(fields: [funnelId], references: [id], onDelete: SetNull)
+  createdById   String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  registrations WebinarRegistration[]
+
+  @@index([isActive])
+}
+
+model WebinarRegistration {
+  id        String   @id @default(cuid())
+  webinarId String
+  webinar   Webinar  @relation(fields: [webinarId], references: [id], onDelete: Cascade)
+  name      String
+  email     String
+  phone     String
+  city      String?
+  province  String?
+  // Which tier they are interested in operating.
+  interest  String   @default("UNSURE") // PROVINCIAL | CITY | RESELLER | RETAIL | UNSURE
+  message   String?
+  // The Lead row created from this sign-up, if a funnel is configured.
+  leadId    String?
+  // Hashed (never raw) client IP, used only to rate-limit the public form.
+  ipHash    String?
+  attended  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  // One sign-up per email per webinar; re-submitting updates the existing row.
+  @@unique([webinarId, email])
+  @@index([webinarId])
+  @@index([ipHash])
 }
 
 model Lead {

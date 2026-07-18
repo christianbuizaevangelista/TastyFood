@@ -25,6 +25,7 @@ import { referralsRouter } from './modules/referrals/referrals.routes';
 import { accountingRouter } from './modules/accounting/accounting.routes';
 import { marketingRouter } from './modules/marketing/marketing.routes';
 import { hrRouter } from './modules/hr/hr.routes';
+import { publicRouter } from './modules/public/public.routes';
 
 export function createApp() {
   const app = express();
@@ -64,6 +65,9 @@ export function createApp() {
   if (env.nodeEnv !== 'test') app.use(morgan('dev'));
 
   app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'tasty-food-api' }));
+
+  // Unauthenticated — backs the public recruitment landing page at /join.
+  app.use('/api/public', publicRouter);
 
   app.use('/api/auth', authRouter);
   app.use('/api/products', productsRouter);

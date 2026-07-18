@@ -589,6 +589,83 @@ export async function sendNetworkChangeEmail(
   }
 }
 
+// Sends the Zoom joining details to someone who signed up on the public
+// recruitment landing page.
+export async function sendWebinarConfirmationEmail(p: {
+  to: string;
+  name: string;
+  title: string;
+  scheduledAt?: Date | null;
+  zoomLink?: string | null;
+  zoomMeetingId?: string | null;
+  zoomPasscode?: string | null;
+}): Promise<{ sent: boolean; reason?: string }> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM || 'Tasty Food <onboarding@resend.dev>';
+  if (!p.to) return { sent: false, reason: 'no recipient email' };
+  if (!apiKey) {
+    console.log(`[email] RESEND_API_KEY not set — webinar confirmation for ${p.to}`);
+    return { sent: false, reason: 'RESEND_API_KEY not configured' };
+  }
+
+  const when = p.scheduledAt
+    ? new Date(p.scheduledAt).toLocaleString('en-PH', {
+        dateStyle: 'full',
+        timeStyle: 'short',
+        timeZone: 'Asia/Manila',
+      })
+    : null;
+
+  const row = (label: string, value: string) =>
+    `<tr><td style="padding:4px 12px 4px 0;color:#888;white-space:nowrap">${label}</td><td style="padding:4px 0">${value}</td></tr>`;
+
+  const details = [
+    when ? row('Date &amp; time', `<strong>${when}</strong> (Philippine time)`) : '',
+    p.zoomMeetingId ? row('Meeting ID', p.zoomMeetingId) : '',
+    p.zoomPasscode ? row('Passcode', p.zoomPasscode) : '',
+  ].join('');
+
+  const button = p.zoomLink
+    ? `<p style="text-align:center;margin:22px 0">
+         <a href="${p.zoomLink}" style="background:#0b9444;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:bold;display:inline-block">Join the Zoom orientation</a>
+       </p>
+       <p style="color:#999;font-size:12px;word-break:break-all">Or paste this link into your browser: ${p.zoomLink}</p>`
+    : `<p style="color:#666">We will email you the Zoom link before the session starts.</p>`;
+
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#333;line-height:1.55">
+      <div style="background:#0b9444;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
+        <strong style="font-size:16px">Tasty Food Manufacturing Inc.</strong>
+        <div style="font-size:11px;opacity:.9">Distributor Orientation</div>
+      </div>
+      <div style="border:1px solid #eee;border-top:none;padding:22px;border-radius:0 0 8px 8px">
+        <h2 style="margin:0 0 8px;color:#0b9444;font-size:18px">You're registered! 🎉</h2>
+        <p>Hi ${p.name}, thank you for your interest in becoming a Tasty Food distributor.
+        Your slot for <strong>${p.title}</strong> is reserved.</p>
+        ${details ? `<table style="border-collapse:collapse;margin:10px 0;font-size:14px">${details}</table>` : ''}
+        ${button}
+        <p style="color:#888;font-size:13px">Please join a few minutes early. If you have questions,
+        simply reply to this email.</p>
+      </div>
+    </div>`;
+
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: [p.to], subject: `You're registered: ${p.title}`, html }),
+    });
+    if (!res.ok) {
+      console.error('[email] Resend error', res.status, await res.text());
+      return { sent: false, reason: `Resend responded ${res.status}` };
+    }
+    return { sent: true };
+  } catch (err: any) {
+    console.error('[email] webinar confirmation send failed', err?.message);
+    return { sent: false, reason: err?.message ?? 'send failed' };
+  }
+}
+
 export async function sendStockRequestEmail(p: {
   to: string;
   poNumber: string;
