@@ -220,3 +220,263 @@ marketingRouter.delete(
     res.json({ ok: true });
   })
 );
+
+// ---------------------------------------------------------------------------
+// Lead Funnels — named pipelines with ordered stages. A lead sits in one stage
+// while OPEN, then closes as WON or LOST. Funnel metrics show how many leads
+// (and how much value) sit at each stage and where they drop off.
+// ---------------------------------------------------------------------------
+
+const SOURCES = ['FACEBOOK_ADS', 'WALK_IN', 'REFERRAL', 'WEBSITE', 'MANUAL'] as const;
+
+const funnelSchema = z.object({
+  name: z.string().min(1).max(160),
+  description: z.string().max(1000).nullable().optional(),
+  isActive: z.boolean().default(true),
+  stages: z.array(z.string().min(1).max(60)).min(2).max(8),
+});
+
+const leadSchema = z.object({
+  funnelId: z.string().min(1),
+  name: z.string().min(1).max(160),
+  company: z.string().max(160).nullable().optional(),
+  phone: z.string().max(60).nullable().optional(),
+  email: z.union([z.string().email(), z.literal('')]).nullable().optional(),
+  address: z.string().max(400).nullable().optional(),
+  source: z.enum(SOURCES).default('MANUAL'),
+  campaignId: z.string().nullable().optional(),
+  stageIndex: z.number().int().min(0).default(0),
+  value: z.number().min(0).default(0),
+  note: z.string().max(1000).nullable().optional(),
+});
+
+interface LeadStat {
+  stageIndex: number;
+  status: string;
+  value: number;
+}
+
+// Counts leads per stage and the conversion from each stage to the next.
+// "Reached" a stage = the lead is sitting at it now or has already moved past it
+// (a won lead has been through all of them), which is what makes the
+// step-to-step drop-off meaningful rather than just a snapshot.
+function funnelMetrics(stages: string[], leads: LeadStat[]) {
+  const won = leads.filter((l) => l.status === 'WON');
+  const lost = leads.filter((l) => l.status === 'LOST');
+  const open = leads.filter((l) => l.status === 'OPEN');
+
+  const rows = stages.map((name, i) => {
+    const atStage = open.filter((l) => l.stageIndex === i);
+    const reached = leads.filter((l) => l.status === 'WON' || (l.status !== 'LOST' && l.stageIndex >= i)).length;
+    return {
+      stage: name,
+      index: i,
+      current: atStage.length,
+      currentValue: round2(atStage.reduce((s, l) => s + l.value, 0)),
+      reached,
+    };
+  });
+  const withConv = rows.map((r, i) => ({
+    ...r,
+    conversionPct: i === 0 ? 100 : rows[i - 1].reached > 0 ? round2((r.reached / rows[i - 1].reached) * 100) : 0,
+  }));
+
+  const closed = won.length + lost.length;
+  return {
+    stageStats: withConv,
+    summary: {
+      total: leads.length,
+      open: open.length,
+      won: won.length,
+      lost: lost.length,
+      openValue: round2(open.reduce((s, l) => s + l.value, 0)),
+      wonValue: round2(won.reduce((s, l) => s + l.value, 0)),
+      // Win rate is measured against CLOSED leads — still-open ones aren't losses yet.
+      winRatePct: closed > 0 ? round2((won.length / closed) * 100) : 0,
+      // Overall conversion is won out of every lead that ever entered the funnel.
+      conversionPct: leads.length > 0 ? round2((won.length / leads.length) * 100) : 0,
+    },
+  };
+}
+
+// GET /marketing/funnels — all funnels with their headline metrics.
+marketingRouter.get(
+  '/funnels',
+  asyncHandler(async (_req, res) => {
+    const funnels = await prisma.leadFunnel.findMany({
+      orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }],
+      include: { leads: { select: { stageIndex: true, status: true, value: true } } },
+    });
+    res.json({
+      funnels: funnels.map(({ leads, ...f }) => ({ ...f, ...funnelMetrics(f.stages, leads) })),
+    });
+  })
+);
+
+// GET /marketing/funnels/:id — one funnel with its metrics and full lead list.
+marketingRouter.get(
+  '/funnels/:id',
+  asyncHandler(async (req, res) => {
+    const funnel = await prisma.leadFunnel.findUnique({
+      where: { id: req.params.id },
+      include: {
+        leads: {
+          orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
+          include: { campaign: { select: { id: true, name: true } } },
+        },
+      },
+    });
+    if (!funnel) throw notFound('Funnel not found');
+    const { leads, ...f } = funnel;
+    res.json({ ...f, ...funnelMetrics(f.stages, leads), leads });
+  })
+);
+
+// POST /marketing/funnels — create a funnel.
+marketingRouter.post(
+  '/funnels',
+  asyncHandler(async (req, res) => {
+    const b = funnelSchema.parse(req.body);
+    const funnel = await prisma.leadFunnel.create({
+      data: {
+        name: b.name,
+        description: b.description ?? null,
+        isActive: b.isActive,
+        stages: b.stages,
+        createdById: req.auth!.sub,
+      },
+    });
+    res.status(201).json(funnel);
+  })
+);
+
+// PUT /marketing/funnels/:id — update a funnel.
+marketingRouter.put(
+  '/funnels/:id',
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.leadFunnel.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw notFound('Funnel not found');
+    const b = funnelSchema.parse(req.body);
+    // Dropping stages would strand any lead sitting past the new last stage,
+    // so pull those back to the final remaining stage.
+    if (b.stages.length < existing.stages.length) {
+      await prisma.lead.updateMany({
+        where: { funnelId: existing.id, stageIndex: { gt: b.stages.length - 1 } },
+        data: { stageIndex: b.stages.length - 1 },
+      });
+    }
+    const funnel = await prisma.leadFunnel.update({
+      where: { id: existing.id },
+      data: {
+        name: b.name,
+        description: b.description ?? null,
+        isActive: b.isActive,
+        stages: b.stages,
+      },
+    });
+    res.json(funnel);
+  })
+);
+
+// DELETE /marketing/funnels/:id — remove a funnel and its leads.
+marketingRouter.delete(
+  '/funnels/:id',
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.leadFunnel.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw notFound('Funnel not found');
+    await prisma.leadFunnel.delete({ where: { id: existing.id } }); // leads cascade
+    res.json({ ok: true });
+  })
+);
+
+// Validates a lead against its funnel and normalises the optional fields.
+async function leadData(b: z.infer<typeof leadSchema>) {
+  const funnel = await prisma.leadFunnel.findUnique({ where: { id: b.funnelId } });
+  if (!funnel) throw notFound('Funnel not found');
+  if (b.stageIndex > funnel.stages.length - 1) throw badRequest('That stage does not exist in this funnel');
+  if (b.campaignId) {
+    const c = await prisma.fbAdCampaign.findUnique({ where: { id: b.campaignId } });
+    if (!c) throw notFound('Campaign not found');
+  }
+  return {
+    funnelId: b.funnelId,
+    name: b.name,
+    company: b.company || null,
+    phone: b.phone || null,
+    email: b.email || null,
+    address: b.address || null,
+    source: b.source,
+    campaignId: b.campaignId || null,
+    stageIndex: b.stageIndex,
+    value: round2(b.value),
+    note: b.note || null,
+  };
+}
+
+// POST /marketing/leads — add a lead to a funnel.
+marketingRouter.post(
+  '/leads',
+  asyncHandler(async (req, res) => {
+    const b = leadSchema.parse(req.body);
+    const lead = await prisma.lead.create({
+      data: { ...(await leadData(b)), createdById: req.auth!.sub },
+    });
+    res.status(201).json(lead);
+  })
+);
+
+// PUT /marketing/leads/:id — edit a lead's details.
+marketingRouter.put(
+  '/leads/:id',
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw notFound('Lead not found');
+    const b = leadSchema.parse(req.body);
+    const lead = await prisma.lead.update({ where: { id: existing.id }, data: await leadData(b) });
+    res.json(lead);
+  })
+);
+
+// PATCH /marketing/leads/:id/stage — move a lead, or close it as won/lost.
+const moveSchema = z.object({
+  stageIndex: z.number().int().min(0).optional(),
+  status: z.enum(['OPEN', 'WON', 'LOST']).optional(),
+  lostReason: z.string().max(400).nullable().optional(),
+});
+marketingRouter.patch(
+  '/leads/:id/stage',
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.lead.findUnique({
+      where: { id: req.params.id },
+      include: { funnel: { select: { stages: true } } },
+    });
+    if (!existing) throw notFound('Lead not found');
+    const b = moveSchema.parse(req.body);
+    if (b.stageIndex !== undefined && b.stageIndex > existing.funnel.stages.length - 1) {
+      throw badRequest('That stage does not exist in this funnel');
+    }
+    const status = b.status ?? existing.status;
+    const lead = await prisma.lead.update({
+      where: { id: existing.id },
+      data: {
+        stageIndex: b.stageIndex ?? existing.stageIndex,
+        status,
+        lostReason: status === 'LOST' ? b.lostReason ?? existing.lostReason : null,
+        // Stamp the close date when it closes; clear it if it is reopened.
+        closedAt: status === 'OPEN' ? null : existing.closedAt ?? new Date(),
+      },
+    });
+    res.json(lead);
+  })
+);
+
+// DELETE /marketing/leads/:id — remove a lead.
+marketingRouter.delete(
+  '/leads/:id',
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw notFound('Lead not found');
+    await prisma.lead.delete({ where: { id: existing.id } });
+    res.json({ ok: true });
+  })
+);

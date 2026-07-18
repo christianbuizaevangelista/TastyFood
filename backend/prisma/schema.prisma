@@ -756,6 +756,10 @@ model FbAdCampaign {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Individual leads attributed to this campaign (Lead Funnels module).
+  // Distinct from `leads` above, which is the count reported by the ad platform.
+  funnelLeads Lead[]
+
   @@index([status])
 }
 
@@ -833,4 +837,54 @@ model LeaveRequest {
 
   @@index([status])
   @@index([employeeId])
+}
+
+// ---------------------------------------------------------------------------
+// Marketing — Lead Funnels. A funnel is a named pipeline with ordered stages;
+// each lead sits in one stage until it is won or lost. Leads can be attributed
+// back to the Facebook Ads campaign that produced them.
+// ---------------------------------------------------------------------------
+model LeadFunnel {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  // Ordered stage names. A lead's stageIndex points into this list.
+  stages      String[] @default(["New", "Contacted", "Qualified", "Negotiation"])
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  leads       Lead[]
+
+  @@index([isActive])
+}
+
+model Lead {
+  id         String   @id @default(cuid())
+  funnelId   String
+  funnel     LeadFunnel @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+  name       String
+  company    String?
+  phone      String?
+  email      String?
+  address    String?
+  // Where the lead came from; FACEBOOK_ADS leads may name the campaign.
+  source     String   @default("MANUAL") // FACEBOOK_ADS | WALK_IN | REFERRAL | WEBSITE | MANUAL
+  campaignId String?
+  campaign   FbAdCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  // Position in funnel.stages while the lead is still OPEN.
+  stageIndex Int      @default(0)
+  status     String   @default("OPEN") // OPEN | WON | LOST
+  value      Float    @default(0)       // estimated deal value
+  note       String?
+  lostReason String?
+  closedAt   DateTime?
+  createdById String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([funnelId])
+  @@index([status])
+  @@index([campaignId])
 }

@@ -32,6 +32,7 @@ import AgingReport from './pages/AgingReport';
 import Budget from './pages/Budget';
 import ResellerSale from './pages/ResellerSale';
 import FacebookAds from './pages/FacebookAds';
+import LeadFunnels from './pages/LeadFunnels';
 import { HrDashboard, Employees, Attendance, Leave, Payroll } from './pages/Hr';
 import Users from './pages/Users';
 
@@ -103,6 +104,7 @@ export default function App() {
       <Route path="/finance/accounts" element={<FinanceProtected><ChartOfAccounts /></FinanceProtected>} />
       <Route path="/marketing" element={<Navigate to="/marketing/facebook-ads" replace />} />
       <Route path="/marketing/facebook-ads" element={<MarketingProtected><FacebookAds /></MarketingProtected>} />
+      <Route path="/marketing/lead-funnels" element={<MarketingProtected><LeadFunnels /></MarketingProtected>} />
       <Route path="/hr" element={<HrProtected><HrDashboard /></HrProtected>} />
       <Route path="/hr/employees" element={<HrProtected><Employees /></HrProtected>} />
       <Route path="/hr/attendance" element={<HrProtected><Attendance /></HrProtected>} />
