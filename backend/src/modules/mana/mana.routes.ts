@@ -5,6 +5,7 @@ import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
 import { requireRole, requirePermission } from '../../middleware/rbac';
 import { badRequest, notFound, forbidden, conflict } from '../../lib/errors';
+import { sendStoredFile } from '../../lib/upload';
 import { adjustMana } from './mana.service';
 import { sendManaPurchaseEmail, sendManaApprovedEmail } from '../../lib/email';
 import { notifyRecipients } from '../../lib/notify';
@@ -119,9 +120,7 @@ manaRouter.get(
     const p = await prisma.manaPurchase.findUnique({ where: { id: req.params.id } });
     if (!p) throw notFound('Request not found');
     if (req.auth!.role !== 'PRINCIPAL' && p.orgId !== req.auth!.orgId) throw forbidden();
-    res.setHeader('Content-Type', p.mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${p.fileName}"`);
-    res.send(Buffer.from(p.data, 'base64'));
+    sendStoredFile(res, p);
   })
 );
 

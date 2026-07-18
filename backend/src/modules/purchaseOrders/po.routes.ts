@@ -5,6 +5,7 @@ import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
 import { requirePermission } from '../../middleware/rbac';
 import { badRequest, forbidden, notFound, conflict } from '../../lib/errors';
+import { sendStoredFile } from '../../lib/upload';
 import { priceLines, round2, productTierDiscount } from '../../lib/pricing';
 import { poNumber, saleNumber } from '../../lib/numbering';
 import { applyStockMovement, notifyLowStock } from '../inventory/inventory.service';
@@ -789,9 +790,7 @@ poRouter.get(
       where: { id: req.params.attId, poId: po.id },
     });
     if (!att) throw notFound('Attachment not found');
-    res.setHeader('Content-Type', att.mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${att.fileName}"`);
-    res.send(Buffer.from(att.data, 'base64'));
+    sendStoredFile(res, att);
   })
 );
 

@@ -8,6 +8,12 @@ import { authenticate } from '../../middleware/auth';
 
 export const authRouter = Router();
 
+// Brute-force lockout: lock an account for LOCKOUT_MS after this many
+// consecutive failed logins. bcrypt already makes each guess slow; this caps
+// the number of guesses per window regardless of how the requests are spread.
+const MAX_FAILED_ATTEMPTS = 8;
+const LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
+
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
@@ -23,9 +29,35 @@ authRouter.post(
     });
     if (!user) throw unauthorized('Invalid email or password');
     if (!user.passwordHash) throw forbidden('Please set your password using your invite link first');
+
+    // Brute-force lockout: after too many consecutive failures, temporarily
+    // refuse logins for this account regardless of whether the password is right.
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      const mins = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
+      throw forbidden(`Too many failed attempts. Try again in about ${mins} minute(s).`);
+    }
+
     if (!(await verifyPassword(password, user.passwordHash))) {
+      // Count the failure; lock the account once the threshold is crossed.
+      const attempts = user.failedLoginAttempts + 1;
+      const locked = attempts >= MAX_FAILED_ATTEMPTS;
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          failedLoginAttempts: locked ? 0 : attempts,
+          lockedUntil: locked ? new Date(Date.now() + LOCKOUT_MS) : user.lockedUntil,
+        },
+      });
       throw unauthorized('Invalid email or password');
     }
+    // Successful password — clear any failure counter.
+    if (user.failedLoginAttempts !== 0 || user.lockedUntil) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { failedLoginAttempts: 0, lockedUntil: null },
+      });
+    }
+
     if (user.org.archivedAt) throw forbidden('This account no longer exists');
     if (!user.isActive) throw forbidden('User account is deactivated');
     if (user.org.status !== 'APPROVED' || !user.org.isActive) {

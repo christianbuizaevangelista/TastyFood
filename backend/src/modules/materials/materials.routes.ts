@@ -30,8 +30,12 @@ materialsRouter.get(
   asyncHandler(async (req, res) => {
     const m = await prisma.material.findUnique({ where: { id: req.params.id } });
     if (!m) throw notFound('Material not found');
+    // Always a download (never rendered inline) + nosniff, so a material file is
+    // never interpreted as active content in the app's origin.
+    const safeName = m.fileName.replace(/[\r\n"\\]/g, '_');
     res.setHeader('Content-Type', m.mimeType);
-    res.setHeader('Content-Disposition', `attachment; filename="${m.fileName}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
     res.send(Buffer.from(m.data, 'base64'));
   })
 );

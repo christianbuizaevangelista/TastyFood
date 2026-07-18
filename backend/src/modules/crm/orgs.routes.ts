@@ -15,6 +15,7 @@ import { LEVEL_FOR_TYPE } from '../territories/territories.routes';
 import { env } from '../../lib/env';
 import { sendInviteEmail, sendResellerActivatedEmail, sendNetworkChangeEmail } from '../../lib/email';
 import { notifyRecipients } from '../../lib/notify';
+import { assertAllowedUploadType, sendStoredFile } from '../../lib/upload';
 
 // Shared helper: build the set-password link from an invite token.
 function inviteLink(token: string) {
@@ -480,6 +481,7 @@ orgsRouter.post(
     const target = await prisma.organization.findUnique({ where: { id: req.params.id } });
     if (!target) throw notFound('Organization not found');
     const body = docUploadSchema.parse(req.body);
+    assertAllowedUploadType(body.mimeType);
     const data = body.dataBase64.replace(/^data:[^;]+;base64,/, '');
     const size = Math.floor((data.length * 3) / 4);
     if (size > DOC_MAX_BYTES) throw badRequest('File too large (max 4 MB)');
@@ -507,9 +509,7 @@ orgsRouter.get(
     assertInScope(req, req.params.id);
     const doc = await prisma.orgDocument.findUnique({ where: { id: req.params.docId } });
     if (!doc || doc.orgId !== req.params.id) throw notFound('Document not found');
-    res.setHeader('Content-Type', doc.mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${doc.fileName}"`);
-    res.send(Buffer.from(doc.data, 'base64'));
+    sendStoredFile(res, doc);
   })
 );
 

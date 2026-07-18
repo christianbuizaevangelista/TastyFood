@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
+import helmet from 'helmet';
 import { env } from './lib/env';
 import { errorHandler } from './middleware/error';
 
@@ -27,6 +28,35 @@ import { hrRouter } from './modules/hr/hr.routes';
 
 export function createApp() {
   const app = express();
+
+  // Security headers. The app is a self-contained SPA (no external CDNs/fonts),
+  // so a strict CSP is safe: scripts only from our origin (blocks injected inline
+  // scripts), no framing (clickjacking), and no external connect targets (an
+  // injected script can't exfiltrate a stolen token to another host). Individual
+  // file-download endpoints override CSP with an even stricter sandbox policy.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: false,
+        directives: {
+          defaultSrc: ["'self'"],
+          baseUri: ["'self'"],
+          fontSrc: ["'self'", 'data:'],
+          formAction: ["'self'"],
+          frameAncestors: ["'none'"],
+          imgSrc: ["'self'", 'data:', 'blob:'],
+          objectSrc: ["'none'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          connectSrc: ["'self'"],
+          upgradeInsecureRequests: [],
+        },
+      },
+      crossOriginResourcePolicy: { policy: 'same-site' },
+      referrerPolicy: { policy: 'no-referrer' },
+      hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+    })
+  );
 
   app.use(cors({ origin: env.clientOrigin, credentials: true }));
   // Larger limit to allow base64 file uploads (e.g. proof of payment).

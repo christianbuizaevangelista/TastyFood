@@ -6,6 +6,7 @@ import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
 import { requireRole, requirePermission } from '../../middleware/rbac';
 import { badRequest, notFound, conflict } from '../../lib/errors';
+import { assertAllowedUploadType, sendStoredFile } from '../../lib/upload';
 import {
   ensureDefaultAccounts,
   nextEntryNumber,
@@ -295,6 +296,7 @@ function prepAttachment(
   uploadedById: string,
   accountId: string | null
 ) {
+  assertAllowedUploadType(a.mimeType);
   const data = a.dataBase64.replace(/^data:[^;]+;base64,/, '');
   const size = Math.floor((data.length * 3) / 4);
   if (size > ATTACH_MAX_BYTES) throw badRequest(`Receipt "${a.fileName}" is too large (max 4 MB)`);
@@ -370,9 +372,7 @@ accountingRouter.get(
   asyncHandler(async (req, res) => {
     const att = await prisma.journalAttachment.findUnique({ where: { id: req.params.attId } });
     if (!att || att.entryId !== req.params.entryId) throw notFound('Attachment not found');
-    res.setHeader('Content-Type', att.mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${att.fileName}"`);
-    res.send(Buffer.from(att.data, 'base64'));
+    sendStoredFile(res, att);
   })
 );
 
