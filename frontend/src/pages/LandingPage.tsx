@@ -117,6 +117,17 @@ export default function LandingPage() {
     }
   }
 
+  async function delRegistration(r: Registration) {
+    if (!confirm(`Remove ${r.name}'s registration? This does not delete any lead already created from it.`)) return;
+    setErr(null);
+    try {
+      await api.delete(`/marketing/webinar/registrations/${r.id}`);
+      refetch();
+    } catch (e) {
+      setErr(apiError(e));
+    }
+  }
+
   async function exportCsv() {
     setErr(null);
     try {
@@ -278,6 +289,7 @@ export default function LandingPage() {
                     <th className="th">Name</th>
                     <th className="th">Interest</th>
                     <th className="th text-center">Attended</th>
+                    <th className="th"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -301,6 +313,15 @@ export default function LandingPage() {
                       </td>
                       <td className="td text-center">
                         <input type="checkbox" checked={r.attended} onChange={() => toggleAttended(r)} />
+                      </td>
+                      <td className="td text-right">
+                        <button
+                          className="btn-secondary px-2 py-1 text-xs text-red-600"
+                          title="Remove this registration"
+                          onClick={() => delRegistration(r)}
+                        >
+                          ✕
+                        </button>
                       </td>
                     </tr>
                   ))}

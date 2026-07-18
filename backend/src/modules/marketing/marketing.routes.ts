@@ -566,6 +566,18 @@ marketingRouter.patch(
   })
 );
 
+// DELETE /marketing/webinar/registrations/:id — remove a sign-up (spam, test,
+// or a duplicate). The public form is open to anyone, so junk entries happen.
+marketingRouter.delete(
+  '/webinar/registrations/:id',
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.webinarRegistration.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw notFound('Registration not found');
+    await prisma.webinarRegistration.delete({ where: { id: existing.id } });
+    res.json({ ok: true });
+  })
+);
+
 // GET /marketing/webinar/registrations.csv — export the sign-up list.
 marketingRouter.get(
   '/webinar/registrations.csv',
