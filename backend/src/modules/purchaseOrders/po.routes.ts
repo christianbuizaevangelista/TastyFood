@@ -6,11 +6,12 @@ import { authenticate } from '../../middleware/auth';
 import { requirePermission } from '../../middleware/rbac';
 import { badRequest, forbidden, notFound, conflict } from '../../lib/errors';
 import { sendStoredFile } from '../../lib/upload';
+import { findBlockingTerritory, dropshipBlockedMessage } from '../../lib/territoryGuard';
 import { priceLines, round2, productTierDiscount } from '../../lib/pricing';
 import { poNumber, saleNumber } from '../../lib/numbering';
 import { applyStockMovement, notifyLowStock } from '../inventory/inventory.service';
 import { adjustMana } from '../mana/mana.service';
-import { sendPoSubmittedEmail, sendStockRequestEmail, sendPoStatusEmail } from '../../lib/email';
+import { sendPoSubmittedEmail, sendStockRequestEmail, sendPoStatusEmail, sendPoCancelledEmail } from '../../lib/email';
 import { notifyRecipients } from '../../lib/notify';
 import { postSaleToBooks } from '../accounting/accounting.service';
 import { verifyPassword } from '../../lib/auth';
@@ -60,6 +61,11 @@ const createSchema = z.object({
   recipientAddress: z.string().optional(),
   recipientPhone: z.string().optional(),
   landmark: z.string().optional(),
+  // The destination broken out from the address picker, used to check the
+  // drop-ship territory rule (see lib/territoryGuard).
+  recipientProvince: z.string().max(120).optional(),
+  recipientCity: z.string().max(120).optional(),
+  recipientBarangay: z.string().max(120).optional(),
   // Proof of payment (required for drop-ship) — uploaded together with the PO.
   proofOfPayment: z
     .object({ fileName: z.string().min(1), mimeType: z.string().min(1), dataBase64: z.string().min(1) })
@@ -199,6 +205,22 @@ poRouter.post(
       if (body.paymentMethod !== 'MANA' && !body.proofOfPayment) {
         throw badRequest('Drop-ship orders require an attached proof of payment (or pay with Mana)');
       }
+      // A distributor may not drop-ship into an area it (or its downline)
+      // already covers — that business belongs in its own Regular orders.
+      // The Principal has no territory of its own, so it is never blocked.
+      const dest = {
+        province: body.recipientProvince,
+        city: body.recipientCity,
+        barangay: body.recipientBarangay,
+      };
+      const block = await findBlockingTerritory(buyer.id, dest);
+      if (block) {
+        const own = await prisma.territory.findFirst({
+          where: { assignedOrgId: buyer.id },
+          select: { name: true },
+        });
+        throw badRequest(dropshipBlockedMessage(block, own?.name === block.territoryName, dest));
+      }
     }
     // Proof of payment may be attached to ANY supplier order (e.g. Regular + Cash),
     // not just drop-ship. Validate/parse it whenever one is provided.
@@ -266,6 +288,9 @@ poRouter.post(
           recipientAddress: isDropship ? body.recipientAddress : null,
           recipientPhone: isDropship ? body.recipientPhone : null,
           landmark: isDropship ? body.landmark ?? null : null,
+          recipientProvince: isDropship ? body.recipientProvince ?? null : null,
+          recipientCity: isDropship ? body.recipientCity ?? null : null,
+          recipientBarangay: isDropship ? body.recipientBarangay ?? null : null,
           createdById: req.auth!.sub,
           items: { create: priced.items },
         },
@@ -632,6 +657,15 @@ poRouter.post(
 // Cancel (buyer). Allowed any time before completion (RECEIVED). If the PO was
 // already fulfilled/partially received, its inventory effects and generated
 // sale are reversed so the books stay consistent.
+const cancelSchema = z.object({
+  // Why it was cancelled — shown to the buyer and included in their email.
+  reason: z.string().min(1).max(1000),
+  // Optional proof that the buyer was reimbursed (receipt, transfer screenshot).
+  reimbursementProof: z
+    .object({ fileName: z.string().min(1), mimeType: z.string().min(1), dataBase64: z.string().min(1) })
+    .optional(),
+});
+
 poRouter.post(
   '/:id/cancel',
   asyncHandler(async (req, res) => {
@@ -644,6 +678,19 @@ poRouter.post(
     if (!canCancel) throw forbidden('You are not allowed to cancel this purchase order');
     if (po.status === 'RECEIVED' || po.status === 'CANCELLED') {
       throw conflict(`Cannot cancel a PO in status ${po.status}`);
+    }
+    const body = cancelSchema.parse(req.body ?? {});
+
+    // Validate any reimbursement proof before touching stock or money.
+    let proofData: string | null = null;
+    if (body.reimbursementProof) {
+      if (!ALLOWED_TYPES.includes(body.reimbursementProof.mimeType.toLowerCase())) {
+        throw badRequest('Proof of reimbursement must be an image (PNG/JPG/WEBP) or PDF');
+      }
+      proofData = body.reimbursementProof.dataBase64.replace(/^data:[^;]+;base64,/, '');
+      if (Math.floor((proofData.length * 3) / 4) > MAX_UPLOAD_BYTES) {
+        throw badRequest('Proof of reimbursement is too large (max 3 MB)');
+      }
     }
     const needsReversal = po.status === 'FULFILLED' || po.status === 'PARTIALLY_RECEIVED';
     const isStockIn = po.buyerOrgId === po.sellerOrgId;
@@ -694,17 +741,58 @@ poRouter.post(
 
       await tx.approval.updateMany({
         where: { poId: po.id, status: 'PENDING' },
-        data: { status: 'REJECTED', note: 'PO cancelled' },
+        data: { status: 'REJECTED', note: `PO cancelled: ${body.reason}` },
       });
+      if (proofData && body.reimbursementProof) {
+        await tx.poAttachment.create({
+          data: {
+            poId: po.id,
+            kind: 'REIMBURSEMENT_PROOF',
+            fileName: body.reimbursementProof.fileName,
+            mimeType: body.reimbursementProof.mimeType,
+            size: Math.floor((proofData.length * 3) / 4),
+            data: proofData,
+            uploadedById: req.auth!.sub,
+          },
+        });
+      }
       return tx.purchaseOrder.update({
         where: { id: po.id },
-        data: { status: 'CANCELLED' },
+        data: { status: 'CANCELLED', cancelReason: body.reason, cancelledAt: new Date() },
       });
     });
 
     res.json(updated);
+
+    // Tell the buyer it was cancelled, with the reason. Best-effort — the
+    // cancellation itself has already been committed.
+    notifyBuyerPoCancelled(po, body.reason, !!proofData).catch((e) =>
+      console.error('[po.cancel] notification failed', e?.message)
+    );
   })
 );
+
+// Emails the buyer that their PO was cancelled, including the reason and
+// whether a proof of reimbursement was attached for them to view.
+async function notifyBuyerPoCancelled(
+  po: { id: string; buyerOrgId: string; sellerOrgId: string; number: string; total: number; buyerOrg: { name: string }; sellerOrg: { name: string } },
+  reason: string,
+  hasProof: boolean
+) {
+  if (po.buyerOrgId === po.sellerOrgId) return; // internal stock-in
+  const recipients = await notifyRecipients(po.buyerOrgId, 'purchase-orders');
+  for (const to of recipients) {
+    await sendPoCancelledEmail({
+      to,
+      poNumber: po.number,
+      buyerName: po.buyerOrg.name,
+      sellerName: po.sellerOrg.name,
+      total: po.total,
+      reason,
+      hasProof,
+    });
+  }
+}
 
 // Attachments (proof of payment) ---------------------------------------------
 

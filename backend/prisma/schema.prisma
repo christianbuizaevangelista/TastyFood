@@ -322,6 +322,17 @@ model PurchaseOrder {
   recipientAddress String?
   recipientPhone   String?
   landmark         String?
+  // The destination broken out from the address picker (PSGC names). Kept
+  // separately so drop-ship can be checked against the buyer's own territory —
+  // a distributor may not drop-ship into an area it already covers.
+  recipientProvince String?
+  recipientCity     String?
+  recipientBarangay String?
+
+  // Cancellation trail: why it was cancelled and when. Any proof of
+  // reimbursement is stored as a PoAttachment with kind REIMBURSEMENT_PROOF.
+  cancelReason     String?
+  cancelledAt      DateTime?
 
   createdById      String
   createdBy        User     @relation("PoCreatedBy", fields: [createdById], references: [id])

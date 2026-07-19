@@ -399,6 +399,61 @@ export async function sendPoStatusEmail(p: {
   }
 }
 
+// Notify the buyer that their purchase order was cancelled, with the reason.
+export async function sendPoCancelledEmail(p: {
+  to: string;
+  poNumber: string;
+  buyerName: string;
+  sellerName: string;
+  total: number;
+  reason: string;
+  hasProof: boolean;
+}): Promise<{ sent: boolean; reason?: string }> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM || 'Tasty Food <onboarding@resend.dev>';
+  if (!p.to) return { sent: false, reason: 'no recipient email' };
+  if (!apiKey) {
+    console.log(`[email] RESEND_API_KEY not set — PO ${p.poNumber} cancelled for ${p.to}`);
+    return { sent: false, reason: 'RESEND_API_KEY not configured' };
+  }
+  const proofNote = p.hasProof
+    ? `<p style="margin-top:12px">A <strong>proof of reimbursement</strong> has been attached to this order — you can view it on the purchase order in your dashboard.</p>`
+    : '';
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#333;line-height:1.55">
+      <div style="background:#0b9444;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
+        <strong style="font-size:16px">Tasty Food Manufacturing Inc.</strong>
+        <div style="font-size:11px;opacity:.9">Purchase Order Update</div>
+      </div>
+      <div style="border:1px solid #eee;border-top:none;padding:22px;border-radius:0 0 8px 8px">
+        <h2 style="margin:0 0 8px;color:#c0392b;font-size:18px">❌ Purchase order cancelled</h2>
+        <p>Hi ${p.buyerName}, your purchase order <strong>${p.poNumber}</strong> (${peso(p.total)}) has been cancelled.</p>
+        <div style="margin:14px 0;border-left:4px solid #c0392b;background:#fdf3f2;padding:12px 14px">
+          <div style="font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.04em">Reason</div>
+          <div style="margin-top:4px">${p.reason}</div>
+        </div>
+        ${proofNote}
+        <p style="color:#888;font-size:13px;margin-top:14px">Supplier: ${p.sellerName}</p>
+        <p style="color:#888;font-size:13px">If you have any questions about this cancellation, please contact us.</p>
+      </div>
+    </div>`;
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: [p.to], subject: `PO ${p.poNumber} — Cancelled`, html }),
+    });
+    if (!res.ok) {
+      console.error('[email] Resend error', res.status, await res.text());
+      return { sent: false, reason: `Resend responded ${res.status}` };
+    }
+    return { sent: true };
+  } catch (err: any) {
+    console.error('[email] PO cancelled send failed', err?.message);
+    return { sent: false, reason: err?.message ?? 'send failed' };
+  }
+}
+
 // Notify the buyer that their Mana purchase was approved and credited.
 export async function sendManaApprovedEmail(p: {
   to: string;

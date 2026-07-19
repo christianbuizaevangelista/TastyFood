@@ -9,7 +9,21 @@ interface Loc {
 // Cascading Philippine address picker: Province → City/Municipality → Barangay,
 // plus a free-text street/house line. Calls onChange with the composed address.
 // Falls back to a plain text field if the location service is unavailable.
-export default function AddressPicker({ onChange }: { onChange: (address: string) => void }) {
+export interface AddressParts {
+  province: string | null;
+  city: string | null;
+  barangay: string | null;
+}
+
+export default function AddressPicker({
+  onChange,
+  onParts,
+}: {
+  onChange: (address: string) => void;
+  // Optional: also report the picked parts on their own, for callers that need
+  // to reason about the location (e.g. the drop-ship territory rule).
+  onParts?: (parts: AddressParts) => void;
+}) {
   const [provinces, setProvinces] = useState<Loc[]>([]);
   const [cities, setCities] = useState<Loc[]>([]);
   const [barangays, setBarangays] = useState<Loc[]>([]);
@@ -38,6 +52,11 @@ export default function AddressPicker({ onChange }: { onChange: (address: string
       province?.name ?? '',
     ].filter(Boolean);
     onChange(parts.join(', '));
+    onParts?.({
+      province: province?.name ?? null,
+      city: city?.name ?? null,
+      barangay: barangay?.name ?? null,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [street, barangay, city, province]);
 

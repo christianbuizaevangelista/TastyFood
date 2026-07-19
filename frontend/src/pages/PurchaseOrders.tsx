@@ -7,8 +7,22 @@ import { peso, date } from '../lib/format';
 import { DistributionType, PoStatus, Product } from '../types';
 import { distLabel } from '../lib/labels';
 import { exportPoPdf } from '../lib/poPdf';
-import AddressPicker from '../components/AddressPicker';
+import AddressPicker, { AddressParts } from '../components/AddressPicker';
 import { OwnerPasswordModal } from '../components/OwnerPasswordModal';
+import { CancelPoModal } from '../components/CancelPoModal';
+
+// Mirrors the server's territory name normalisation (lib/territoryGuard) so the
+// warning shown here matches what the server will actually enforce.
+function sameArea(a: string, b: string): boolean {
+  const norm = (s: string) =>
+    s.toLowerCase()
+      .replace(/\(.*?\)/g, ' ')
+      .replace(/\b(city|municipality) of\b/g, ' ')
+      .replace(/\bcity\b/g, ' ')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  return norm(a).length > 0 && norm(a) === norm(b);
+}
 
 interface POItem {
   id: string;
@@ -36,6 +50,8 @@ interface PO {
   recipientAddress?: string | null;
   recipientPhone?: string | null;
   landmark?: string | null;
+  cancelReason?: string | null;
+  cancelledAt?: string | null;
   buyerOrg: OrgParty;
   sellerOrg: OrgParty;
   items: POItem[];
@@ -122,6 +138,7 @@ export default function PurchaseOrders() {
   const inventory = useFetch<{ items: { productId: string; cost: number | null }[] }>('/inventory');
   const [showCreate, setShowCreate] = useState(false);
   const [receivePo, setReceivePo] = useState<PO | null>(null);
+  const [cancelPo, setCancelPo] = useState<PO | null>(null);
   const [detailsPo, setDetailsPo] = useState<PO | null>(null);
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [pwFulfill, setPwFulfill] = useState<PO | null>(null); // PO awaiting owner oversell auth
@@ -133,6 +150,12 @@ export default function PurchaseOrders() {
 
   async function runAction(po: PO, path: string, ownerPassword?: string) {
     setActionErr(null);
+    // Cancelling needs a reason (and optionally proof of reimbursement), so it
+    // goes through its own modal rather than firing straight away.
+    if (path === 'cancel') {
+      setCancelPo(po);
+      return;
+    }
     if (ownerPassword) { setPwBusy(true); setPwError(null); }
     try {
       await api.post(`/purchase-orders/${po.id}/${path}`, ownerPassword ? { ownerPassword } : undefined);
@@ -367,6 +390,18 @@ export default function PurchaseOrders() {
         />
       )}
 
+      {cancelPo && (
+        <CancelPoModal
+          poId={cancelPo.id}
+          poNumber={cancelPo.number}
+          onClose={() => setCancelPo(null)}
+          onDone={() => {
+            setCancelPo(null);
+            refetch();
+          }}
+        />
+      )}
+
       {detailsPo && <PoDetails po={detailsPo} onClose={() => setDetailsPo(null)} />}
       {pwFulfill && (
         <OwnerPasswordModal
@@ -546,6 +581,13 @@ function PoDetails({ po, onClose }: { po: PO; onClose: () => void }) {
           </div>
         )}
 
+        {po.status === 'CANCELLED' && po.cancelReason && (
+          <div className="mb-4 rounded-lg border-l-4 border-red-400 bg-red-50 px-3 py-2 text-sm text-red-800">
+            <div className="font-semibold">Cancelled{po.cancelledAt ? ` · ${date(po.cancelledAt)}` : ''}</div>
+            <div className="mt-0.5">{po.cancelReason}</div>
+          </div>
+        )}
+
         <table className="w-full">
           <thead>
             <tr className="border-b border-slate-100">
@@ -593,7 +635,12 @@ function PoDetails({ po, onClose }: { po: PO; onClose: () => void }) {
               {attachments.data.attachments.map((a) => (
                 <li key={a.id} className="flex items-center justify-between py-2 text-sm">
                   <div>
-                    <div className="font-medium text-slate-700">{a.fileName}</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-slate-700">{a.fileName}</span>
+                      {a.kind === 'REIMBURSEMENT_PROOF' && (
+                        <span className="badge bg-amber-100 text-amber-700">Proof of reimbursement</span>
+                      )}
+                    </div>
                     <div className="text-xs text-slate-400">
                       {(a.size / 1024).toFixed(0)} KB · by {a.uploadedBy.name} · {date(a.createdAt)}
                     </div>
@@ -629,6 +676,7 @@ function PoDetails({ po, onClose }: { po: PO; onClose: () => void }) {
 
 interface Attachment {
   id: string;
+  kind?: string;
   fileName: string;
   mimeType: string;
   size: number;
@@ -669,18 +717,8 @@ function ReceivePO({ po, onClose, onDone }: { po: PO; onClose: () => void; onDon
     }
   }
 
-  async function cancelPo() {
-    setErr(null);
-    setBusy(true);
-    try {
-      await api.post(`/purchase-orders/${po.id}/cancel`);
-      onDone();
-    } catch (e) {
-      setErr(apiError(e));
-    } finally {
-      setBusy(false);
-    }
-  }
+  // Cancelling requires a reason, so it opens the cancel modal.
+  const [cancelling, setCancelling] = useState(false);
 
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
@@ -750,7 +788,7 @@ function ReceivePO({ po, onClose, onDone }: { po: PO; onClose: () => void; onDon
             )}
           </div>
           <div className="flex gap-2">
-            <button className="btn-ghost text-red-600" disabled={busy} onClick={cancelPo} title="Cancel this purchase order">
+            <button className="btn-ghost text-red-600" disabled={busy} onClick={() => setCancelling(true)} title="Cancel this purchase order">
               Cancel PO
             </button>
             <button className="btn-ghost" disabled={busy} onClick={() => exportPoPdf(po)}>
@@ -762,6 +800,18 @@ function ReceivePO({ po, onClose, onDone }: { po: PO; onClose: () => void; onDon
           </div>
         </div>
       </div>
+
+      {cancelling && (
+        <CancelPoModal
+          poId={po.id}
+          poNumber={po.number}
+          onClose={() => setCancelling(false)}
+          onDone={() => {
+            setCancelling(false);
+            onDone();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -790,6 +840,7 @@ function CreatePO({
   const [note, setNote] = useState('');
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
   const [recipient, setRecipient] = useState({ name: '', address: '', phone: '', landmark: '' });
+  const [destParts, setDestParts] = useState<AddressParts>({ province: null, city: null, barangay: null });
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [productionEmail, setProductionEmail] = useState('');
   const [lines, setLines] = useState<Record<string, number>>({});
@@ -799,6 +850,23 @@ function CreatePO({
   const isReseller = user?.role === 'RESELLER'; // resellers order Regular only (no drop-ship)
 
   const isDropship = distributionType === 'DROP_SHIP';
+
+  // Drop-ship may not be used for a destination the buyer already covers. This
+  // is only the immediate-feedback copy of the rule against the user's OWN
+  // territory — the server is the authority and also checks the downline.
+  const ownTerritory = user?.org?.territory ?? null;
+  const inOwnTerritory = (() => {
+    if (!ownTerritory) return null;
+    const target =
+      ownTerritory.level === 'PROVINCE' ? destParts.province
+      : ownTerritory.level === 'CITY' ? destParts.city
+      : ownTerritory.level === 'BARANGAY' ? destParts.barangay
+      : null;
+    if (!target || !sameArea(ownTerritory.name, target)) return null;
+    // Name the place actually chosen, matching the server's wording.
+    return [destParts.barangay, destParts.city, destParts.province].filter(Boolean).join(', ') || target;
+  })();
+
   const items = Object.entries(lines).filter(([, q]) => q > 0);
   const estTotal = items.reduce((sum, [pid, q]) => {
     const p = products.find((x) => x.id === pid);
@@ -826,6 +894,12 @@ function CreatePO({
         setErr('Drop-ship requires a proof of payment, or pay with Mana.');
         return;
       }
+      if (inOwnTerritory) {
+        setErr(
+          `${inOwnTerritory} is inside your territory (${ownTerritory?.name}). Drop-ship is only for areas you don't already cover — use Regular instead.`
+        );
+        return;
+      }
     }
     if (proofFile && proofFile.size > 3 * 1024 * 1024) {
       setErr('Proof of payment is too large (max 3 MB).');
@@ -850,6 +924,9 @@ function CreatePO({
         recipientAddress: isDropship ? recipient.address : undefined,
         recipientPhone: isDropship ? recipient.phone : undefined,
         landmark: isDropship ? recipient.landmark || undefined : undefined,
+        recipientProvince: isDropship ? destParts.province ?? undefined : undefined,
+        recipientCity: isDropship ? destParts.city ?? undefined : undefined,
+        recipientBarangay: isDropship ? destParts.barangay ?? undefined : undefined,
         proofOfPayment,
         productionEmail: isStockIn && productionEmail.trim() ? productionEmail.trim() : undefined,
         items: items.map(([productId, quantity]) => ({ productId, quantity })),
@@ -920,7 +997,16 @@ function CreatePO({
               </div>
               <div className="sm:col-span-2">
                 <label className="label">Complete Address *</label>
-                <AddressPicker onChange={(address) => setRecipient((r) => ({ ...r, address }))} />
+                <AddressPicker
+                  onChange={(address) => setRecipient((r) => ({ ...r, address }))}
+                  onParts={setDestParts}
+                />
+                {inOwnTerritory && (
+                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    <strong>{inOwnTerritory}</strong> is inside your territory ({ownTerritory?.name}). Drop-ship is only
+                    for areas you don't already cover — please switch to <strong>Regular</strong> for this order.
+                  </div>
+                )}
               </div>
               <div>
                 <label className="label">Cellphone Number *</label>
