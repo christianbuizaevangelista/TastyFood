@@ -4,8 +4,46 @@
 
 const DIST_LABEL: Record<string, string> = { TRADE: 'Regular', DROP_SHIP: 'Dropship' };
 
+// Tasty Food brand green — the single accent colour used across every email.
+export const BRAND_GREEN = '#0b9444';
+
 function peso(n: number): string {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n || 0);
+}
+
+function appOrigin(): string {
+  return (process.env.CLIENT_ORIGIN || 'https://tastyfoodph.vercel.app').replace(/\/$/, '');
+}
+
+// Shared letterhead for every outgoing email: the Tasty Food logo and the full
+// company name on a brand-green bar, then the message body.
+//
+// Laid out with a table rather than flexbox because a good number of mail
+// clients (Outlook especially) don't support modern CSS layout. The company
+// name is real text next to the logo, not baked into it, so the email still
+// reads correctly in clients that block images by default.
+function emailShell(subtitle: string, body: string): string {
+  const logo = `${appOrigin()}/tasty-food-splash.png`;
+  return `
+    <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#333;line-height:1.55">
+      <div style="background:${BRAND_GREEN};color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse">
+          <tr>
+            <td style="padding-right:12px;vertical-align:middle">
+              <img src="${logo}" alt="Tasty Food" width="40" height="40"
+                   style="display:block;width:40px;height:40px;border-radius:6px;background:#fff" />
+            </td>
+            <td style="vertical-align:middle">
+              <div style="font-size:16px;font-weight:bold;color:#fff">Tasty Food Manufacturing Inc.</div>
+              <div style="font-size:11px;color:#fff;opacity:.9">${subtitle}</div>
+            </td>
+          </tr>
+        </table>
+      </div>
+      <div style="border:1px solid #eee;border-top:none;padding:22px;border-radius:0 0 8px 8px">
+        ${body}
+      </div>
+    </div>`;
 }
 
 interface ReceiptLine {
@@ -48,33 +86,27 @@ export async function sendSaleReceiptEmail(p: {
       </tr>`
     )
     .join('');
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto">
-      <div style="text-align:center;padding:12px">
-        <strong style="color:#e8521d;font-size:18px">Juan Palaman</strong><br>
-        <span style="color:#888;font-size:12px">${r.seller.name}</span>
-      </div>
-      <div style="border:1px solid #eee;border-radius:8px;padding:16px">
-        <div style="display:flex;justify-content:space-between;font-size:12px;color:#888">
-          <span>${r.number}</span><span>${new Date(r.createdAt).toLocaleString('en-PH')}</span>
-        </div>
-        <p style="font-size:12px;color:#666">Customer: ${r.customerName ?? 'Walk-in'}</p>
-        <table style="width:100%;border-collapse:collapse;font-size:14px">${rows}</table>
-        <hr style="border:none;border-top:1px dashed #ddd">
-        <table style="width:100%;font-size:13px">
-          <tr><td style="color:#888">Subtotal (SRP)</td><td style="text-align:right">${peso(r.subtotal)}</td></tr>
-          <tr><td style="color:#888">Discount (${Math.round(r.discountRate * 100)}%)</td><td style="text-align:right">- ${peso(r.savings)}</td></tr>
-          <tr><td style="font-weight:bold;color:#e8521d">Total</td><td style="text-align:right;font-weight:bold;color:#e8521d">${peso(r.total)}</td></tr>
-        </table>
-      </div>
-      <p style="text-align:center;color:#aaa;font-size:11px;margin-top:8px">Thank you for your purchase!</p>
-    </div>`;
+  const html = emailShell(
+    'Sales Receipt',
+    `<table style="width:100%;font-size:12px;color:#888"><tr>
+       <td>${r.number}</td><td style="text-align:right">${new Date(r.createdAt).toLocaleString('en-PH')}</td>
+     </tr></table>
+     <p style="font-size:13px;color:#666;margin:6px 0 12px">Sold by ${r.seller.name} · Customer: ${r.customerName ?? 'Walk-in'}</p>
+     <table style="width:100%;border-collapse:collapse;font-size:14px">${rows}</table>
+     <hr style="border:none;border-top:1px dashed #ddd">
+     <table style="width:100%;font-size:13px">
+       <tr><td style="color:#888">Subtotal (SRP)</td><td style="text-align:right">${peso(r.subtotal)}</td></tr>
+       <tr><td style="color:#888">Discount (${Math.round(r.discountRate * 100)}%)</td><td style="text-align:right">- ${peso(r.savings)}</td></tr>
+       <tr><td style="font-weight:bold;color:${BRAND_GREEN}">Total</td><td style="text-align:right;font-weight:bold;color:${BRAND_GREEN}">${peso(r.total)}</td></tr>
+     </table>
+     <p style="text-align:center;color:#aaa;font-size:11px;margin-top:14px">Thank you for your purchase!</p>`
+  );
 
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to: [p.to], subject: `Receipt ${r.number} — Juan Palaman`, html }),
+      body: JSON.stringify({ from, to: [p.to], subject: `Receipt ${r.number} — Tasty Food Manufacturing Inc.`, html }),
     });
     if (!res.ok) {
       const body = await res.text();
@@ -100,18 +132,13 @@ export async function sendManaPurchaseEmail(p: {
     console.log(`[email] RESEND_API_KEY not set — would notify ${p.to} of Mana purchase by ${p.orgName}`);
     return { sent: false, reason: 'RESEND_API_KEY not configured' };
   }
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto">
-      <div style="background:#e8521d;color:#fff;padding:14px 18px;border-radius:8px 8px 0 0">
-        <strong style="font-size:16px">Juan Palaman · Tasty Food Mfg. Inc.</strong>
-      </div>
-      <div style="border:1px solid #eee;border-top:none;padding:18px;border-radius:0 0 8px 8px">
-        <h2 style="margin:0 0 8px">New Mana purchase request ✨</h2>
-        <p><strong>${p.orgName}</strong> wants to buy <strong>${peso(p.amount)}</strong> worth of Mana
-        (${p.amount.toLocaleString()} ✨).</p>
-        <p>Review the attached proof of payment and approve it in the Mana Wallet page.</p>
-      </div>
-    </div>`;
+  const html = emailShell(
+    'Mana Wallet',
+    `<h2 style="margin:0 0 8px;color:${BRAND_GREEN};font-size:18px">New Mana purchase request ✨</h2>
+     <p><strong>${p.orgName}</strong> wants to buy <strong>${peso(p.amount)}</strong> worth of Mana
+     (${p.amount.toLocaleString()} ✨).</p>
+     <p>Review the attached proof of payment and approve it in the Mana Wallet page.</p>`
+  );
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -150,21 +177,16 @@ export async function sendLowStockEmail(p: {
       </tr>`
     )
     .join('');
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto">
-      <div style="background:#e8521d;color:#fff;padding:14px 18px;border-radius:8px 8px 0 0">
-        <strong style="font-size:16px">Juan Palaman · Tasty Food Mfg. Inc.</strong>
-      </div>
-      <div style="border:1px solid #eee;border-top:none;padding:18px;border-radius:0 0 8px 8px">
-        <h2 style="margin:0 0 6px">⚠️ Low stock reminder</h2>
-        <p>${p.orgName}, the following item(s) have reached their critical stock level:</p>
-        <table style="width:100%;border-collapse:collapse;font-size:13px">
-          <tr style="color:#888;text-align:left"><th style="padding:4px 8px">Item</th><th style="padding:4px 8px;text-align:right">On hand</th><th style="padding:4px 8px;text-align:right">Reorder @</th></tr>
-          ${rows}
-        </table>
-        <p style="margin-top:12px;color:#666">Please reorder soon to avoid running out.</p>
-      </div>
-    </div>`;
+  const html = emailShell(
+    'Inventory Alert',
+    `<h2 style="margin:0 0 6px;color:${BRAND_GREEN};font-size:18px">⚠️ Low stock reminder</h2>
+     <p>${p.orgName}, the following item(s) have reached their critical stock level:</p>
+     <table style="width:100%;border-collapse:collapse;font-size:13px">
+       <tr style="color:#888;text-align:left"><th style="padding:4px 8px">Item</th><th style="padding:4px 8px;text-align:right">On hand</th><th style="padding:4px 8px;text-align:right">Reorder @</th></tr>
+       ${rows}
+     </table>
+     <p style="margin-top:12px;color:#666">Please reorder soon to avoid running out.</p>`
+  );
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -198,36 +220,30 @@ export async function sendInviteEmail(p: {
   // The handwritten signature image is served by the web app (frontend/public).
   const origin = (process.env.CLIENT_ORIGIN || 'https://tasty-food-manufacturing-inc.vercel.app').replace(/\/$/, '');
   const sigUrl = `${origin}/signature.png`;
-  const html = `
-    <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#333;line-height:1.55">
-      <div style="background:#0b9444;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
-        <strong style="font-size:17px">Tasty Food Manufacturing Inc.</strong>
-        <div style="font-size:11px;opacity:.9">Distribution Management System</div>
-      </div>
-      <div style="border:1px solid #eee;border-top:none;padding:22px;border-radius:0 0 8px 8px">
-        <p style="margin:0 0 12px"><strong>Good day${p.name ? ', ' + p.name : ''}!</strong></p>
-        <p>On behalf of our entire team, we would like to extend a heartfelt welcome to you as a valued member of our growing network of <strong>Distributors and Resellers</strong>.</p>
-        <p>We are truly delighted to have you on board. Your partnership marks an important step toward our shared growth, and we are committed to supporting you at every stage of your journey with our brand.</p>
-        <p style="margin-bottom:6px">Here is some key information as we begin our partnership:</p>
-        <ul style="margin:0 0 12px;padding-left:18px">
-          <li style="margin-bottom:4px"><strong>Dedicated Support</strong> — A dedicated team is ready to assist you with inquiries, orders, and consultations.</li>
-          <li style="margin-bottom:4px"><strong>Product Resources</strong> — We will provide you with a complete product catalog, pricing, and marketing materials.</li>
-          <li><strong>Onboarding</strong> — We will schedule a brief orientation to ensure a smooth start.</li>
-        </ul>
-        <p>To get started, please set your account password:</p>
-        <p style="text-align:center;margin:20px 0">
-          <a href="${p.link}" style="background:#0b9444;color:#fff;text-decoration:none;padding:11px 22px;border-radius:8px;font-weight:bold;display:inline-block">Set your password</a>
-        </p>
-        <p style="color:#999;font-size:12px;margin-bottom:18px">Or paste this link into your browser: ${p.link}</p>
-        <p>Should you have any questions, please do not hesitate to reach out. We are here to ensure your partnership with us is a success.</p>
-        <p>Once again, welcome aboard. We look forward to a successful and long-lasting relationship.</p>
-        <p style="margin:18px 0 0">Regards,</p>
-        <img src="${sigUrl}" alt="Christian Evangelista" width="280" style="display:block;height:auto;max-width:280px;margin:4px 0 -24px" />
-        <div style="font-weight:bold;color:#222">Christian Evangelista</div>
-        <div style="color:#555;font-size:13px">President and CEO</div>
-        <div style="color:#555;font-size:13px">Tasty Food Manufacturing Inc.</div>
-      </div>
-    </div>`;
+  const html = emailShell(
+    'Distribution Management System',
+    `<p style="margin:0 0 12px"><strong>Good day${p.name ? ', ' + p.name : ''}!</strong></p>
+     <p>On behalf of our entire team, we would like to extend a heartfelt welcome to you as a valued member of our growing network of <strong>Distributors and Resellers</strong>.</p>
+     <p>We are truly delighted to have you on board. Your partnership marks an important step toward our shared growth, and we are committed to supporting you at every stage of your journey with our brand.</p>
+     <p style="margin-bottom:6px">Here is some key information as we begin our partnership:</p>
+     <ul style="margin:0 0 12px;padding-left:18px">
+       <li style="margin-bottom:4px"><strong>Dedicated Support</strong> — A dedicated team is ready to assist you with inquiries, orders, and consultations.</li>
+       <li style="margin-bottom:4px"><strong>Product Resources</strong> — We will provide you with a complete product catalog, pricing, and marketing materials.</li>
+       <li><strong>Onboarding</strong> — We will schedule a brief orientation to ensure a smooth start.</li>
+     </ul>
+     <p>To get started, please set your account password:</p>
+     <p style="text-align:center;margin:20px 0">
+       <a href="${p.link}" style="background:#0b9444;color:#fff;text-decoration:none;padding:11px 22px;border-radius:8px;font-weight:bold;display:inline-block">Set your password</a>
+     </p>
+     <p style="color:#999;font-size:12px;margin-bottom:18px">Or paste this link into your browser: ${p.link}</p>
+     <p>Should you have any questions, please do not hesitate to reach out. We are here to ensure your partnership with us is a success.</p>
+     <p>Once again, welcome aboard. We look forward to a successful and long-lasting relationship.</p>
+     <p style="margin:18px 0 0">Regards,</p>
+     <img src="${sigUrl}" alt="Christian Evangelista" width="280" style="display:block;height:auto;max-width:280px;margin:4px 0 -24px" />
+     <div style="font-weight:bold;color:#222">Christian Evangelista</div>
+     <div style="color:#555;font-size:13px">President and CEO</div>
+     <div style="color:#555;font-size:13px">Tasty Food Manufacturing Inc.</div>`
+  );
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -264,24 +280,18 @@ export async function sendReferralEmail(p: {
   const noteRow = p.note
     ? `<tr><td style="padding:6px 0;color:#888;vertical-align:top">Note</td><td style="padding:6px 0">${p.note}</td></tr>`
     : '';
-  const html = `
-    <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#333;line-height:1.55">
-      <div style="background:#0b9444;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
-        <strong style="font-size:16px">Tasty Food Manufacturing Inc.</strong>
-        <div style="font-size:11px;opacity:.9">New Referral</div>
-      </div>
-      <div style="border:1px solid #eee;border-top:none;padding:22px;border-radius:0 0 8px 8px">
-        <h2 style="margin:0 0 8px">📨 You have a new referral</h2>
-        <p>Hi ${p.toOrgName}, Tasty Food has referred a new lead/customer to you. Please reach out to them:</p>
-        <table style="width:100%;font-size:14px;border-collapse:collapse">
-          <tr><td style="padding:6px 0;color:#888;width:120px">Name</td><td style="padding:6px 0;font-weight:bold">${p.leadName}</td></tr>
-          <tr><td style="padding:6px 0;color:#888;vertical-align:top">Address</td><td style="padding:6px 0">${p.address}</td></tr>
-          <tr><td style="padding:6px 0;color:#888">CP Number</td><td style="padding:6px 0">${p.cpNumber}</td></tr>
-          ${noteRow}
-        </table>
-        <p style="margin-top:12px;color:#666">You can also see this in the Referrals page of your dashboard.</p>
-      </div>
-    </div>`;
+  const html = emailShell(
+    'New Referral',
+    `<h2 style="margin:0 0 8px">📨 You have a new referral</h2>
+     <p>Hi ${p.toOrgName}, Tasty Food has referred a new lead/customer to you. Please reach out to them:</p>
+     <table style="width:100%;font-size:14px;border-collapse:collapse">
+       <tr><td style="padding:6px 0;color:#888;width:120px">Name</td><td style="padding:6px 0;font-weight:bold">${p.leadName}</td></tr>
+       <tr><td style="padding:6px 0;color:#888;vertical-align:top">Address</td><td style="padding:6px 0">${p.address}</td></tr>
+       <tr><td style="padding:6px 0;color:#888">CP Number</td><td style="padding:6px 0">${p.cpNumber}</td></tr>
+       ${noteRow}
+     </table>
+     <p style="margin-top:12px;color:#666">You can also see this in the Referrals page of your dashboard.</p>`
+  );
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -370,18 +380,12 @@ export async function sendPoStatusEmail(p: {
     console.log(`[email] RESEND_API_KEY not set — PO ${p.poNumber} ${p.status} for ${p.to}`);
     return { sent: false, reason: 'RESEND_API_KEY not configured' };
   }
-  const html = `
-    <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#333;line-height:1.55">
-      <div style="background:#0b9444;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
-        <strong style="font-size:16px">Tasty Food Manufacturing Inc.</strong>
-        <div style="font-size:11px;opacity:.9">Purchase Order Update</div>
-      </div>
-      <div style="border:1px solid #eee;border-top:none;padding:22px;border-radius:0 0 8px 8px">
-        <h2 style="margin:0 0 8px">${s.emoji} Purchase order ${s.label}</h2>
-        <p>Hi ${p.buyerName}, your purchase order <strong>${p.poNumber}</strong> (${peso(p.total)}) ${s.msg}</p>
-        <p style="color:#888;font-size:13px">Supplier: ${p.sellerName}</p>
-      </div>
-    </div>`;
+  const html = emailShell(
+    'Purchase Order Update',
+    `<h2 style="margin:0 0 8px">${s.emoji} Purchase order ${s.label}</h2>
+     <p>Hi ${p.buyerName}, your purchase order <strong>${p.poNumber}</strong> (${peso(p.total)}) ${s.msg}</p>
+     <p style="color:#888;font-size:13px">Supplier: ${p.sellerName}</p>`
+  );
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -419,24 +423,18 @@ export async function sendPoCancelledEmail(p: {
   const proofNote = p.hasProof
     ? `<p style="margin-top:12px">A <strong>proof of reimbursement</strong> has been attached to this order — you can view it on the purchase order in your dashboard.</p>`
     : '';
-  const html = `
-    <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#333;line-height:1.55">
-      <div style="background:#0b9444;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
-        <strong style="font-size:16px">Tasty Food Manufacturing Inc.</strong>
-        <div style="font-size:11px;opacity:.9">Purchase Order Update</div>
-      </div>
-      <div style="border:1px solid #eee;border-top:none;padding:22px;border-radius:0 0 8px 8px">
-        <h2 style="margin:0 0 8px;color:#c0392b;font-size:18px">❌ Purchase order cancelled</h2>
-        <p>Hi ${p.buyerName}, your purchase order <strong>${p.poNumber}</strong> (${peso(p.total)}) has been cancelled.</p>
-        <div style="margin:14px 0;border-left:4px solid #c0392b;background:#fdf3f2;padding:12px 14px">
-          <div style="font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.04em">Reason</div>
-          <div style="margin-top:4px">${p.reason}</div>
-        </div>
-        ${proofNote}
-        <p style="color:#888;font-size:13px;margin-top:14px">Supplier: ${p.sellerName}</p>
-        <p style="color:#888;font-size:13px">If you have any questions about this cancellation, please contact us.</p>
-      </div>
-    </div>`;
+  const html = emailShell(
+    'Purchase Order Update',
+    `<h2 style="margin:0 0 8px;color:#c0392b;font-size:18px">❌ Purchase order cancelled</h2>
+     <p>Hi ${p.buyerName}, your purchase order <strong>${p.poNumber}</strong> (${peso(p.total)}) has been cancelled.</p>
+     <div style="margin:14px 0;border-left:4px solid #c0392b;background:#fdf3f2;padding:12px 14px">
+       <div style="font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.04em">Reason</div>
+       <div style="margin-top:4px">${p.reason}</div>
+     </div>
+     ${proofNote}
+     <p style="color:#888;font-size:13px;margin-top:14px">Supplier: ${p.sellerName}</p>
+     <p style="color:#888;font-size:13px">If you have any questions about this cancellation, please contact us.</p>`
+  );
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -472,20 +470,14 @@ export async function sendManaApprovedEmail(p: {
     typeof p.newBalance === 'number'
       ? `<p style="color:#888;font-size:13px">New Mana balance: <strong>${peso(p.newBalance)}</strong> (${p.newBalance.toLocaleString()} ✨)</p>`
       : '';
-  const html = `
-    <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#333;line-height:1.55">
-      <div style="background:#0b9444;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
-        <strong style="font-size:16px">Tasty Food Manufacturing Inc.</strong>
-        <div style="font-size:11px;opacity:.9">Mana Wallet</div>
-      </div>
-      <div style="border:1px solid #eee;border-top:none;padding:22px;border-radius:0 0 8px 8px">
-        <h2 style="margin:0 0 8px">✨ Mana purchase approved</h2>
-        <p>Hi ${p.orgName}, your purchase of <strong>${peso(p.amount)}</strong> worth of Mana
-        (${p.amount.toLocaleString()} ✨) has been approved and credited to your wallet.</p>
-        ${balanceLine}
-        <p>You can now use it to pay for purchase orders.</p>
-      </div>
-    </div>`;
+  const html = emailShell(
+    'Mana Wallet',
+    `<h2 style="margin:0 0 8px">✨ Mana purchase approved</h2>
+     <p>Hi ${p.orgName}, your purchase of <strong>${peso(p.amount)}</strong> worth of Mana
+     (${p.amount.toLocaleString()} ✨) has been approved and credited to your wallet.</p>
+     ${balanceLine}
+     <p>You can now use it to pay for purchase orders.</p>`
+  );
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -518,22 +510,16 @@ export async function sendResellerActivatedEmail(p: {
     console.log(`[email] RESEND_API_KEY not set — reseller activated for ${p.to}`);
     return { sent: false, reason: 'RESEND_API_KEY not configured' };
   }
-  const html = `
-    <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#333;line-height:1.55">
-      <div style="background:#0b9444;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
-        <strong style="font-size:16px">Tasty Food Manufacturing Inc.</strong>
-        <div style="font-size:11px;opacity:.9">Distribution Network</div>
-      </div>
-      <div style="border:1px solid #eee;border-top:none;padding:22px;border-radius:0 0 8px 8px">
-        <h2 style="margin:0 0 8px">✅ A Reseller has been activated</h2>
-        <p>Hi ${p.uplineName}, a Reseller in your network is now active:</p>
-        <table style="border-collapse:collapse;margin:10px 0;font-size:14px">
-          <tr><td style="padding:4px 12px 4px 0;color:#888">Reseller</td><td style="padding:4px 0"><strong>${p.resellerName}</strong></td></tr>
-          <tr><td style="padding:4px 12px 4px 0;color:#888">Territory</td><td style="padding:4px 0">${p.territory}</td></tr>
-        </table>
-        <p style="color:#888;font-size:13px">They can now transact within the distribution network.</p>
-      </div>
-    </div>`;
+  const html = emailShell(
+    'Distribution Network',
+    `<h2 style="margin:0 0 8px">✅ A Reseller has been activated</h2>
+     <p>Hi ${p.uplineName}, a Reseller in your network is now active:</p>
+     <table style="border-collapse:collapse;margin:10px 0;font-size:14px">
+       <tr><td style="padding:4px 12px 4px 0;color:#888">Reseller</td><td style="padding:4px 0"><strong>${p.resellerName}</strong></td></tr>
+       <tr><td style="padding:4px 12px 4px 0;color:#888">Territory</td><td style="padding:4px 0">${p.territory}</td></tr>
+     </table>
+     <p style="color:#888;font-size:13px">They can now transact within the distribution network.</p>`
+  );
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -596,19 +582,13 @@ export function buildNetworkChangeEmail(p: {
     : `Please stop transacting with them as an official ${tier} of Tasty Food Manufacturing Inc. effective immediately. For any questions, please contact us.`;
   const accent = onboarded ? '#0b9444' : '#c0392b';
 
-  const html = `
-    <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#333;line-height:1.55">
-      <div style="background:#0b9444;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
-        <strong style="font-size:16px">Tasty Food Manufacturing Inc.</strong>
-        <div style="font-size:11px;opacity:.9">Distribution Network</div>
-      </div>
-      <div style="border:1px solid #eee;border-top:none;padding:22px;border-radius:0 0 8px 8px">
-        <h2 style="margin:0 0 8px;color:${accent};font-size:18px">${heading}</h2>
-        <p>${lead}</p>
-        <table style="border-collapse:collapse;margin:10px 0;font-size:14px">${rows}</table>
-        <p style="color:#888;font-size:13px">${footer}</p>
-      </div>
-    </div>`;
+  const html = emailShell(
+    'Distribution Network',
+    `<h2 style="margin:0 0 8px;color:${accent};font-size:18px">${heading}</h2>
+     <p>${lead}</p>
+     <table style="border-collapse:collapse;margin:10px 0;font-size:14px">${rows}</table>
+     <p style="color:#888;font-size:13px">${footer}</p>`
+  );
 
   const subject = onboarded
     ? `New ${tier} onboarded: ${p.orgName}`
@@ -687,22 +667,16 @@ export async function sendWebinarConfirmationEmail(p: {
        <p style="color:#999;font-size:12px;word-break:break-all">Or paste this link into your browser: ${p.zoomLink}</p>`
     : `<p style="color:#666">We will email you the Zoom link before the session starts.</p>`;
 
-  const html = `
-    <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#333;line-height:1.55">
-      <div style="background:#0b9444;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
-        <strong style="font-size:16px">Tasty Food Manufacturing Inc.</strong>
-        <div style="font-size:11px;opacity:.9">Distributor Orientation</div>
-      </div>
-      <div style="border:1px solid #eee;border-top:none;padding:22px;border-radius:0 0 8px 8px">
-        <h2 style="margin:0 0 8px;color:#0b9444;font-size:18px">You're registered! 🎉</h2>
-        <p>Hi ${p.name}, thank you for your interest in becoming a Tasty Food distributor.
-        Your slot for <strong>${p.title}</strong> is reserved.</p>
-        ${details ? `<table style="border-collapse:collapse;margin:10px 0;font-size:14px">${details}</table>` : ''}
-        ${button}
-        <p style="color:#888;font-size:13px">Please join a few minutes early. If you have questions,
-        simply reply to this email.</p>
-      </div>
-    </div>`;
+  const html = emailShell(
+    'Distributor Orientation',
+    `<h2 style="margin:0 0 8px;color:#0b9444;font-size:18px">You're registered! 🎉</h2>
+     <p>Hi ${p.name}, thank you for your interest in becoming a Tasty Food distributor.
+     Your slot for <strong>${p.title}</strong> is reserved.</p>
+     ${details ? `<table style="border-collapse:collapse;margin:10px 0;font-size:14px">${details}</table>` : ''}
+     ${button}
+     <p style="color:#888;font-size:13px">Please join a few minutes early. If you have questions,
+     simply reply to this email.</p>`
+  );
 
   try {
     const res = await fetch('https://api.resend.com/emails', {
@@ -737,21 +711,16 @@ export async function sendStockRequestEmail(p: {
   const rows = p.items
     .map((i) => `<tr><td style="padding:4px 8px">${i.name}</td><td style="padding:4px 8px;color:#888">${i.sku}</td><td style="padding:4px 8px;text-align:right;font-weight:bold">${i.quantity}</td></tr>`)
     .join('');
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
-      <div style="background:#0b9444;color:#fff;padding:14px 18px;border-radius:8px 8px 0 0">
-        <strong style="font-size:16px">Tasty Food Manufacturing Inc.</strong>
-      </div>
-      <div style="border:1px solid #eee;border-top:none;padding:18px;border-radius:0 0 8px 8px">
-        <h2 style="margin:0 0 8px">Production Stock Request — ${p.poNumber}</h2>
-        <p>Please produce / prepare the following quantities:</p>
-        <table style="width:100%;border-collapse:collapse;font-size:14px">
-          <thead><tr style="background:#f4f4f4"><th style="padding:6px 8px;text-align:left">Product</th><th style="padding:6px 8px;text-align:left">SKU</th><th style="padding:6px 8px;text-align:right">Qty</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-        ${p.note ? `<p style="margin-top:12px"><b>Note:</b> ${p.note}</p>` : ''}
-      </div>
-    </div>`;
+  const html = emailShell(
+    'Production Stock Request',
+    `<h2 style="margin:0 0 8px;color:${BRAND_GREEN};font-size:18px">Production Stock Request — ${p.poNumber}</h2>
+     <p>Please produce / prepare the following quantities:</p>
+     <table style="width:100%;border-collapse:collapse;font-size:14px">
+       <thead><tr style="background:#f4f4f4"><th style="padding:6px 8px;text-align:left">Product</th><th style="padding:6px 8px;text-align:left">SKU</th><th style="padding:6px 8px;text-align:right">Qty</th></tr></thead>
+       <tbody>${rows}</tbody>
+     </table>
+     ${p.note ? `<p style="margin-top:12px"><b>Note:</b> ${p.note}</p>` : ''}`
+  );
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -790,24 +759,19 @@ export async function sendPoSubmittedEmail(p: PoSubmittedEmail): Promise<{ sent:
   }
 
   const dist = DIST_LABEL[p.distributionType] ?? p.distributionType;
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
-      <div style="background:#e8521d;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
-        <strong style="font-size:18px">Juan Palaman · Tasty Food Mfg. Inc.</strong>
-      </div>
-      <div style="border:1px solid #eee;border-top:none;padding:20px;border-radius:0 0 8px 8px">
-        <h2 style="margin:0 0 8px">New Purchase Order to approve</h2>
-        <p>Hi ${p.supplierName}, you have received a new purchase order awaiting your approval.</p>
-        <table style="width:100%;border-collapse:collapse;font-size:14px">
-          <tr><td style="padding:6px 0;color:#666">PO Number</td><td style="text-align:right"><strong>${p.poNumber}</strong></td></tr>
-          <tr><td style="padding:6px 0;color:#666">From</td><td style="text-align:right">${p.buyerName}</td></tr>
-          <tr><td style="padding:6px 0;color:#666">Distribution</td><td style="text-align:right">${dist}</td></tr>
-          <tr><td style="padding:6px 0;color:#666">Items</td><td style="text-align:right">${p.itemsCount}</td></tr>
-          <tr><td style="padding:6px 0;color:#666">Total</td><td style="text-align:right"><strong>${peso(p.total)}</strong></td></tr>
-        </table>
-        <p style="margin-top:16px">Log in to the distribution portal to review and approve this order.</p>
-      </div>
-    </div>`;
+  const html = emailShell(
+    'Purchase Order',
+    `<h2 style="margin:0 0 8px;color:${BRAND_GREEN};font-size:18px">New Purchase Order to approve</h2>
+     <p>Hi ${p.supplierName}, you have received a new purchase order awaiting your approval.</p>
+     <table style="width:100%;border-collapse:collapse;font-size:14px">
+       <tr><td style="padding:6px 0;color:#666">PO Number</td><td style="text-align:right"><strong>${p.poNumber}</strong></td></tr>
+       <tr><td style="padding:6px 0;color:#666">From</td><td style="text-align:right">${p.buyerName}</td></tr>
+       <tr><td style="padding:6px 0;color:#666">Distribution</td><td style="text-align:right">${dist}</td></tr>
+       <tr><td style="padding:6px 0;color:#666">Items</td><td style="text-align:right">${p.itemsCount}</td></tr>
+       <tr><td style="padding:6px 0;color:#666">Total</td><td style="text-align:right"><strong>${peso(p.total)}</strong></td></tr>
+     </table>
+     <p style="margin-top:16px">Log in to the distribution portal to review and approve this order.</p>`
+  );
 
   try {
     const res = await fetch('https://api.resend.com/emails', {
