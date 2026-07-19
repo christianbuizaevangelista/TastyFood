@@ -8,6 +8,13 @@ import { num, date } from '../lib/format';
 // Distributors raise concerns with the Principal; the Principal reads and
 // answers them here. Same route, different view depending on who you are.
 
+interface Attachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
+}
 interface Ticket {
   id: string;
   senderName: string;
@@ -19,6 +26,7 @@ interface Ticket {
   reply: string | null;
   repliedAt: string | null;
   createdAt: string;
+  attachments?: Attachment[];
   org?: { id: string; name: string; type: string };
 }
 interface Identity {
@@ -33,6 +41,37 @@ const STATUS_STYLE: Record<string, string> = {
   OPEN: 'bg-amber-100 text-amber-700',
   RESOLVED: 'bg-green-100 text-green-700',
 };
+
+// Opens an attachment in a new tab. Fetched through the API so the request
+// carries the session cookie; a plain link would be unauthenticated.
+async function viewAttachment(ticketId: string, att: Attachment, onError: (m: string) => void) {
+  try {
+    const res = await api.get(`/support/${ticketId}/attachments/${att.id}`, { responseType: 'blob' });
+    const url = URL.createObjectURL(res.data);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) {
+    onError(apiError(e));
+  }
+}
+
+function AttachmentList({ ticketId, items, onError }: { ticketId: string; items?: Attachment[]; onError: (m: string) => void }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {items.map((a) => (
+        <button
+          key={a.id}
+          onClick={() => viewAttachment(ticketId, a, onError)}
+          className="flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:border-brand-400 hover:text-brand-700"
+          title={`${(a.size / 1024).toFixed(0)} KB`}
+        >
+          📎 <span className="max-w-[160px] truncate">{a.fileName}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 // A field the sender can see but not change — it comes from their account.
 function LockedField({ label, value, hint }: { label: string; value: string | null; hint?: string }) {
@@ -56,25 +95,73 @@ export default function Concerns() {
 // Distributor view
 // ---------------------------------------------------------------------------
 function RaiseConcern() {
-  const { data, loading, error, refetch } = useFetch<{ identity: Identity; tickets: Ticket[] }>('/support/me');
+  const { data, loading, error, refetch } = useFetch<{
+    identity: Identity; tickets: Ticket[]; maxAttachments: number;
+  }>('/support/me');
   const [message, setMessage] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  const max = data?.maxAttachments ?? 10;
+
+  function pickFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    setErr(null);
+    const tooBig = picked.find((f) => f.size > 3 * 1024 * 1024);
+    if (tooBig) { setErr(`"${tooBig.name}" is too large (max 3 MB each).`); return; }
+    const next = [...files, ...picked];
+    if (next.length > max) { setErr(`You can attach up to ${max} files.`); return; }
+    setFiles(next);
+  }
+
+  function fileToDataUrl(f: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result as string);
+      r.onerror = () => reject(new Error(`Could not read ${f.name}`));
+      r.readAsDataURL(f);
+    });
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
     setBusy(true);
+    setProgress('');
     try {
-      await api.post('/support', { message: message.trim() });
+      // The ticket is created first, then each file is uploaded on its own
+      // request — ten files in one payload would blow past the body limit.
+      const { data: ticket } = await api.post('/support', { message: message.trim() });
+      const failed: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        setProgress(`Uploading attachment ${i + 1} of ${files.length}…`);
+        try {
+          await api.post(`/support/${ticket.id}/attachments`, {
+            fileName: files[i].name,
+            mimeType: files[i].type || 'application/octet-stream',
+            dataBase64: await fileToDataUrl(files[i]),
+          });
+        } catch {
+          failed.push(files[i].name);
+        }
+      }
+      // Notify once the files are in, so the email reports the right count.
+      setProgress('Sending…');
+      await api.post(`/support/${ticket.id}/notify`);
+
       setMessage('');
+      setFiles([]);
       setSent(true);
+      if (failed.length) setErr(`Sent, but these files did not upload: ${failed.join(', ')}`);
       refetch();
     } catch (e2) {
       setErr(apiError(e2));
     } finally {
       setBusy(false);
+      setProgress('');
     }
   }
 
@@ -117,9 +204,42 @@ function RaiseConcern() {
             />
           </div>
 
+          <div>
+            <label className="label">Attachments (optional)</label>
+            <label className={`btn-secondary inline-block cursor-pointer text-xs ${busy || files.length >= max ? 'pointer-events-none opacity-50' : ''}`}>
+              + Add files
+              <input
+                type="file" multiple className="hidden"
+                accept="image/png,image/jpeg,image/webp,application/pdf"
+                onChange={pickFiles} disabled={busy || files.length >= max}
+              />
+            </label>
+            <span className="ml-2 text-xs text-slate-400">
+              {files.length}/{max} · images or PDF, max 3 MB each
+            </span>
+            {files.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {files.map((f, i) => (
+                  <li key={`${f.name}-${i}`} className="flex items-center justify-between rounded border border-slate-100 px-2 py-1 text-xs">
+                    <span className="truncate text-slate-600">📎 {f.name}</span>
+                    <button
+                      type="button" className="ml-2 shrink-0 text-red-600 hover:underline"
+                      onClick={() => setFiles((prev) => prev.filter((_, idx) => idx !== i))} disabled={busy}
+                    >
+                      remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
           <button type="submit" className="btn-primary w-full" disabled={busy || !message.trim()}>
-            {busy ? 'Sending…' : 'Send to Tasty Food'}
+            {busy ? progress || 'Sending…' : 'Send to Tasty Food'}
           </button>
+          <p className="text-center text-xs text-slate-400">
+            This goes only to the owner of Tasty Food Manufacturing Inc. No other distributor or reseller can see it.
+          </p>
         </form>
 
         <div className="card">
@@ -135,6 +255,7 @@ function RaiseConcern() {
                     <span className="text-xs text-slate-400">{date(t.createdAt)}</span>
                   </div>
                   <p className="whitespace-pre-wrap text-sm text-slate-700">{t.message}</p>
+                  <AttachmentList ticketId={t.id} items={t.attachments} onError={setErr} />
                   {t.reply && (
                     <div className="mt-2 rounded-lg border-l-4 border-brand-500 bg-brand-50 px-3 py-2">
                       <div className="text-xs font-semibold text-brand-700">Tasty Food replied</div>
@@ -228,6 +349,7 @@ function PrincipalInbox() {
               </div>
 
               <p className="whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">{t.message}</p>
+              <AttachmentList ticketId={t.id} items={t.attachments} onError={setErr} />
 
               <div className="mt-3">
                 <label className="label">Your reply</label>

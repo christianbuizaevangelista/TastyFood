@@ -705,6 +705,7 @@ export async function sendSupportTicketEmail(p: {
   phone?: string | null;
   email: string;
   message: string;
+  attachmentCount?: number;
 }): Promise<{ sent: boolean; reason?: string }> {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM || 'Tasty Food <onboarding@resend.dev>';
@@ -713,6 +714,10 @@ export async function sendSupportTicketEmail(p: {
     console.log(`[email] RESEND_API_KEY not set — concern from ${p.senderName} for ${p.to}`);
     return { sent: false, reason: 'RESEND_API_KEY not configured' };
   }
+  const n = p.attachmentCount ?? 0;
+  const files = n > 0
+    ? `<p style="margin-top:12px;color:#666">📎 ${n} attachment${n === 1 ? '' : 's'} — view them on the Concerns page.</p>`
+    : '';
   const row = (label: string, value: string) =>
     `<tr><td style="padding:4px 12px 4px 0;color:#888;white-space:nowrap">${label}</td><td style="padding:4px 0">${value}</td></tr>`;
   const html = emailShell(
@@ -726,6 +731,7 @@ export async function sendSupportTicketEmail(p: {
        ${row('Email', p.email)}
      </table>
      <div style="margin:14px 0;border-left:4px solid ${BRAND_GREEN};background:#f4faf6;padding:12px 14px;white-space:pre-wrap">${p.message}</div>
+     ${files}
      <p style="color:#888;font-size:13px">Open the Concerns page in your dashboard to reply.</p>`
   );
   try {

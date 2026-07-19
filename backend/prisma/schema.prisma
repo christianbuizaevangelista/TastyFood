@@ -984,6 +984,25 @@ model SupportTicket {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  attachments SupportAttachment[]
+
   @@index([orgId])
+  @@index([createdById])
   @@index([status])
+}
+
+// Photos or documents backing a concern (screenshots, delivery receipts…).
+// Capped per ticket in the route; uploaded one request at a time so a batch
+// never exceeds the JSON body limit.
+model SupportAttachment {
+  id        String   @id @default(cuid())
+  ticketId  String
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  fileName  String
+  mimeType  String
+  size      Int
+  data      String   // base64-encoded file content
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
 }

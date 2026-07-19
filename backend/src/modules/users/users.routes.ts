@@ -33,7 +33,8 @@ export const PERMISSIONS = [
   'accounting',
   'marketing',
   'hr',
-  'support',
+  // NOTE: concerns are deliberately NOT permission-gated. They are readable by
+  // the Principal owner alone, so there is no permission to hand out.
 ] as const;
 
 function inviteLink(token: string) {
