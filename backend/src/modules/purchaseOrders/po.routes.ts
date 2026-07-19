@@ -830,6 +830,30 @@ poRouter.get(
   })
 );
 
+// PATCH /purchase-orders/:id/cancel-reason — record (or correct) why an order
+// was cancelled. Exists mainly for orders cancelled before the reason field did.
+// Deliberately does NOT email the buyer: the cancellation itself may be weeks
+// old, and a fresh "your order was cancelled" notice would only confuse them.
+poRouter.patch(
+  '/:id/cancel-reason',
+  asyncHandler(async (req, res) => {
+    const po = await loadScopedPo(req, req.params.id);
+    const isSeller = req.auth!.orgId === po.sellerOrgId;
+    if (!isSeller && req.auth!.role !== 'PRINCIPAL') {
+      throw forbidden('Only the supplier can record the cancellation reason');
+    }
+    if (po.status !== 'CANCELLED') throw badRequest('This order is not cancelled');
+    const { reason } = z.object({ reason: z.string().min(1).max(1000) }).parse(req.body);
+    const updated = await prisma.purchaseOrder.update({
+      where: { id: po.id },
+      // Stamp cancelledAt too if the original cancellation predates that field.
+      data: { cancelReason: reason, cancelledAt: po.cancelledAt ?? new Date() },
+      select: { id: true, cancelReason: true, cancelledAt: true },
+    });
+    res.json(updated);
+  })
+);
+
 // Upload an attachment. Proof of payment comes from the buyer; proof of
 // reimbursement comes from whoever refunded them (the supplier or the
 // Principal) and only makes sense once the order is cancelled — including

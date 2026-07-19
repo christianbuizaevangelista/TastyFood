@@ -428,6 +428,11 @@ function PoDetails({ po, onClose }: { po: PO; onClose: () => void }) {
   );
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Cancellation reason — editable by the supplier, mainly so orders cancelled
+  // before the reason field existed can still be documented.
+  const [reason, setReason] = useState(po.cancelReason ?? '');
+  const [savedReason, setSavedReason] = useState(po.cancelReason ?? '');
+  const [savingReason, setSavingReason] = useState(false);
   const [tracking, setTracking] = useState(po.trackingLink ?? '');
   const [savedTracking, setSavedTracking] = useState(po.trackingLink ?? '');
   const [savingTracking, setSavingTracking] = useState(false);
@@ -442,6 +447,19 @@ function PoDetails({ po, onClose }: { po: PO; onClose: () => void }) {
       setErr(apiError(e));
     } finally {
       setSavingTracking(false);
+    }
+  }
+
+  async function saveReason() {
+    setErr(null);
+    setSavingReason(true);
+    try {
+      await api.patch(`/purchase-orders/${po.id}/cancel-reason`, { reason: reason.trim() });
+      setSavedReason(reason.trim());
+    } catch (e2) {
+      setErr(apiError(e2));
+    } finally {
+      setSavingReason(false);
     }
   }
 
@@ -585,10 +603,37 @@ function PoDetails({ po, onClose }: { po: PO; onClose: () => void }) {
           </div>
         )}
 
-        {po.status === 'CANCELLED' && po.cancelReason && (
+        {po.status === 'CANCELLED' && (savedReason || canAttachReimbursement) && (
           <div className="mb-4 rounded-lg border-l-4 border-red-400 bg-red-50 px-3 py-2 text-sm text-red-800">
             <div className="font-semibold">Cancelled{po.cancelledAt ? ` · ${date(po.cancelledAt)}` : ''}</div>
-            <div className="mt-0.5">{po.cancelReason}</div>
+            {canAttachReimbursement ? (
+              <div className="mt-1">
+                <textarea
+                  className="input w-full text-sm"
+                  rows={2}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="Reason for cancelling (e.g. out of stock, buyer requested)…"
+                />
+                <div className="mt-1 flex items-center gap-2">
+                  <button
+                    className="btn-ghost text-xs"
+                    disabled={savingReason || !reason.trim() || reason.trim() === savedReason}
+                    onClick={saveReason}
+                  >
+                    {savingReason ? 'Saving…' : savedReason ? 'Update reason' : 'Save reason'}
+                  </button>
+                  {reason.trim() === savedReason && savedReason && (
+                    <span className="text-xs text-red-500">Saved</span>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-red-500">
+                  The buyer is not re-emailed for a reason added after the fact.
+                </p>
+              </div>
+            ) : (
+              <div className="mt-0.5">{savedReason}</div>
+            )}
           </div>
         )}
 
