@@ -420,6 +420,9 @@ function PoDetails({ po, onClose }: { po: PO; onClose: () => void }) {
   const { user } = useAuth();
   const isBuyer = po.buyerOrg.id === user!.org.id;
   const isSeller = po.sellerOrg.id === user!.org.id; // Principal for drop-ship
+  // Whoever refunded the buyer attaches the proof, and only once the order is
+  // cancelled — including orders cancelled before this existed.
+  const canAttachReimbursement = (isSeller || user!.role === 'PRINCIPAL') && po.status === 'CANCELLED';
   const attachments = useFetch<{ attachments: Attachment[] }>(
     `/purchase-orders/${po.id}/attachments`
   );
@@ -442,7 +445,7 @@ function PoDetails({ po, onClose }: { po: PO; onClose: () => void }) {
     }
   }
 
-  function onFile(e: ChangeEvent<HTMLInputElement>) {
+  function onFile(e: ChangeEvent<HTMLInputElement>, kind: 'PROOF_OF_PAYMENT' | 'REIMBURSEMENT_PROOF' = 'PROOF_OF_PAYMENT') {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
@@ -459,6 +462,7 @@ function PoDetails({ po, onClose }: { po: PO; onClose: () => void }) {
           fileName: file.name,
           mimeType: file.type || 'application/octet-stream',
           dataBase64: reader.result as string,
+          kind,
         });
         attachments.refetch();
       } catch (e2) {
@@ -488,7 +492,7 @@ function PoDetails({ po, onClose }: { po: PO; onClose: () => void }) {
   }
 
   async function deleteAttachment(attId: string) {
-    if (!confirm('Delete this proof of payment?')) return;
+    if (!confirm('Delete this attachment?')) return;
     setErr(null);
     try {
       await api.delete(`/purchase-orders/${po.id}/attachments/${attId}`);
@@ -615,16 +619,27 @@ function PoDetails({ po, onClose }: { po: PO; onClose: () => void }) {
           <div className="text-lg font-bold text-brand-600">Total: {peso(po.total)}</div>
         </div>
 
-        {/* Proof of payment */}
+        {/* Attachments: the buyer's proof of payment, and — once cancelled —
+            the supplier's proof that the buyer was reimbursed. */}
         <div className="mt-6 border-t border-slate-100 pt-4">
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-700">Proof of Payment</h3>
-            {isBuyer && (
-              <label className={`btn-ghost cursor-pointer text-xs ${uploading ? 'opacity-50' : ''}`}>
-                {uploading ? 'Uploading…' : '+ Upload'}
-                <input type="file" accept="image/png,image/jpeg,image/webp,application/pdf" className="hidden" onChange={onFile} disabled={uploading} />
-              </label>
-            )}
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-slate-700">Attachments</h3>
+            <div className="flex items-center gap-2">
+              {isBuyer && (
+                <label className={`btn-ghost cursor-pointer text-xs ${uploading ? 'opacity-50' : ''}`}>
+                  {uploading ? 'Uploading…' : '+ Proof of payment'}
+                  <input type="file" accept="image/png,image/jpeg,image/webp,application/pdf" className="hidden"
+                    onChange={(e) => onFile(e, 'PROOF_OF_PAYMENT')} disabled={uploading} />
+                </label>
+              )}
+              {canAttachReimbursement && (
+                <label className={`btn-ghost cursor-pointer text-xs text-amber-700 ${uploading ? 'opacity-50' : ''}`}>
+                  {uploading ? 'Uploading…' : '+ Proof of reimbursement'}
+                  <input type="file" accept="image/png,image/jpeg,image/webp,application/pdf" className="hidden"
+                    onChange={(e) => onFile(e, 'REIMBURSEMENT_PROOF')} disabled={uploading} />
+                </label>
+              )}
+            </div>
           </div>
           {err && <div className="mb-2"><Alert>{err}</Alert></div>}
 
@@ -649,7 +664,7 @@ function PoDetails({ po, onClose }: { po: PO; onClose: () => void }) {
                     <button onClick={() => viewAttachment(a.id)} className="text-xs font-semibold text-brand-600 hover:underline">
                       View
                     </button>
-                    {isBuyer && (
+                    {(a.kind === 'REIMBURSEMENT_PROOF' ? canAttachReimbursement : isBuyer) && (
                       <button onClick={() => deleteAttachment(a.id)} className="text-xs font-semibold text-red-600 hover:underline">
                         Delete
                       </button>
@@ -660,7 +675,11 @@ function PoDetails({ po, onClose }: { po: PO; onClose: () => void }) {
             </ul>
           ) : (
             <p className="text-sm text-slate-400">
-              {isBuyer ? 'No proof of payment uploaded yet. Upload an image or PDF.' : 'The customer has not uploaded proof of payment yet.'}
+              {canAttachReimbursement
+                ? 'Nothing attached yet. You can attach a proof of reimbursement for this cancelled order.'
+                : isBuyer
+                ? 'No proof of payment uploaded yet. Upload an image or PDF.'
+                : 'The customer has not uploaded proof of payment yet.'}
             </p>
           )}
         </div>

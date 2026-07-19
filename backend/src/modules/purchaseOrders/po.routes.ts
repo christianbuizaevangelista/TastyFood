@@ -803,6 +803,9 @@ const uploadSchema = z.object({
   fileName: z.string().min(1).max(200),
   mimeType: z.string().min(1),
   dataBase64: z.string().min(1),
+  // PROOF_OF_PAYMENT is the buyer proving they paid; REIMBURSEMENT_PROOF is the
+  // supplier proving they paid the buyer back after a cancellation.
+  kind: z.enum(['PROOF_OF_PAYMENT', 'REIMBURSEMENT_PROOF']).default('PROOF_OF_PAYMENT'),
 });
 
 // List attachment metadata — visible to anyone in the PO's chain (buyer + supplier).
@@ -827,13 +830,27 @@ poRouter.get(
   })
 );
 
-// Upload proof of payment — only the buyer (customer) may attach.
+// Upload an attachment. Proof of payment comes from the buyer; proof of
+// reimbursement comes from whoever refunded them (the supplier or the
+// Principal) and only makes sense once the order is cancelled — including
+// orders cancelled before this feature existed.
 poRouter.post(
   '/:id/attachments',
   asyncHandler(async (req, res) => {
     const po = await loadScopedPo(req, req.params.id);
-    requireBuyer(req, po);
     const body = uploadSchema.parse(req.body);
+
+    if (body.kind === 'REIMBURSEMENT_PROOF') {
+      const isSeller = req.auth!.orgId === po.sellerOrgId;
+      if (!isSeller && req.auth!.role !== 'PRINCIPAL') {
+        throw forbidden('Only the supplier can attach a proof of reimbursement');
+      }
+      if (po.status !== 'CANCELLED') {
+        throw badRequest('A proof of reimbursement can only be attached to a cancelled order');
+      }
+    } else {
+      requireBuyer(req, po);
+    }
 
     if (!ALLOWED_TYPES.includes(body.mimeType.toLowerCase())) {
       throw badRequest('Only images (PNG/JPG/WEBP) or PDF files are allowed');
@@ -845,6 +862,7 @@ poRouter.post(
     const att = await prisma.poAttachment.create({
       data: {
         poId: po.id,
+        kind: body.kind,
         fileName: body.fileName,
         mimeType: body.mimeType,
         size,
@@ -852,18 +870,26 @@ poRouter.post(
         uploadedById: req.auth!.sub,
       },
     });
-    res.status(201).json({ id: att.id, fileName: att.fileName, mimeType: att.mimeType, size: att.size });
+    res.status(201).json({ id: att.id, kind: att.kind, fileName: att.fileName, mimeType: att.mimeType, size: att.size });
   })
 );
 
-// Delete a proof-of-payment attachment — only the buyer (who uploaded it) may remove it.
+// Delete an attachment — each side may remove only what it is responsible for:
+// the buyer its proof of payment, the supplier its proof of reimbursement.
 poRouter.delete(
   '/:id/attachments/:attId',
   asyncHandler(async (req, res) => {
     const po = await loadScopedPo(req, req.params.id);
-    requireBuyer(req, po);
     const att = await prisma.poAttachment.findFirst({ where: { id: req.params.attId, poId: po.id } });
     if (!att) throw notFound('Attachment not found');
+    if (att.kind === 'REIMBURSEMENT_PROOF') {
+      const isSeller = req.auth!.orgId === po.sellerOrgId;
+      if (!isSeller && req.auth!.role !== 'PRINCIPAL') {
+        throw forbidden('Only the supplier can remove a proof of reimbursement');
+      }
+    } else {
+      requireBuyer(req, po);
+    }
     await prisma.poAttachment.delete({ where: { id: att.id } });
     res.json({ ok: true });
   })
