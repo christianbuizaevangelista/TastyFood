@@ -26,6 +26,7 @@ import { accountingRouter } from './modules/accounting/accounting.routes';
 import { marketingRouter } from './modules/marketing/marketing.routes';
 import { hrRouter } from './modules/hr/hr.routes';
 import { publicRouter } from './modules/public/public.routes';
+import { supportRouter } from './modules/support/support.routes';
 
 export function createApp() {
   const app = express();
@@ -89,6 +90,7 @@ export function createApp() {
   app.use('/api/accounting', accountingRouter);
   app.use('/api/marketing', marketingRouter);
   app.use('/api/hr', hrRouter);
+  app.use('/api/support', supportRouter);
 
   app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
   app.use(errorHandler);

@@ -35,6 +35,10 @@ export const NAV: NavItem[] = [
   // Finance & Accounting lives in its own separate workspace (not the DMS sidebar).
   { to: '/finance', label: 'Finance & Accounting', icon: '📒', roles: ['PRINCIPAL'], perm: 'accounting', workspace: 'finance' },
   { to: '/materials', label: 'Downloadables', icon: '📥', roles: UP, perm: 'materials' },
+  // Distributors raise concerns here; the Principal reads and answers them.
+  // Intentionally ungated: anyone with a login should be able to report a
+  // problem. What you see on the page depends on your role, not a permission.
+  { to: '/concerns', label: 'Concerns & Issues', icon: '📣', roles: ALL },
   { to: '/users', label: 'Users & Roles', icon: '🔑', roles: ['PRINCIPAL'], ownerOnly: true },
   { to: '/account', label: 'Account Settings', icon: '👤', roles: ALL },
 ];

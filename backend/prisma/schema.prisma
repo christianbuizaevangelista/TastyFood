@@ -184,6 +184,7 @@ model Organization {
   referralsReceived Referral[] @relation("ReferralTo")
   journalEntries    JournalEntry[] @relation("EntryDistributor")
   distributorPayments DistributorPayment[]
+  supportTickets    SupportTicket[] @relation("OrgSupportTickets")
 
   @@index([parentId])
   @@index([type])
@@ -215,6 +216,7 @@ model User {
   requestedApprovals Approval[] @relation("ApprovalRequester")
   decidedApprovals   Approval[] @relation("ApprovalDecider")
   uploadedAttachments PoAttachment[] @relation("AttachmentUploader")
+  supportTickets      SupportTicket[] @relation("SupportTicketAuthor")
 
   @@index([orgId])
 }
@@ -953,4 +955,35 @@ model Lead {
   @@index([funnelId])
   @@index([status])
   @@index([campaignId])
+}
+
+// ---------------------------------------------------------------------------
+// Support — a distributor raises a concern with the Principal. The sender's
+// identity is taken from their session and their account record, never from the
+// submitted form, so it cannot be altered.
+// ---------------------------------------------------------------------------
+model SupportTicket {
+  id          String   @id @default(cuid())
+  orgId       String
+  org         Organization @relation("OrgSupportTickets", fields: [orgId], references: [id])
+  createdById String
+  createdBy   User     @relation("SupportTicketAuthor", fields: [createdById], references: [id])
+
+  // Snapshot of who raised it, captured at submission so the record stays
+  // accurate even if the account's details are edited afterwards.
+  senderName  String
+  position    String
+  phone       String?
+  email       String
+
+  message     String
+  status      String   @default("OPEN") // OPEN | RESOLVED
+  // The Principal's response, shown back to the sender.
+  reply       String?
+  repliedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([status])
 }

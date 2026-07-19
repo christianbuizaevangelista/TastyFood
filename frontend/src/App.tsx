@@ -35,6 +35,7 @@ import FacebookAds from './pages/FacebookAds';
 import LeadFunnels from './pages/LeadFunnels';
 import LandingPage from './pages/LandingPage';
 import Join from './pages/Join';
+import Concerns from './pages/Concerns';
 import { HrDashboard, Employees, Attendance, Leave, Payroll } from './pages/Hr';
 import Users from './pages/Users';
 
@@ -116,6 +117,7 @@ export default function App() {
       <Route path="/hr/leave" element={<HrProtected><Leave /></HrProtected>} />
       <Route path="/hr/payroll" element={<HrProtected><Payroll /></HrProtected>} />
       <Route path="/users" element={<Protected path="/users"><Users /></Protected>} />
+      <Route path="/concerns" element={<Protected path="/concerns"><Concerns /></Protected>} />
       <Route path="/account" element={<Protected path="/account"><Account /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -695,6 +695,95 @@ export async function sendWebinarConfirmationEmail(p: {
   }
 }
 
+// Tells the Principal a distributor has raised a concern, with everything
+// needed to call them back without opening the app.
+export async function sendSupportTicketEmail(p: {
+  to: string;
+  senderName: string;
+  orgName: string;
+  position: string;
+  phone?: string | null;
+  email: string;
+  message: string;
+}): Promise<{ sent: boolean; reason?: string }> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM || 'Tasty Food <onboarding@resend.dev>';
+  if (!p.to) return { sent: false, reason: 'no recipient email' };
+  if (!apiKey) {
+    console.log(`[email] RESEND_API_KEY not set — concern from ${p.senderName} for ${p.to}`);
+    return { sent: false, reason: 'RESEND_API_KEY not configured' };
+  }
+  const row = (label: string, value: string) =>
+    `<tr><td style="padding:4px 12px 4px 0;color:#888;white-space:nowrap">${label}</td><td style="padding:4px 0">${value}</td></tr>`;
+  const html = emailShell(
+    'Distributor Concern',
+    `<h2 style="margin:0 0 8px;color:${BRAND_GREEN};font-size:18px">📣 New concern raised</h2>
+     <table style="border-collapse:collapse;margin:10px 0;font-size:14px">
+       ${row('From', `<strong>${p.senderName}</strong>`)}
+       ${row('Account', p.orgName)}
+       ${row('Position', p.position)}
+       ${p.phone ? row('CP number', p.phone) : ''}
+       ${row('Email', p.email)}
+     </table>
+     <div style="margin:14px 0;border-left:4px solid ${BRAND_GREEN};background:#f4faf6;padding:12px 14px;white-space:pre-wrap">${p.message}</div>
+     <p style="color:#888;font-size:13px">Open the Concerns page in your dashboard to reply.</p>`
+  );
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: [p.to], subject: `Concern from ${p.orgName}`, html }),
+    });
+    if (!res.ok) {
+      console.error('[email] Resend error', res.status, await res.text());
+      return { sent: false, reason: `Resend responded ${res.status}` };
+    }
+    return { sent: true };
+  } catch (err: any) {
+    console.error('[email] support ticket send failed', err?.message);
+    return { sent: false, reason: err?.message ?? 'send failed' };
+  }
+}
+
+// Tells the distributor the Principal has answered their concern.
+export async function sendSupportReplyEmail(p: {
+  to: string;
+  senderName: string;
+  message: string;
+  reply: string;
+}): Promise<{ sent: boolean; reason?: string }> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM || 'Tasty Food <onboarding@resend.dev>';
+  if (!p.to) return { sent: false, reason: 'no recipient email' };
+  if (!apiKey) {
+    console.log(`[email] RESEND_API_KEY not set — support reply for ${p.to}`);
+    return { sent: false, reason: 'RESEND_API_KEY not configured' };
+  }
+  const html = emailShell(
+    'Distributor Concern',
+    `<h2 style="margin:0 0 8px;color:${BRAND_GREEN};font-size:18px">✅ We've replied to your concern</h2>
+     <p>Hi ${p.senderName}, here is our response:</p>
+     <div style="margin:14px 0;border-left:4px solid ${BRAND_GREEN};background:#f4faf6;padding:12px 14px;white-space:pre-wrap">${p.reply}</div>
+     <p style="color:#888;font-size:13px;margin-top:16px">Your original message:</p>
+     <div style="border-left:3px solid #ddd;padding:8px 12px;color:#666;font-size:13px;white-space:pre-wrap">${p.message}</div>`
+  );
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: [p.to], subject: 'Re: your concern — Tasty Food Manufacturing Inc.', html }),
+    });
+    if (!res.ok) {
+      console.error('[email] Resend error', res.status, await res.text());
+      return { sent: false, reason: `Resend responded ${res.status}` };
+    }
+    return { sent: true };
+  } catch (err: any) {
+    console.error('[email] support reply send failed', err?.message);
+    return { sent: false, reason: err?.message ?? 'send failed' };
+  }
+}
+
 export async function sendStockRequestEmail(p: {
   to: string;
   poNumber: string;
