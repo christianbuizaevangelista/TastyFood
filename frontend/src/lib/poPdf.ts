@@ -50,19 +50,18 @@ function loadImage(src: string): Promise<HTMLImageElement | null> {
   });
 }
 
-// Draws the Tasty Food letterhead (green band + logo in a white box, upper right).
+// Draws the Tasty Food letterhead: green band with the logo upper right. The
+// logo now carries its own white outline, so no white chip is drawn behind it.
 async function drawTastyHeader(doc: jsPDF, W: number, M: number, subtitle: string) {
   doc.setFillColor(...TF_GREEN);
   doc.rect(0, 0, W, 64, 'F');
   const logo = await loadImage('/tasty-food-splash.png');
   if (logo) {
-    const bs = 54; // white chip behind the logo
-    const bx = W - M - bs;
-    const by = 5;
-    const pad = 11; // thicker white stroke/frame around the logo
-    doc.setFillColor(255, 255, 255);
-    doc.roundedRect(bx, by, bs, bs, 9, 9, 'F');
-    doc.addImage(logo, 'PNG', bx + pad, by + pad, bs - pad * 2, bs - pad * 2);
+    // Keep the artwork's 708x336 proportions — squeezing it into a square box
+    // would distort the wordmark.
+    const lw = 108;
+    const lh = Math.round((lw * 336) / 708);
+    doc.addImage(logo, 'PNG', W - M - lw, (64 - lh) / 2, lw, lh);
   }
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');

@@ -29,9 +29,12 @@ function emailShell(subtitle: string, body: string): string {
       <div style="background:${BRAND_GREEN};color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse">
           <tr>
-            <td style="padding-right:12px;vertical-align:middle">
-              <img src="${logo}" alt="Tasty Food" width="40" height="40"
-                   style="display:block;width:40px;height:40px;border-radius:6px;background:#fff" />
+            <td style="padding-right:14px;vertical-align:middle">
+              <!-- The logo carries its own white outline, so it sits directly on
+                   the green with no plate behind it. Width/height are set inline
+                   because Outlook ignores CSS sizing on images. -->
+              <img src="${logo}" alt="Tasty Food" width="112" height="53"
+                   style="display:block;width:112px;height:53px;border:0;outline:none;text-decoration:none" />
             </td>
             <td style="vertical-align:middle">
               <div style="font-size:16px;font-weight:bold;color:#fff">Tasty Food Manufacturing Inc.</div>

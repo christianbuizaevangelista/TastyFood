@@ -25,9 +25,7 @@ export default function FinanceLayout({ children }: { children: ReactNode }) {
       {/* Finance sidebar — deliberately dark to feel like a separate system. */}
       <aside className="flex w-64 flex-col bg-slate-900 text-white">
         <div className="flex items-center gap-3 px-5 py-5">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white p-1">
-            <img src="/tasty-food-splash.png" alt="Tasty Food" className="h-full w-full object-contain" />
-          </div>
+          <img src="/tasty-food-splash.png" alt="Tasty Food" className="h-9 w-auto shrink-0 object-contain" />
           <div className="leading-tight">
             <div className="text-sm font-bold">Tasty Food Manufacturing Inc.</div>
           </div>

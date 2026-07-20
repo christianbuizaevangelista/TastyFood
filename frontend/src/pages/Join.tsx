@@ -242,12 +242,7 @@ export default function Join() {
       {/* Sticky bar keeps the CTA reachable from anywhere on a long page */}
       <div className="sticky top-0 z-30 border-b border-slate-100 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-500 p-1">
-              <img src="/tasty-food-splash.png" alt="Tasty Food" className="h-full w-full object-contain" />
-            </div>
-            <span className="text-sm font-bold text-slate-800">Tasty Food</span>
-          </div>
+          <img src="/tasty-food-splash.png" alt="Tasty Food" className="h-8 w-auto object-contain" />
           <a href="#register" className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-brand-700">
             Reserve free slot
           </a>
@@ -648,12 +643,8 @@ export default function Join() {
         <div className="mx-auto max-w-5xl">
           <div className="grid gap-8 sm:grid-cols-2">
             <div>
-              <div className="flex items-center gap-2">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white p-1">
-                  <img src="/tasty-food-splash.png" alt="Tasty Food" className="h-full w-full object-contain" />
-                </div>
-                <span className="font-bold text-white">Tasty Food Manufacturing Inc.</span>
-              </div>
+              <img src="/tasty-food-splash.png" alt="Tasty Food" className="h-11 w-auto object-contain" />
+              <div className="mt-3 font-bold text-white">Tasty Food Manufacturing Inc.</div>
               <p className="mt-3 text-sm italic text-slate-400">"Where Quality Meets Taste"</p>
               <p className="mt-3 max-w-sm text-sm text-slate-400">
                 A Philippine food manufacturer specializing in peanut butter, spreads, and foodservice products.
