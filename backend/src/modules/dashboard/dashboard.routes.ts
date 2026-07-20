@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
-import { computeOrgKpis, parseWindow } from '../kpi/kpi.service';
+import { computeOrgKpis, parseWindow, targetForRange } from '../kpi/kpi.service';
 import { excludeArchived } from '../../lib/scope';
 
 export const dashboardRouter = Router();
@@ -115,7 +115,10 @@ dashboardRouter.get(
     const ownRevenue = round2(
       sales.filter((s) => s.sellerOrgId === myOrgId).reduce((s, x) => s + x.total, 0)
     );
-    const monthlyTarget = round2(myOrg?.salesTarget ?? 0);
+    // This month may carry its own target (seasonality); otherwise the org default.
+    const monthlyTarget = round2(
+      (await targetForRange([myOrgId], from, to, new Map([[myOrgId, myOrg?.salesTarget ?? 0]]))).get(myOrgId) ?? 0
+    );
     const targetAttainmentPct = monthlyTarget > 0 ? round2((ownRevenue / monthlyTarget) * 100) : null;
     const inventoryValue = round2(
       ownInventory.reduce((s, r) => s + r.quantity * r.product.srp, 0)

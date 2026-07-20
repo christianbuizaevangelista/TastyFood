@@ -30,6 +30,47 @@ function round2(n: number): number {
 // "revenue" here is its SELL-IN: the value of goods it purchased from its
 // supplier (i.e. sales where it is the buyer), which is what the Principal
 // tracks per account.
+/** Every calendar month touched by [from, to], as {year, month} (month 1-12). */
+export function monthsInRange(from: Date, to: Date): { year: number; month: number }[] {
+  const out: { year: number; month: number }[] = [];
+  const cur = new Date(from.getFullYear(), from.getMonth(), 1);
+  const end = new Date(to.getFullYear(), to.getMonth(), 1);
+  while (cur <= end && out.length < 60) {
+    out.push({ year: cur.getFullYear(), month: cur.getMonth() + 1 });
+    cur.setMonth(cur.getMonth() + 1);
+  }
+  return out;
+}
+
+/**
+ * The target an org is measured against over a window. Demand is seasonal, so a
+ * month can carry its own figure; months without one fall back to the org's
+ * default. A window spanning several months sums them, so a quarterly or annual
+ * view is measured against the sum of its months rather than a single month.
+ */
+export async function targetForRange(
+  orgIds: string[],
+  from: Date,
+  to: Date,
+  defaults: Map<string, number>
+): Promise<Map<string, number>> {
+  const months = monthsInRange(from, to);
+  const rows = await prisma.monthlyTarget.findMany({
+    where: { orgId: { in: orgIds }, OR: months.map((m) => ({ year: m.year, month: m.month })) },
+    select: { orgId: true, year: true, month: true, target: true },
+  });
+  const byKey = new Map(rows.map((r) => [`${r.orgId}|${r.year}|${r.month}`, r.target]));
+  const out = new Map<string, number>();
+  for (const orgId of orgIds) {
+    let sum = 0;
+    for (const m of months) {
+      sum += byKey.get(`${orgId}|${m.year}|${m.month}`) ?? defaults.get(orgId) ?? 0;
+    }
+    out.set(orgId, round2(sum));
+  }
+  return out;
+}
+
 export async function computeOrgKpis(
   orgIds: string[],
   from: Date,
@@ -129,6 +170,16 @@ export async function computeOrgKpis(
   }
   const invAgg = new Map<string, number>();
   for (const i of inventory) invAgg.set(i.orgId, (invAgg.get(i.orgId) ?? 0) + i.quantity);
+
+  // Apply the per-month targets over this window, falling back to each org's
+  // default for any month that has none.
+  const targets = await targetForRange(
+    orgIds,
+    from,
+    to,
+    new Map(orgs.map((o) => [o.id, o.salesTarget]))
+  );
+  for (const k of byOrg.values()) k.target = targets.get(k.orgId) ?? k.target;
 
   for (const k of byOrg.values()) {
     k.revenue = round2(k.revenue);

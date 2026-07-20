@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useFetch } from '../lib/useFetch';
 import { useAuth } from '../auth/AuthContext';
 import { PageHeader, Spinner, Alert } from '../components/ui';
+import { MonthlyTargets } from '../components/MonthlyTargets';
 import { peso, num, pct } from '../lib/format';
 
 // Tiers each role may view — only those strictly below them in the hierarchy.
@@ -102,6 +103,9 @@ function Leaderboard({
 
 export default function Kpi() {
   const { user } = useAuth();
+  // Only the Principal sets targets; everyone else just reads them.
+  const isPrincipal = user?.role === 'PRINCIPAL';
+  const [targetsFor, setTargetsFor] = useState<string | null>(null);
   const tierOptions = TIERS_BELOW[user!.role] ?? [];
   const [tier, setTier] = useState('');
   const { data, loading, error } = useFetch<LeaderboardResponse>(
@@ -182,7 +186,19 @@ export default function Kpi() {
                     <td className="td font-medium">{k.orgName}</td>
                     <td className="td text-xs">{orgLabel(k)}</td>
                     <td className="td text-right font-semibold">{peso(k.revenue)}</td>
-                    <td className="td text-right text-slate-400">{peso(k.target)}</td>
+                    <td className="td text-right">
+                      {isPrincipal ? (
+                        <button
+                          className="text-slate-500 hover:text-brand-600 hover:underline"
+                          title="Set this account's target per month"
+                          onClick={() => setTargetsFor(k.orgId)}
+                        >
+                          {peso(k.target)} ✎
+                        </button>
+                      ) : (
+                        <span className="text-slate-400">{peso(k.target)}</span>
+                      )}
+                    </td>
                     <td className="td text-right">
                       <span className={k.target > 0 ? attainClass(k.targetAttainmentPct) : 'text-slate-400'}>
                         {k.target > 0 ? pct(k.targetAttainmentPct) : '—'}
@@ -204,6 +220,8 @@ export default function Kpi() {
           </div>
         </>
       )}
+
+      {targetsFor && <MonthlyTargets orgId={targetsFor} onClose={() => setTargetsFor(null)} />}
     </div>
   );
 }

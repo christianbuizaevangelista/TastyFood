@@ -12,6 +12,8 @@ interface TNode {
   level: Level;
   vacant: boolean;
   assignedOrg: { id: string; name: string; type: string; status: string } | null;
+  // Held by an account the viewer isn't entitled to see (the holder is withheld).
+  occupiedByOther?: boolean;
   children: TNode[];
 }
 interface StructureData {
@@ -79,7 +81,9 @@ function Node({
 
   // Org-parent for a new member here: Province -> Principal; City/Barangay -> the org in the parent territory.
   const orgParentId = node.level === 'PROVINCE' ? actions.principalOrgId : parentOrgId;
-  const canAddMember = assignable && !node.assignedOrg && !!orgParentId;
+  // Never offer to fill a territory that is already taken — including one whose
+  // holder is withheld from this viewer, which the server would reject anyway.
+  const canAddMember = assignable && !node.assignedOrg && !node.occupiedByOther && !!orgParentId;
 
   return (
     <div>
@@ -108,6 +112,13 @@ function Node({
               {actions.canManage && (
                 <button onClick={() => actions.onRemoveMember(node)} className="rounded px-1 font-semibold text-red-600 hover:bg-red-50" title="Remove member">Remove</button>
               )}
+            </span>
+          ) : node.occupiedByOther ? (
+            // Taken by an account outside this viewer's chain — shown as covered
+            // so the map stays accurate, without naming who holds it.
+            <span className="flex items-center gap-1 text-xs text-slate-500">
+              <span className="badge bg-slate-100 text-slate-500">COVERED</span>
+              <span className="italic">not in your network</span>
             </span>
           ) : (
             <span className="flex items-center gap-1">

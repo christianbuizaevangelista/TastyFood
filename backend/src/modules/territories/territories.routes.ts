@@ -69,6 +69,16 @@ territoriesRouter.get(
   asyncHandler(async (req, res) => {
     const { visible, rootIds } = await getVisible(req);
 
+    // A distributor sees every territory beneath its own — a Provincial holding
+    // a province sees all its cities and barangays. It must NOT learn WHO holds
+    // them: an account outside its own chain is none of its business, and the
+    // Principal may place accounts anywhere. So an occupied territory outside
+    // the viewer's scope is reported as taken, without naming the holder.
+    const scope = new Set(req.scopeOrgIds ?? []);
+    const isPrincipal = req.auth!.role === 'PRINCIPAL';
+    const holderFor = (t: TerritoryRow) =>
+      !t.assignedOrg || isPrincipal || scope.has(t.assignedOrg.id) ? t.assignedOrg : null;
+
     const nodes = new Map(
       visible.map((t) => [
         t.id,
@@ -77,7 +87,9 @@ territoriesRouter.get(
           name: t.name,
           level: t.level,
           vacant: isVacant(t),
-          assignedOrg: t.assignedOrg,
+          assignedOrg: holderFor(t),
+          // Occupied, but by someone the viewer isn't entitled to see.
+          occupiedByOther: !!t.assignedOrgId && !holderFor(t),
           children: [] as any[],
         },
       ])

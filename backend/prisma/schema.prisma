@@ -185,6 +185,7 @@ model Organization {
   journalEntries    JournalEntry[] @relation("EntryDistributor")
   distributorPayments DistributorPayment[]
   supportTickets    SupportTicket[] @relation("OrgSupportTickets")
+  monthlyTargets    MonthlyTarget[] @relation("OrgMonthlyTargets")
 
   @@index([parentId])
   @@index([type])
@@ -1005,4 +1006,29 @@ model SupportAttachment {
   createdAt DateTime @default(now())
 
   @@index([ticketId])
+}
+
+// ---------------------------------------------------------------------------
+// A sales target for one org in one calendar month. Demand is seasonal, so a
+// single monthly figure on the Organization can't be fair all year. When a row
+// exists for a month it wins; otherwise the org's default salesTarget applies.
+//
+// Storing the target per month also makes past performance defensible: once a
+// month has been set it stays set, so recomputing an old month later can't
+// silently pick up a target that was only agreed afterwards.
+// ---------------------------------------------------------------------------
+model MonthlyTarget {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Organization @relation("OrgMonthlyTargets", fields: [orgId], references: [id], onDelete: Cascade)
+  year      Int
+  month     Int      // 1-12
+  target    Float    @default(0)
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, year, month])
+  @@index([orgId])
+  @@index([year, month])
 }
