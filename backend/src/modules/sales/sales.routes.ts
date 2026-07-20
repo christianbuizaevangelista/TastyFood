@@ -35,7 +35,21 @@ async function loadScopedSale(req: any, id: string) {
   return sale;
 }
 
-function receiptOf(sale: any, viewerOrgId?: string) {
+// An upline can see THAT its downline sold, and for how much, but not WHO the
+// end customer was — that list belongs to the account that built it. Only the
+// seller itself and the Principal see the name. A buyerOrg is a distributor in
+// the network, not a private customer, so it is never masked.
+function customerLabel(sale: any, req: any): string {
+  if (sale.buyerOrg?.name) return sale.buyerOrg.name;
+  if (!sale.customerName) return 'Walk-in';
+  const maySee = req.auth.role === 'PRINCIPAL' || sale.sellerOrgId === req.auth.orgId;
+  return maySee ? sale.customerName : 'Customer';
+}
+
+// `req` is omitted when the receipt is being sent to the customer themselves —
+// they are entitled to their own name. When a viewer is reading it in the app,
+// the same masking as the list applies.
+function receiptOf(sale: any, viewerOrgId?: string, req?: any) {
   const hasRefundable = sale.items.some((i: any) => i.quantity - (i.refundedQuantity ?? 0) > 0);
   return {
     id: sale.id,
@@ -43,7 +57,9 @@ function receiptOf(sale: any, viewerOrgId?: string) {
     seller: sale.sellerOrg,
     channel: sale.channel,
     distributionType: sale.distributionType,
-    customerName: sale.buyerOrg?.name ?? sale.customerName ?? 'Walk-in',
+    customerName: req
+      ? customerLabel(sale, req)
+      : sale.buyerOrg?.name ?? sale.customerName ?? 'Walk-in',
     // Auto-fill from the customer's application: contact email, else admin login email.
     customerEmail: sale.buyerOrg?.contactEmail ?? sale.buyerOrg?.users?.[0]?.email ?? null,
     discountRate: sale.discountRate,
@@ -198,7 +214,13 @@ salesRouter.get(
       const soldQty = s.items.reduce((q, i) => q + i.quantity, 0);
       const refundedQty = s.items.reduce((q, i) => q + (i.refundedQuantity ?? 0), 0);
       const refundStatus = refundedQty <= 0 ? 'NONE' : refundedQty >= soldQty ? 'FULL' : 'PARTIAL';
-      return { ...s, grossProfit: round2(s.total - sellerCost(s)), refundedQty, refundStatus };
+      return {
+        ...s,
+        customerName: customerLabel(s, req),
+        grossProfit: round2(s.total - sellerCost(s)),
+        refundedQty,
+        refundStatus,
+      };
     });
 
     res.json({ summary, sales: salesWithProfit });
@@ -244,7 +266,7 @@ salesRouter.get(
             sale.createdAt.toISOString(),
             csv(sale.sellerOrg.name),
             sale.sellerOrg.type,
-            csv(sale.buyerOrg?.name ?? sale.customerName ?? 'Walk-in'),
+            csv(customerLabel(sale, req)),
             sale.channel,
             sale.distributionType,
             item.product.sku,
@@ -269,7 +291,7 @@ salesRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
     const sale = await loadScopedSale(req, req.params.id);
-    res.json(receiptOf(sale, req.auth!.orgId));
+    res.json(receiptOf(sale, req.auth!.orgId, req));
   })
 );
 

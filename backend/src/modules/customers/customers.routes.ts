@@ -10,15 +10,21 @@ export const customersRouter = Router();
 customersRouter.use(authenticate);
 customersRouter.use(requirePermission('customers'));
 
-// GET /customers — end-customers within the requester's chain (a Reseller sees
-// its own; upstream tiers see all customers served by their downline).
+// A customer list is the account's own commercial asset — names, numbers and
+// addresses it built itself. An upline supervises performance, not the identity
+// of the people its downline sells to, so each account sees only what it
+// encoded. The Principal, who owns the whole network, still sees everything.
+function customerScope(req: any): string[] {
+  return req.auth.role === 'PRINCIPAL' ? req.scopeOrgIds! : [req.auth.orgId];
+}
+
+// GET /customers — the requester's own end-customers (Principal: all).
 customersRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    const scope = req.scopeOrgIds!;
     const search = (req.query.search as string | undefined)?.trim().toLowerCase();
     const customers = await prisma.customer.findMany({
-      where: { ownerOrgId: { in: scope } },
+      where: { ownerOrgId: { in: customerScope(req) } },
       include: {
         ownerOrg: { select: { id: true, name: true, type: true } },
         sales: { select: { total: true } },
@@ -59,7 +65,7 @@ customersRouter.get(
       },
     });
     if (!c) throw notFound('Customer not found');
-    if (!req.scopeOrgIds!.includes(c.ownerOrgId)) throw forbidden('Customer is outside your network');
+    if (!customerScope(req).includes(c.ownerOrgId)) throw forbidden('Customer is outside your network');
     const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
     res.json({
       id: c.id,

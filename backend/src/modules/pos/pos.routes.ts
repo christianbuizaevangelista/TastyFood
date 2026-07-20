@@ -64,12 +64,14 @@ posRouter.post(
       buyerType = buyer.type;
     }
 
-    // Optional saved end-customer (the customer database). The seller may sell to
-    // any end-customer within their chain (their own, or a downline's).
+    // Optional saved end-customer. Only the account's OWN customers may be
+    // picked — a customer list belongs to whoever built it, and the picker no
+    // longer offers anyone else's. The Principal may use any.
     let customerName = body.customerName;
     if (body.customerId) {
       const cust = await prisma.customer.findUnique({ where: { id: body.customerId } });
-      if (!cust || !req.scopeOrgIds!.includes(cust.ownerOrgId)) {
+      const allowed = req.auth!.role === 'PRINCIPAL' ? req.scopeOrgIds! : [req.auth!.orgId];
+      if (!cust || !allowed.includes(cust.ownerOrgId)) {
         throw badRequest('Customer is outside your network');
       }
       customerName = customerName || cust.name;
