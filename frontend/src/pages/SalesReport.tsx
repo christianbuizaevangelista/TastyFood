@@ -12,6 +12,7 @@ const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 const PIE_TYPE = ['#0ea5e9', '#8b5cf6'];
 const PIE_CHANNEL = ['#e8521d', '#f0a202'];
 import { DATE_PRESETS, DatePreset, presetRange } from '../lib/datePresets';
+import { exportSaleReceiptPdf } from '../lib/poPdf';
 
 interface Sale {
   id: string;
@@ -69,6 +70,22 @@ export default function SalesReport() {
   const [exportErr, setExportErr] = useState<string | null>(null);
   const [tab, setTab] = useState<SalesTab>('sales');
   const [detailId, setDetailId] = useState<string | null>(null);
+  // Exporting one transaction straight from its row, without opening it first.
+  const [exportingId, setExportingId] = useState<string | null>(null);
+
+  async function exportOne(saleId: string) {
+    setExportingId(saleId);
+    setExportErr(null);
+    try {
+      // The row only carries summary fields; the receipt needs the line items.
+      const { data: sale } = await api.get(`/sales/${saleId}`);
+      await exportSaleReceiptPdf(sale);
+    } catch (e) {
+      setExportErr(apiError(e));
+    } finally {
+      setExportingId(null);
+    }
+  }
 
   // Daily Revenue vs Gross Income (margin) series for the line chart.
   const daily = useMemo(() => {
@@ -288,6 +305,14 @@ export default function SalesReport() {
                         <td className="td">
                           <button onClick={() => setDetailId(s.id)} className="font-mono text-xs font-semibold text-brand-600 hover:underline">
                             {s.number}
+                          </button>
+                          <button
+                            onClick={() => exportOne(s.id)}
+                            disabled={exportingId === s.id}
+                            title="Export this transaction as PDF"
+                            className="ml-1.5 text-xs text-slate-400 hover:text-brand-600 disabled:opacity-50"
+                          >
+                            {exportingId === s.id ? '…' : '⤓'}
                           </button>
                           {s.refundStatus && s.refundStatus !== 'NONE' && (
                             <span
@@ -587,7 +612,12 @@ function SaleDetail({ saleId, onClose, onRefunded }: { saleId: string; onClose: 
                 </button>
               </div>
             </div>
-            <button className="btn-ghost mt-4 w-full" onClick={onClose}>Close</button>
+            <div className="mt-4 flex gap-2">
+              <button className="btn-secondary flex-1" onClick={() => exportSaleReceiptPdf(data)}>
+                Export PDF
+              </button>
+              <button className="btn-ghost flex-1" onClick={onClose}>Close</button>
+            </div>
           </>
         )}
       </div>
