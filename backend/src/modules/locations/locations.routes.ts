@@ -11,6 +11,13 @@ locationsRouter.use(authenticate);
 const BASE = 'https://psgc.gitlab.io/api';
 let provincesCache: { code: string; name: string }[] | null = null;
 
+// PSGC classifies Metro Manila as a REGION (NCR), not a province, so its 17
+// cities never appear under /provinces and can't be picked. Since the address
+// picker asks for a province, NCR is offered as one under the name people
+// actually use, and its cities are read from the region endpoint instead.
+const NCR_CODE = '130000000';
+const NCR_NAME = 'Metro Manila';
+
 async function psgc(path: string): Promise<any[]> {
   const r = await fetch(`${BASE}${path}`);
   if (!r.ok) throw new HttpError(502, `Location service error (${r.status})`);
@@ -27,7 +34,10 @@ function simplify(arr: any[]): { code: string; name: string }[] {
 locationsRouter.get(
   '/provinces',
   asyncHandler(async (_req, res) => {
-    if (!provincesCache) provincesCache = simplify(await psgc('/provinces/'));
+    if (!provincesCache) {
+      const provinces = await psgc('/provinces/');
+      provincesCache = simplify([...provinces, { code: NCR_CODE, name: NCR_NAME }]);
+    }
     res.json({ provinces: provincesCache });
   })
 );
@@ -36,8 +46,11 @@ locationsRouter.get(
 locationsRouter.get(
   '/provinces/:code/cities',
   asyncHandler(async (req, res) => {
-    const cities = simplify(await psgc(`/provinces/${req.params.code}/cities-municipalities/`));
-    res.json({ cities });
+    const path =
+      req.params.code === NCR_CODE
+        ? `/regions/${NCR_CODE}/cities-municipalities/`
+        : `/provinces/${req.params.code}/cities-municipalities/`;
+    res.json({ cities: simplify(await psgc(path)) });
   })
 );
 
