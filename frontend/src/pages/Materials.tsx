@@ -12,8 +12,19 @@ interface Material {
   fileName: string;
   mimeType: string;
   size: number;
+  applicationTier?: string | null;
   createdAt: string;
 }
+
+// Tagging a file as the application form for a tier is what makes it the one
+// an online applicant is sent after applying.
+const TIERS = ['PROVINCIAL', 'CITY', 'RESELLER', 'RETAIL'] as const;
+const TIER_LABEL: Record<string, string> = {
+  PROVINCIAL: 'Provincial Distributor',
+  CITY: 'City Distributor',
+  RESELLER: 'Reseller',
+  RETAIL: 'Retail Distributor',
+};
 
 function fmtSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -46,6 +57,7 @@ export default function Materials() {
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [tier, setTier] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -63,15 +75,28 @@ export default function Materials() {
         fileName: file.name,
         mimeType: file.type || 'application/octet-stream',
         dataBase64: await fileToDataUrl(file),
+        applicationTier: tier || null,
       });
       setTitle('');
       setDescription('');
+      setTier('');
       setFile(null);
       refetch();
     } catch (e) {
       setErr(apiError(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Retag without re-uploading — the file itself is unchanged.
+  async function retag(m: Material, applicationTier: string) {
+    setErr(null);
+    try {
+      await api.patch(`/materials/${m.id}`, { applicationTier: applicationTier || null });
+      refetch();
+    } catch (e) {
+      setErr(apiError(e));
     }
   }
 
@@ -119,6 +144,16 @@ export default function Materials() {
             <input className="input mb-3" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. 2026 Price List" />
             <label className="label">Description (optional)</label>
             <textarea className="input mb-3" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
+            <label className="label">Official application form for</label>
+            <select className="input mb-1" value={tier} onChange={(e) => setTier(e.target.value)}>
+              <option value="">— not an application form —</option>
+              {TIERS.map((t) => (
+                <option key={t} value={t}>{TIER_LABEL[t]}</option>
+              ))}
+            </select>
+            <p className="mb-3 text-xs text-slate-400">
+              Tagged files are emailed automatically to anyone who applies online for that level.
+            </p>
             <label className="label">File (max 3 MB)</label>
             <input type="file" className="mb-3 text-xs" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
             {file && <div className="mb-3 text-xs text-green-600">✓ {file.name} ({fmtSize(file.size)})</div>}
@@ -144,6 +179,29 @@ export default function Materials() {
                     <div className="min-w-0">
                       <div className="truncate font-medium text-slate-800">{m.title}</div>
                       {m.description && <div className="truncate text-xs text-slate-500">{m.description}</div>}
+                      {isPrincipal ? (
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="text-xs text-slate-400">Application form for</span>
+                          <select
+                            className="input h-7 w-48 py-0 text-xs"
+                            value={m.applicationTier ?? ''}
+                            onChange={(e) => retag(m, e.target.value)}
+                          >
+                            <option value="">— none —</option>
+                            {TIERS.map((t) => (
+                              <option key={t} value={t}>{TIER_LABEL[t]}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        m.applicationTier && (
+                          <div className="mt-1">
+                            <span className="badge bg-brand-50 text-brand-700">
+                              Application form · {TIER_LABEL[m.applicationTier] ?? m.applicationTier}
+                            </span>
+                          </div>
+                        )
+                      )}
                       <div className="text-xs text-slate-400">
                         {m.fileName} · {fmtSize(m.size)} · {dateTime(m.createdAt)}
                       </div>

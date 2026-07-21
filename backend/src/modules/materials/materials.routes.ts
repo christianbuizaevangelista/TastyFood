@@ -77,6 +77,28 @@ materialsRouter.post(
   })
 );
 
+// PATCH /materials/:id — retag an existing file (Principal only). Uploading
+// again just to change the tag would mean re-sending a 3 MB form.
+materialsRouter.patch(
+  '/:id',
+  requireRole('PRINCIPAL'),
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.material.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw notFound('Material not found');
+    const { applicationTier } = z
+      .object({
+        applicationTier: z.enum(['PROVINCIAL', 'CITY', 'RESELLER', 'RETAIL']).nullable(),
+      })
+      .parse(req.body);
+    const material = await prisma.material.update({
+      where: { id: existing.id },
+      data: { applicationTier },
+      select: { id: true, title: true, fileName: true, size: true, applicationTier: true, createdAt: true },
+    });
+    res.json(material);
+  })
+);
+
 // DELETE /materials/:id — remove a material (Principal only).
 materialsRouter.delete(
   '/:id',
