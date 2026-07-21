@@ -893,3 +893,112 @@ export async function sendPoSubmittedEmail(p: PoSubmittedEmail): Promise<{ sent:
     return { sent: false, reason: err?.message ?? 'send failed' };
   }
 }
+
+// Automatic run-up reminders for a webinar registrant: two days out, the day
+// before, the morning of, and a nudge once the session has started. Each kind
+// carries the same joining details — someone who lost the first email should
+// never have to hunt for it.
+export type WebinarReminderKind = 'TWO_DAYS' | 'ONE_DAY' | 'TODAY' | 'STARTED';
+
+export async function sendWebinarReminderEmail(p: {
+  to: string;
+  name: string;
+  title: string;
+  kind: WebinarReminderKind;
+  scheduledAt?: Date | null;
+  zoomLink?: string | null;
+  zoomMeetingId?: string | null;
+  zoomPasscode?: string | null;
+}): Promise<{ sent: boolean; reason?: string }> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM || 'Tasty Food <onboarding@resend.dev>';
+  if (!p.to) return { sent: false, reason: 'no recipient email' };
+  if (!apiKey) {
+    console.log(`[email] RESEND_API_KEY not set — webinar ${p.kind} reminder for ${p.to}`);
+    return { sent: false, reason: 'RESEND_API_KEY not configured' };
+  }
+
+  const when = p.scheduledAt
+    ? new Date(p.scheduledAt).toLocaleString('en-PH', {
+        dateStyle: 'full',
+        timeStyle: 'short',
+        timeZone: 'Asia/Manila',
+      })
+    : null;
+  const time = p.scheduledAt
+    ? new Date(p.scheduledAt).toLocaleTimeString('en-PH', {
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZone: 'Asia/Manila',
+      })
+    : null;
+
+  const COPY: Record<WebinarReminderKind, { subject: string; heading: string; lead: string }> = {
+    TWO_DAYS: {
+      subject: `In 2 days: ${p.title}`,
+      heading: 'Your orientation is in 2 days',
+      lead: `this is a friendly reminder that your slot for <strong>${p.title}</strong> is coming up in two days.`,
+    },
+    ONE_DAY: {
+      subject: `Tomorrow: ${p.title}`,
+      heading: 'Your orientation is tomorrow',
+      lead: `your slot for <strong>${p.title}</strong> is tomorrow. Here are your joining details again.`,
+    },
+    TODAY: {
+      subject: `Today${time ? ` at ${time}` : ''}: ${p.title}`,
+      heading: 'Your orientation is today',
+      lead: `your slot for <strong>${p.title}</strong> is today${
+        time ? ` at <strong>${time}</strong>` : ''
+      }. Please join a few minutes early.`,
+    },
+    STARTED: {
+      subject: `We've started — join us now: ${p.title}`,
+      heading: "We've started — come on in",
+      lead: `<strong>${p.title}</strong> has just begun and we have kept your slot open.
+        Join now with the link below — you have not missed much.`,
+    },
+  };
+  const c = COPY[p.kind];
+
+  const row = (label: string, value: string) =>
+    `<tr><td style="padding:4px 12px 4px 0;color:#888;white-space:nowrap">${label}</td><td style="padding:4px 0">${value}</td></tr>`;
+
+  const details = [
+    when && p.kind !== 'STARTED' ? row('Date &amp; time', `<strong>${when}</strong> (Philippine time)`) : '',
+    p.zoomMeetingId ? row('Meeting ID', p.zoomMeetingId) : '',
+    p.zoomPasscode ? row('Passcode', p.zoomPasscode) : '',
+  ].join('');
+
+  const button = p.zoomLink
+    ? `<p style="text-align:center;margin:22px 0">
+         <a href="${p.zoomLink}" style="background:#0b9444;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:bold;display:inline-block">Join the Zoom orientation</a>
+       </p>
+       <p style="color:#999;font-size:12px;word-break:break-all">Or paste this link into your browser: ${p.zoomLink}</p>`
+    : `<p style="color:#666">We will email you the Zoom link before the session starts.</p>`;
+
+  const html = emailShell(
+    'Distributor Orientation',
+    `<h2 style="margin:0 0 8px;color:#0b9444;font-size:18px">${c.heading}</h2>
+     <p>Hi ${p.name}, ${c.lead}</p>
+     ${details ? `<table style="border-collapse:collapse;margin:10px 0;font-size:14px">${details}</table>` : ''}
+     ${button}
+     <p style="color:#888;font-size:13px">Can no longer make it? Just reply to this email and we will
+     move you to another schedule.</p>`
+  );
+
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: [p.to], subject: c.subject, html }),
+    });
+    if (!res.ok) {
+      console.error('[email] Resend error', res.status, await res.text());
+      return { sent: false, reason: `Resend responded ${res.status}` };
+    }
+    return { sent: true };
+  } catch (err: any) {
+    console.error('[email] webinar reminder send failed', err?.message);
+    return { sent: false, reason: err?.message ?? 'send failed' };
+  }
+}

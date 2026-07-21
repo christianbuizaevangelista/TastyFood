@@ -925,6 +925,12 @@ model WebinarRegistration {
   // Hashed (never raw) client IP, used only to rate-limit the public form.
   ipHash    String?
   attended  Boolean  @default(false)
+  // Timestamps of the automatic reminders already sent, so a cron that runs
+  // more than once in a window can never email the same person twice.
+  remind2dAt   DateTime?
+  remind1dAt   DateTime?
+  remindDayAt  DateTime?
+  remindLateAt DateTime?
   createdAt DateTime @default(now())
 
   // One sign-up per email per webinar; re-submitting updates the existing row.

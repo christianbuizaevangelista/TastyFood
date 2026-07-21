@@ -8,6 +8,9 @@
       "maxDuration": 30
     }
   },
+  "crons": [
+    { "path": "/api/cron/webinar-reminders", "schedule": "0 1 * * *" }
+  ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }

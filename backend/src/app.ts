@@ -27,6 +27,7 @@ import { marketingRouter } from './modules/marketing/marketing.routes';
 import { hrRouter } from './modules/hr/hr.routes';
 import { publicRouter } from './modules/public/public.routes';
 import { supportRouter } from './modules/support/support.routes';
+import { cronRouter } from './modules/cron/cron.routes';
 
 export function createApp() {
   const app = express();
@@ -69,6 +70,8 @@ export function createApp() {
 
   // Unauthenticated — backs the public recruitment landing page at /join.
   app.use('/api/public', publicRouter);
+  // Scheduler-invoked jobs; gated on CRON_SECRET, not on a user session.
+  app.use('/api/cron', cronRouter);
 
   app.use('/api/auth', authRouter);
   app.use('/api/products', productsRouter);

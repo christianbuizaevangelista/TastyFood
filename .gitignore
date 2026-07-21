@@ -27,3 +27,7 @@ coverage/
 
 # Vercel
 .vercel
+
+# Local credential backups — never commit.
+*.env.bak
+.env.*.bak
