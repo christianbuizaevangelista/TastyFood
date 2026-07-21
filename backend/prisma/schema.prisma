@@ -900,6 +900,7 @@ model Webinar {
   updatedAt     DateTime  @updatedAt
 
   registrations WebinarRegistration[]
+  sessions      WebinarSession[]
 
   @@index([isActive])
 }
@@ -918,6 +919,9 @@ model WebinarRegistration {
   message   String?
   // The Lead row created from this sign-up, if a funnel is configured.
   leadId    String?
+  // Which schedule they picked, when more than one is offered.
+  sessionId String?
+  session   WebinarSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   // Hashed (never raw) client IP, used only to rate-limit the public form.
   ipHash    String?
   attended  Boolean  @default(false)
@@ -1031,4 +1035,26 @@ model MonthlyTarget {
   @@unique([orgId, year, month])
   @@index([orgId])
   @@index([year, month])
+}
+
+// One offered schedule for a webinar. The orientation is run several times so
+// people can pick a slot that suits them; each run can carry its own Zoom
+// details, falling back to the webinar's when it is a recurring meeting link.
+model WebinarSession {
+  id            String   @id @default(cuid())
+  webinarId     String
+  webinar       Webinar  @relation(fields: [webinarId], references: [id], onDelete: Cascade)
+  scheduledAt   DateTime
+  zoomLink      String?
+  zoomMeetingId String?
+  zoomPasscode  String?
+  // A past or filled slot can be closed without deleting its registrations.
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  registrations WebinarRegistration[]
+
+  @@index([webinarId])
+  @@index([scheduledAt])
 }

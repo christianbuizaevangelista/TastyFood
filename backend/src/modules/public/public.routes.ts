@@ -23,15 +23,34 @@ function hashIp(req: Request): string | null {
   return crypto.createHash('sha256').update(ip).digest('hex').slice(0, 32);
 }
 
-// GET /public/webinar — the live webinar's public details.
-// Deliberately omits the Zoom link: that is only returned after registering.
+// A slot stays offered for a short while after it starts so nobody loses their
+// pick to the clock while they are filling the form in.
+const GRACE_MS = 30 * 60 * 1000;
+function openSessionFilter() {
+  return { isActive: true, scheduledAt: { gte: new Date(Date.now() - GRACE_MS) } };
+}
+
+// GET /public/webinar — the live webinar's public details and the schedules on
+// offer. Deliberately omits every Zoom link: those are only returned after
+// registering, and only for the slot the person actually picked.
 publicRouter.get(
   '/webinar',
   asyncHandler(async (_req, res) => {
     const w = await prisma.webinar.findFirst({
       where: { isActive: true },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, title: true, headline: true, description: true, scheduledAt: true },
+      select: {
+        id: true,
+        title: true,
+        headline: true,
+        description: true,
+        scheduledAt: true,
+        sessions: {
+          where: openSessionFilter(),
+          orderBy: { scheduledAt: 'asc' },
+          select: { id: true, scheduledAt: true },
+        },
+      },
     });
     if (!w) return res.json({ webinar: null });
     res.json({ webinar: w });
@@ -45,6 +64,8 @@ const registerSchema = z.object({
   city: z.string().max(120).optional(),
   province: z.string().max(120).optional(),
   interest: z.enum(INTERESTS).default('UNSURE'),
+  // Which of the offered schedules they picked.
+  sessionId: z.string().optional(),
   message: z.string().max(1000).optional(),
   // Honeypot: a field hidden from real users. Bots fill every input they find,
   // so anything here means automated submission.
@@ -69,6 +90,18 @@ publicRouter.post(
     });
     if (!webinar) throw notFound('There is no orientation open for registration right now');
 
+    // Resolve the chosen schedule. When slots are on offer one MUST be picked —
+    // otherwise we would be emailing joining details for a time nobody agreed to.
+    const open = await prisma.webinarSession.findMany({
+      where: { webinarId: webinar.id, ...openSessionFilter() },
+      orderBy: { scheduledAt: 'asc' },
+    });
+    let session: (typeof open)[number] | null = null;
+    if (open.length) {
+      session = open.find((s) => s.id === b.sessionId) ?? null;
+      if (!session) throw badRequest('Please choose one of the available schedules');
+    }
+
     const ipHash = hashIp(req);
     if (ipHash) {
       const recent = await prisma.webinarRegistration.count({
@@ -90,6 +123,7 @@ publicRouter.post(
       city: b.city?.trim() || null,
       province: b.province?.trim() || null,
       interest: b.interest,
+      sessionId: session?.id ?? null,
       message: b.message?.trim() || null,
       ipHash,
     };
@@ -119,7 +153,9 @@ publicRouter.post(
                 address: [fields.city, fields.province].filter(Boolean).join(', ') || null,
                 source: 'WEBSITE',
                 stageIndex: 0,
-                note: `Registered for "${webinar.title}". Interested in: ${b.interest}.${
+                note: `Registered for "${webinar.title}"${
+                  session ? ` — ${session.scheduledAt.toISOString()}` : ''
+                }. Interested in: ${b.interest}.${
                   fields.message ? ` Message: ${fields.message}` : ''
                 }`,
                 createdById: webinar.createdById,
@@ -136,11 +172,12 @@ publicRouter.post(
       }
     }
 
+    // A slot can carry its own meeting, or share the webinar's recurring one.
     const zoom = {
-      link: webinar.zoomLink,
-      meetingId: webinar.zoomMeetingId,
-      passcode: webinar.zoomPasscode,
-      scheduledAt: webinar.scheduledAt,
+      link: session?.zoomLink || webinar.zoomLink,
+      meetingId: session?.zoomMeetingId || webinar.zoomMeetingId,
+      passcode: session?.zoomPasscode || webinar.zoomPasscode,
+      scheduledAt: session?.scheduledAt ?? webinar.scheduledAt,
       title: webinar.title,
     };
 
@@ -151,10 +188,10 @@ publicRouter.post(
       to: email,
       name: fields.name,
       title: webinar.title,
-      scheduledAt: webinar.scheduledAt,
-      zoomLink: webinar.zoomLink,
-      zoomMeetingId: webinar.zoomMeetingId,
-      zoomPasscode: webinar.zoomPasscode,
+      scheduledAt: zoom.scheduledAt,
+      zoomLink: zoom.link,
+      zoomMeetingId: zoom.meetingId,
+      zoomPasscode: zoom.passcode,
     }).catch((e) => console.error('[public.register] confirmation email failed', e?.message));
   })
 );

@@ -496,6 +496,21 @@ const webinarSchema = z.object({
   zoomPasscode: z.string().max(60).nullable().optional(),
   isActive: z.boolean().default(true),
   funnelId: z.string().nullable().optional(),
+  // The orientation runs several times so people can pick a slot. Sent as the
+  // full list: whatever is omitted here is removed.
+  sessions: z
+    .array(
+      z.object({
+        id: z.string().optional(),
+        scheduledAt: z.coerce.date(),
+        zoomLink: z.string().url().max(500).nullable().optional().or(z.literal('')),
+        zoomMeetingId: z.string().max(60).nullable().optional(),
+        zoomPasscode: z.string().max(60).nullable().optional(),
+        isActive: z.boolean().default(true),
+      })
+    )
+    .max(20)
+    .optional(),
 });
 
 // GET /marketing/webinar — the current landing-page configuration + sign-ups.
@@ -506,7 +521,8 @@ marketingRouter.get(
       orderBy: { createdAt: 'desc' },
       include: {
         funnel: { select: { id: true, name: true } },
-        registrations: { orderBy: { createdAt: 'desc' } },
+        sessions: { orderBy: { scheduledAt: 'asc' } },
+        registrations: { orderBy: { createdAt: 'desc' }, include: { session: { select: { id: true, scheduledAt: true } } } },
       },
     });
     if (!webinar) return res.json({ webinar: null, summary: null });
@@ -547,7 +563,39 @@ marketingRouter.put(
     const webinar = existing
       ? await prisma.webinar.update({ where: { id: existing.id }, data })
       : await prisma.webinar.create({ data: { ...data, createdById: req.auth!.sub } });
-    res.json(webinar);
+
+    // Sync the offered schedules against the list we were sent. Dropping a slot
+    // only detaches it from its sign-ups (the registrations survive), so a
+    // cancelled schedule never takes anyone's name with it.
+    if (b.sessions) {
+      const keep = b.sessions.map((s) => s.id).filter(Boolean) as string[];
+      await prisma.webinarSession.deleteMany({
+        where: { webinarId: webinar.id, id: { notIn: keep.length ? keep : ['-'] } },
+      });
+      for (const s of b.sessions) {
+        const row = {
+          scheduledAt: s.scheduledAt,
+          zoomLink: s.zoomLink || null,
+          zoomMeetingId: s.zoomMeetingId || null,
+          zoomPasscode: s.zoomPasscode || null,
+          isActive: s.isActive,
+        };
+        if (s.id) {
+          await prisma.webinarSession.updateMany({
+            where: { id: s.id, webinarId: webinar.id },
+            data: row,
+          });
+        } else {
+          await prisma.webinarSession.create({ data: { ...row, webinarId: webinar.id } });
+        }
+      }
+    }
+
+    const full = await prisma.webinar.findUnique({
+      where: { id: webinar.id },
+      include: { sessions: { orderBy: { scheduledAt: 'asc' } } },
+    });
+    res.json(full);
   })
 );
 
@@ -587,12 +635,13 @@ marketingRouter.get(
       ? await prisma.webinarRegistration.findMany({
           where: { webinarId: webinar.id },
           orderBy: { createdAt: 'desc' },
+          include: { session: { select: { scheduledAt: true } } },
         })
       : [];
     // Quote every field and double embedded quotes so commas in an address or
     // message can't shift the columns.
     const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const header = ['Registered', 'Name', 'Email', 'Phone', 'City', 'Province', 'Interest', 'Attended', 'Message'];
+    const header = ['Registered', 'Name', 'Email', 'Phone', 'City', 'Province', 'Interest', 'Schedule', 'Attended', 'Message'];
     const csv = [
       header.join(','),
       ...rows.map((r) =>
@@ -604,6 +653,7 @@ marketingRouter.get(
           r.city,
           r.province,
           r.interest,
+          r.session ? new Date(r.session.scheduledAt).toISOString() : '',
           r.attended ? 'YES' : 'NO',
           r.message,
         ]

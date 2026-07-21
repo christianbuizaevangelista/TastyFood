@@ -12,6 +12,11 @@ interface Webinar {
   headline: string | null;
   description: string | null;
   scheduledAt: string | null;
+  sessions?: WebinarSession[];
+}
+interface WebinarSession {
+  id: string;
+  scheduledAt: string;
 }
 interface Zoom {
   link: string | null;
@@ -119,6 +124,17 @@ function formatWhen(iso: string | null): string | null {
   });
 }
 
+// Split for the schedule picker, where the day and the time read better on
+// separate lines than in one long sentence.
+function whenParts(iso: string): { day: string; time: string } {
+  const d = new Date(iso);
+  const opts = { timeZone: 'Asia/Manila' } as const;
+  return {
+    day: d.toLocaleDateString('en-PH', { ...opts, weekday: 'long', month: 'long', day: 'numeric' }),
+    time: d.toLocaleTimeString('en-PH', { ...opts, hour: 'numeric', minute: '2-digit' }),
+  };
+}
+
 function Section({ id, className = '', children }: { id?: string; className?: string; children: React.ReactNode }) {
   return (
     <section id={id} className={`px-4 py-16 ${className}`}>
@@ -146,13 +162,20 @@ export default function Join() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [f, setF] = useState({
     name: '', email: '', phone: '', city: '', province: '', interest: 'UNSURE', message: '', website: '',
+    sessionId: '',
   });
   const set = (k: keyof typeof f, v: string) => setF((prev) => ({ ...prev, [k]: v }));
 
   useEffect(() => {
     api
       .get<{ webinar: Webinar | null }>('/public/webinar')
-      .then(({ data }) => setWebinar(data.webinar))
+      .then(({ data }) => {
+        setWebinar(data.webinar);
+        // Pre-select the soonest slot — most people take it, and an empty
+        // radio group reads like an unanswered question.
+        const first = data.webinar?.sessions?.[0];
+        if (first) setF((prev) => ({ ...prev, sessionId: first.id }));
+      })
       .catch(() => setWebinar(null))
       .finally(() => setLoading(false));
   }, []);
@@ -160,6 +183,10 @@ export default function Join() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
+    if ((webinar?.sessions?.length ?? 0) > 0 && !f.sessionId) {
+      setErr('Please choose a schedule for the orientation.');
+      return;
+    }
     setSubmitting(true);
     try {
       const { data } = await api.post<{ zoom: Zoom | null }>('/public/webinar/register', f);
@@ -172,7 +199,10 @@ export default function Join() {
     }
   }
 
-  const when = formatWhen(webinar?.scheduledAt ?? null);
+  const sessions = webinar?.sessions ?? [];
+  // The headline date is the soonest slot on offer; the single scheduledAt is
+  // the fallback for a webinar set up before schedules existed.
+  const when = formatWhen(sessions[0]?.scheduledAt ?? webinar?.scheduledAt ?? null);
 
   // ---- Confirmation screen -------------------------------------------------
   if (zoom) {
@@ -270,6 +300,11 @@ export default function Join() {
                 <div>
                   <div className="text-xs uppercase tracking-wide text-green-100">Next orientation</div>
                   <div className="font-bold">{when}</div>
+                  {sessions.length > 1 && (
+                    <div className="text-xs text-green-100">
+                      +{sessions.length - 1} more schedule{sessions.length > 2 ? 's' : ''} to choose from
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -595,6 +630,41 @@ export default function Join() {
                   />
                 </div>
               </div>
+
+              {sessions.length > 0 && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Pick a schedule *
+                  </label>
+                  <p className="mb-2 text-xs text-slate-500">
+                    The orientation runs several times — choose whichever is most convenient.
+                  </p>
+                  <div className="space-y-2">
+                    {sessions.map((s) => {
+                      const p = whenParts(s.scheduledAt);
+                      const picked = f.sessionId === s.id;
+                      return (
+                        <label
+                          key={s.id}
+                          className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition ${
+                            picked ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          <input
+                            type="radio" name="sessionId" value={s.id} checked={picked}
+                            onChange={() => set('sessionId', s.id)}
+                            className="h-4 w-4 accent-brand-600"
+                          />
+                          <span>
+                            <span className="block font-semibold text-slate-800">{p.day}</span>
+                            <span className="block text-sm text-slate-500">{p.time} · Philippine time</span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">I'm interested in becoming a…</label>

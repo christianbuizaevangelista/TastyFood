@@ -18,6 +18,7 @@ interface Registration {
   leadId: string | null;
   attended: boolean;
   createdAt: string;
+  session: { id: string; scheduledAt: string } | null;
 }
 interface Webinar {
   id: string;
@@ -32,6 +33,15 @@ interface Webinar {
   funnelId: string | null;
   funnel: { id: string; name: string } | null;
   registrations: Registration[];
+  sessions: WebinarSession[];
+}
+interface WebinarSession {
+  id: string;
+  scheduledAt: string;
+  zoomLink: string | null;
+  zoomMeetingId: string | null;
+  zoomPasscode: string | null;
+  isActive: boolean;
 }
 interface Summary { total: number; attended: number; converted: number }
 interface Funnel { id: string; name: string }
@@ -58,6 +68,12 @@ export default function LandingPage() {
     title: '', headline: '', description: '', scheduledAt: '',
     zoomLink: '', zoomMeetingId: '', zoomPasscode: '', isActive: true, funnelId: '',
   });
+  // Draft rows for the schedule editor. `id` is absent on a row that has not
+  // been saved yet; the API takes the whole list and syncs to it.
+  type SessionRow = { id?: string; scheduledAt: string; zoomLink: string; zoomMeetingId: string; zoomPasscode: string };
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const setSession = (i: number, k: keyof SessionRow, v: string) =>
+    setSessions((prev) => prev.map((s, j) => (j === i ? { ...s, [k]: v } : s)));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -78,20 +94,49 @@ export default function LandingPage() {
       isActive: w.isActive,
       funnelId: w.funnelId ?? '',
     });
-  }, [data?.webinar?.id]);
+    setSessions(
+      (w.sessions ?? []).map((s) => ({
+        id: s.id,
+        scheduledAt: toLocalInput(s.scheduledAt),
+        zoomLink: s.zoomLink ?? '',
+        zoomMeetingId: s.zoomMeetingId ?? '',
+        zoomPasscode: s.zoomPasscode ?? '',
+      }))
+    );
+    // Re-seeding on the session ids too matters: after a save, rows that were
+    // new now have ids, and without picking them up the next save would create
+    // duplicates instead of updating them.
+  }, [data?.webinar?.id, (data?.webinar?.sessions ?? []).map((s) => s.id).join(',')]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
     setNote(null);
+    const rows = sessions.filter((s) => s.scheduledAt);
+    if (rows.length === 0) {
+      setErr('Add at least one schedule for the orientation.');
+      return;
+    }
     setSaving(true);
+    // datetime-local has no timezone; treat it as the browser's local time.
+    const iso = (v: string) => new Date(v).toISOString();
+    const sorted = [...rows].sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
     try {
       await api.put('/marketing/webinar', {
         title: f.title,
         headline: f.headline || null,
         description: f.description || null,
-        // datetime-local has no timezone; treat it as the browser's local time.
-        scheduledAt: f.scheduledAt ? new Date(f.scheduledAt).toISOString() : null,
+        // The headline date stays in step with the soonest schedule, so older
+        // reads of `scheduledAt` never show a stale time.
+        scheduledAt: iso(sorted[0].scheduledAt),
+        sessions: sorted.map((s) => ({
+          ...(s.id ? { id: s.id } : {}),
+          scheduledAt: iso(s.scheduledAt),
+          zoomLink: s.zoomLink || null,
+          zoomMeetingId: s.zoomMeetingId || null,
+          zoomPasscode: s.zoomPasscode || null,
+          isActive: true,
+        })),
         zoomLink: f.zoomLink || null,
         zoomMeetingId: f.zoomMeetingId || null,
         zoomPasscode: f.zoomPasscode || null,
@@ -214,11 +259,56 @@ export default function LandingPage() {
             <textarea className="input" rows={3} value={f.description} onChange={(e) => set('description', e.target.value)}
               placeholder="Join our free online orientation…" />
           </div>
-          <div>
-            <label className="label">Date &amp; time</label>
-            <input type="datetime-local" className="input" value={f.scheduledAt}
-              onChange={(e) => set('scheduledAt', e.target.value)} />
-            <p className="mt-1 text-xs text-slate-400">Shown to visitors in Philippine time.</p>
+          <div className="border-t border-slate-100 pt-3">
+            <label className="label">Schedules</label>
+            <p className="mb-2 text-xs text-slate-400">
+              Offer several dates and times — visitors pick the one that suits them.
+              Leave the Zoom fields blank to use the default meeting below.
+            </p>
+            <div className="space-y-2">
+              {sessions.map((s, i) => (
+                <div key={s.id ?? `new-${i}`} className="rounded-lg border border-slate-200 p-3">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="datetime-local" className="input flex-1" value={s.scheduledAt}
+                      onChange={(e) => setSession(i, 'scheduledAt', e.target.value)}
+                    />
+                    <button
+                      type="button" title="Remove this schedule"
+                      className="btn-secondary px-2 py-1 text-xs text-red-600"
+                      onClick={() => setSessions((prev) => prev.filter((_, j) => j !== i))}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    <input
+                      className="input col-span-3 text-xs" placeholder="Own Zoom link (optional)"
+                      value={s.zoomLink} onChange={(e) => setSession(i, 'zoomLink', e.target.value)}
+                    />
+                    <input
+                      className="input col-span-2 text-xs" placeholder="Meeting ID"
+                      value={s.zoomMeetingId} onChange={(e) => setSession(i, 'zoomMeetingId', e.target.value)}
+                    />
+                    <input
+                      className="input text-xs" placeholder="Passcode"
+                      value={s.zoomPasscode} onChange={(e) => setSession(i, 'zoomPasscode', e.target.value)}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button" className="btn-secondary mt-2 w-full text-sm"
+              onClick={() =>
+                setSessions((prev) => [...prev, { scheduledAt: '', zoomLink: '', zoomMeetingId: '', zoomPasscode: '' }])
+              }
+            >
+              + Add a schedule
+            </button>
+            <p className="mt-1 text-xs text-slate-400">
+              Shown to visitors in Philippine time. Removing a schedule keeps the people who signed up for it.
+            </p>
           </div>
 
           <div className="border-t border-slate-100 pt-3">
@@ -309,6 +399,9 @@ export default function LandingPage() {
                         <span className="badge bg-slate-100 text-slate-600">
                           {INTEREST_LABEL[r.interest] ?? r.interest}
                         </span>
+                        {r.session && (
+                          <div className="mt-1 text-xs text-slate-500">{date(r.session.scheduledAt)}</div>
+                        )}
                         {r.leadId && <div className="mt-1 text-xs text-green-600">in funnel</div>}
                       </td>
                       <td className="td text-center">
