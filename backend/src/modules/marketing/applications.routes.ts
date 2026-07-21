@@ -6,6 +6,11 @@ import { authenticate } from '../../middleware/auth';
 import { requireRole, requirePermission } from '../../middleware/rbac';
 import { notFound } from '../../lib/errors';
 import { advanceLead } from '../public/public.service';
+import { appOrigin } from '../../lib/email';
+import {
+  sendAppointmentConfirmedEmail,
+  sendAppointmentDeclinedEmail,
+} from '../../lib/email.applications';
 
 // The Principal's side of the online application: review what came in from the
 // public /apply page and move it along. Same gate as the rest of Marketing.
@@ -123,6 +128,88 @@ applicationsRouter.patch(
     }
 
     res.json(application);
+  })
+);
+
+const appointmentActionSchema = z.object({
+  action: z.enum(['CONFIRM', 'DECLINE', 'COMPLETE', 'NO_SHOW']),
+  // For CONFIRM. Omitted means "the time they asked for is fine".
+  confirmedAt: z.coerce.date().optional(),
+  zoomLink: z.string().url().max(500).nullable().optional().or(z.literal('')),
+  location: z.string().max(300).nullable().optional(),
+  note: z.string().max(500).nullable().optional(),
+  outcome: z.string().max(1000).nullable().optional(),
+});
+
+// PATCH /marketing/applications/appointments/:id — confirm a requested meeting,
+// decline it, or record how it went. The applicant is told either way; a
+// request that is silently ignored is worse than a decline.
+applicationsRouter.patch(
+  '/appointments/:id',
+  asyncHandler(async (req, res) => {
+    const existing = await prisma.appointment.findUnique({
+      where: { id: req.params.id },
+      include: { application: true },
+    });
+    if (!existing) throw notFound('Appointment not found');
+    const b = appointmentActionSchema.parse(req.body);
+    const app = existing.application;
+
+    if (b.action === 'CONFIRM') {
+      const confirmedAt = b.confirmedAt ?? existing.requestedAt;
+      const appointment = await prisma.appointment.update({
+        where: { id: existing.id },
+        data: {
+          status: 'CONFIRMED',
+          confirmedAt,
+          zoomLink: b.zoomLink || null,
+          location: b.location || null,
+          note: b.note ?? existing.note,
+        },
+      });
+      await advanceLead(app.leadId, ['interview', 'meeting', 'appointment']);
+      res.json(appointment);
+
+      sendAppointmentConfirmedEmail({
+        to: app.email,
+        name: app.name,
+        kind: existing.kind,
+        requestedAt: existing.requestedAt,
+        confirmedAt,
+        zoomLink: appointment.zoomLink,
+        location: appointment.location,
+        note: appointment.note,
+      }).catch((e) => console.error('[appointments] confirm email failed', e?.message));
+      return;
+    }
+
+    if (b.action === 'DECLINE') {
+      const appointment = await prisma.appointment.update({
+        where: { id: existing.id },
+        data: { status: 'DECLINED', note: b.note ?? existing.note },
+      });
+      res.json(appointment);
+
+      sendAppointmentDeclinedEmail({
+        to: app.email,
+        name: app.name,
+        requestedAt: existing.requestedAt,
+        reason: b.note ?? null,
+        statusUrl: `${appOrigin()}/apply/status/${app.token}`,
+      }).catch((e) => console.error('[appointments] decline email failed', e?.message));
+      return;
+    }
+
+    // COMPLETE / NO_SHOW — recording what actually happened.
+    const appointment = await prisma.appointment.update({
+      where: { id: existing.id },
+      data: { status: b.action === 'COMPLETE' ? 'COMPLETED' : 'NO_SHOW', outcome: b.outcome ?? null },
+    });
+    if (b.action === 'COMPLETE') {
+      // A meeting that happened is the step before signing.
+      await advanceLead(app.leadId, ['sign', 'closing', 'negotiat']);
+    }
+    res.json(appointment);
   })
 );
 

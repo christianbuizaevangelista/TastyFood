@@ -3,8 +3,12 @@ import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { unauthorized } from '../../lib/errors';
 import { sendWebinarReminderEmail, WebinarReminderKind, appOrigin } from '../../lib/email';
-import { sendOrientationThankYouEmail } from '../../lib/email.applications';
-import { advanceLead } from '../public/public.service';
+import {
+  sendOrientationThankYouEmail,
+  sendAppointmentMorningEmail,
+  sendOwnerDayBriefEmail,
+} from '../../lib/email.applications';
+import { advanceLead, principalOwnerEmail } from '../public/public.service';
 
 // Scheduled jobs, invoked by Vercel Cron (or any scheduler) rather than by a
 // signed-in user. Nothing here reads a session cookie, so every route is gated
@@ -157,9 +161,77 @@ cronRouter.all(
       }
     }
 
+    // ---- The morning of a confirmed meeting -------------------------------
+    // One email to the applicant asking them to confirm they can still make it,
+    // and one brief to the owner covering the whole day.
+    const todaysMeetings = await prisma.appointment.findMany({
+      where: {
+        status: 'CONFIRMED',
+        confirmedAt: {
+          gte: new Date(now.getTime() - 24 * 60 * 60 * 1000),
+          lte: new Date(now.getTime() + 36 * 60 * 60 * 1000),
+        },
+      },
+      include: { application: true },
+      orderBy: { confirmedAt: 'asc' },
+    });
+    const today = todaysMeetings.filter(
+      (m) => m.confirmedAt && manilaDayNumber(m.confirmedAt) === manilaDayNumber(now)
+    );
+
+    for (const m of today) {
+      if (m.remindDayAt) continue;
+      await prisma.appointment.update({ where: { id: m.id }, data: { remindDayAt: now } });
+      const out = await sendAppointmentMorningEmail({
+        to: m.application.email,
+        name: m.application.name,
+        kind: m.kind,
+        confirmedAt: m.confirmedAt!,
+        zoomLink: m.zoomLink,
+        location: m.location,
+      });
+      results.push({ kind: 'MEETING_TODAY', to: m.application.email, ...out });
+      if (!out.sent) {
+        await prisma.appointment.update({ where: { id: m.id }, data: { remindDayAt: null } });
+      }
+    }
+
+    // The owner's brief goes out once for the whole day, not once per meeting.
+    const unbriefed = today.filter((m) => !m.ownerBriefAt);
+    if (unbriefed.length) {
+      const owner = await principalOwnerEmail();
+      if (owner) {
+        await prisma.appointment.updateMany({
+          where: { id: { in: unbriefed.map((m) => m.id) } },
+          data: { ownerBriefAt: now },
+        });
+        const out = await sendOwnerDayBriefEmail({
+          to: owner,
+          meetings: today.map((m) => ({
+            name: m.application.name,
+            tier: m.application.tier,
+            kind: m.kind,
+            confirmedAt: m.confirmedAt!,
+            phone: m.application.phone,
+            email: m.application.email,
+            area: [m.application.city, m.application.province].filter(Boolean).join(', ') || null,
+            zoomLink: m.zoomLink,
+          })),
+        });
+        results.push({ kind: 'DAY_BRIEF', to: owner, ...out });
+        if (!out.sent) {
+          await prisma.appointment.updateMany({
+            where: { id: { in: unbriefed.map((m) => m.id) } },
+            data: { ownerBriefAt: null },
+          });
+        }
+      }
+    }
+
     res.json({
       ranAt: now.toISOString(),
       sessionsChecked: sessions.length,
+      meetingsToday: today.length,
       sent: results.filter((r) => r.sent).length,
       failed: results.filter((r) => !r.sent).length,
       results,

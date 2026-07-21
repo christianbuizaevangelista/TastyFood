@@ -33,6 +33,7 @@ import Budget from './pages/Budget';
 import ResellerSale from './pages/ResellerSale';
 import FacebookAds from './pages/FacebookAds';
 import LeadFunnels from './pages/LeadFunnels';
+import Applications from './pages/Applications';
 import LandingPage from './pages/LandingPage';
 import Join from './pages/Join';
 import Apply from './pages/Apply';
@@ -114,6 +115,7 @@ export default function App() {
       <Route path="/marketing" element={<Navigate to="/marketing/facebook-ads" replace />} />
       <Route path="/marketing/facebook-ads" element={<MarketingProtected><FacebookAds /></MarketingProtected>} />
       <Route path="/marketing/lead-funnels" element={<MarketingProtected><LeadFunnels /></MarketingProtected>} />
+      <Route path="/marketing/applications" element={<MarketingProtected><Applications /></MarketingProtected>} />
       <Route path="/marketing/landing-page" element={<MarketingProtected><LandingPage /></MarketingProtected>} />
       <Route path="/hr" element={<HrProtected><HrDashboard /></HrProtected>} />
       <Route path="/hr/employees" element={<HrProtected><Employees /></HrProtected>} />

@@ -159,6 +159,160 @@ export async function sendAppointmentRequestedAlert(p: {
   return send(p.to, `Meeting request: ${p.name} (${tier})`, html, 'appointment request');
 }
 
+// Confirms a meeting to the applicant. When the time we settled on differs from
+// what they asked for, say so plainly at the top — burying a changed time in the
+// body is how people turn up on the wrong day.
+export async function sendAppointmentConfirmedEmail(p: {
+  to: string;
+  name: string;
+  kind: string;
+  requestedAt: Date;
+  confirmedAt: Date;
+  zoomLink?: string | null;
+  location?: string | null;
+  note?: string | null;
+}): Promise<SendResult> {
+  const moved = new Date(p.requestedAt).getTime() !== new Date(p.confirmedAt).getTime();
+  const isZoom = p.kind === 'ZOOM';
+
+  const details = [
+    `<tr><td style="padding:5px 14px 5px 0;color:#888;white-space:nowrap">When</td><td style="padding:5px 0"><strong>${manilaWhen(p.confirmedAt)}</strong></td></tr>`,
+    `<tr><td style="padding:5px 14px 5px 0;color:#888;white-space:nowrap">Where</td><td style="padding:5px 0">${
+      isZoom ? 'Over Zoom' : p.location || 'Our office in General Trias, Cavite'
+    }</td></tr>`,
+    p.note ? `<tr><td style="padding:5px 14px 5px 0;color:#888;vertical-align:top">Note</td><td style="padding:5px 0">${p.note}</td></tr>` : '',
+  ].join('');
+
+  const html = emailShell(
+    'Meeting Confirmed',
+    `<h2 style="margin:0 0 8px;color:${BRAND_GREEN};font-size:18px">Your meeting is confirmed</h2>
+     <p>Hi ${p.name}, we are looking forward to speaking with you.</p>
+     ${
+       moved
+         ? `<p style="background:#fff6e5;border-left:4px solid #c9821a;padding:10px 14px;margin:14px 0">
+              <strong>Please note the time has changed.</strong> You asked for
+              ${manilaWhen(p.requestedAt)}; we have set it for
+              <strong>${manilaWhen(p.confirmedAt)}</strong>. Reply if that does not work.
+            </p>`
+         : ''
+     }
+     <table style="border-collapse:collapse;margin:12px 0;font-size:14px">${details}</table>
+     ${
+       isZoom && p.zoomLink
+         ? button(p.zoomLink, 'Join the Zoom meeting')
+         : isZoom
+         ? '<p style="color:#666">We will send the Zoom link before the meeting.</p>'
+         : '<p style="color:#666">Please bring a valid ID and your filled-in application form.</p>'
+     }
+     <p style="color:#888;font-size:13px">Something came up? Reply to this email and we will move it.</p>`
+  );
+  return send(p.to, `Confirmed: your Tasty Food meeting — ${manilaWhen(p.confirmedAt)}`, html, 'appointment confirmed');
+}
+
+// Tells the applicant we cannot take the meeting. Kept short and without false
+// hope, but leaves the door open.
+export async function sendAppointmentDeclinedEmail(p: {
+  to: string;
+  name: string;
+  requestedAt: Date;
+  reason?: string | null;
+  statusUrl: string;
+}): Promise<SendResult> {
+  const html = emailShell(
+    'Meeting Request',
+    `<h2 style="margin:0 0 8px;color:${BRAND_GREEN};font-size:18px">We cannot make that time</h2>
+     <p>Hi ${p.name}, thank you for asking to meet on ${manilaWhen(p.requestedAt)} — unfortunately
+     we are not able to take that slot.</p>
+     ${p.reason ? `<p>${p.reason}</p>` : ''}
+     <p>Please pick another time that suits you and we will confirm it:</p>
+     ${button(p.statusUrl, 'Choose another time', false)}`
+  );
+  return send(p.to, 'About your requested meeting — Tasty Food', html, 'appointment declined');
+}
+
+// The morning of the meeting, to the applicant. Its job is to stop a no-show,
+// so it asks for a one-word reply rather than assuming they will turn up.
+export async function sendAppointmentMorningEmail(p: {
+  to: string;
+  name: string;
+  kind: string;
+  confirmedAt: Date;
+  zoomLink?: string | null;
+  location?: string | null;
+}): Promise<SendResult> {
+  const isZoom = p.kind === 'ZOOM';
+  const time = new Date(p.confirmedAt).toLocaleTimeString('en-PH', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'Asia/Manila',
+  });
+
+  const html = emailShell(
+    'Today',
+    `<h2 style="margin:0 0 8px;color:${BRAND_GREEN};font-size:18px">We are meeting today at ${time}</h2>
+     <p>Good morning ${p.name}. This is a reminder that your meeting with Tasty Food is today
+     at <strong>${time}</strong>, ${isZoom ? 'over Zoom' : `at ${p.location || 'our office in General Trias, Cavite'}`}.</p>
+     ${isZoom && p.zoomLink ? button(p.zoomLink, 'Join the Zoom meeting') : ''}
+     <p style="background:${'#eef7f1'};border-left:4px solid ${BRAND_GREEN};padding:10px 14px;margin:16px 0">
+       <strong>Can you still make it?</strong> Just reply <strong>YES</strong> to this email — or tell us
+       if you need to move it. Either answer is fine; we would rather know than wait.
+     </p>
+     ${!isZoom ? '<p style="color:#888;font-size:13px">Please bring a valid ID and your filled-in application form.</p>' : ''}`
+  );
+  return send(p.to, `Today at ${time}: your Tasty Food meeting`, html, 'appointment morning');
+}
+
+// The owner's morning brief: everything happening today, in one email, so the
+// day can be planned from the phone.
+export async function sendOwnerDayBriefEmail(p: {
+  to: string;
+  meetings: {
+    name: string;
+    tier: string;
+    kind: string;
+    confirmedAt: Date;
+    phone: string;
+    email: string;
+    area?: string | null;
+    zoomLink?: string | null;
+  }[];
+}): Promise<SendResult> {
+  const rows = p.meetings
+    .map((m) => {
+      const time = new Date(m.confirmedAt).toLocaleTimeString('en-PH', {
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZone: 'Asia/Manila',
+      });
+      const where = m.kind === 'ZOOM' ? 'Zoom' : 'Office visit';
+      return `<tr>
+        <td style="padding:9px 14px 9px 0;vertical-align:top;white-space:nowrap"><strong>${time}</strong><br>
+          <span style="color:#888;font-size:12px">${where}</span></td>
+        <td style="padding:9px 0;vertical-align:top">
+          <strong>${m.name}</strong> — ${TIER_LABEL[m.tier] ?? m.tier}<br>
+          <span style="font-size:13px;color:#666">${m.area ? m.area + ' &middot; ' : ''}
+            <a href="tel:${m.phone}" style="color:${BRAND_GREEN}">${m.phone}</a></span>
+          ${m.kind === 'ZOOM' && m.zoomLink ? `<br><a href="${m.zoomLink}" style="color:${BRAND_GREEN};font-size:13px">Join link</a>` : ''}
+        </td>
+      </tr>`;
+    })
+    .join('');
+
+  const count = p.meetings.length;
+  const html = emailShell(
+    'Your Day',
+    `<h2 style="margin:0 0 8px;color:${BRAND_GREEN};font-size:18px">${count} meeting${
+      count === 1 ? '' : 's'
+    } today</h2>
+     <p>Good morning. Here is what is booked for today — everyone below has been reminded and asked
+     to confirm.</p>
+     <table style="border-collapse:collapse;margin:14px 0;font-size:14px;width:100%">${rows}</table>
+     <p style="color:#888;font-size:13px">After each one, record the outcome in
+     <strong>Marketing &rsaquo; Applications</strong> and the lead moves with it.</p>`
+  );
+  return send(p.to, `Today: ${count} meeting${count === 1 ? '' : 's'}`, html, 'owner day brief');
+}
+
 // Tells the owner a new application has landed, with enough detail to judge it
 // without opening the app.
 export async function sendApplicationOwnerAlert(p: {
