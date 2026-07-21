@@ -8,9 +8,12 @@ build/
 **/dist/
 **/build/
 
-# Env
+# Env — every variant, because one stray backup in a public repo is a breach.
 .env
+.env.*
 **/.env
+**/.env.*
+!.env.example
 !**/.env.example
 
 # Logs

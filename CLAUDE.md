@@ -44,4 +44,5 @@ All calls use header `Authorization: Bearer {VERCEL_TOKEN}`. DEMO needs none of 
 ## Rules
 - **No secrets in the repo** (this repo is public). DB connection strings, JWT secret, Resend key, and API tokens live only in Vercel env vars and the local, git-ignored `backend/.env`.
 - To run locally you need `backend/.env` with `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `CLIENT_ORIGIN` (ask the owner).
+- **`backend/.env` must point at the DEMO database, never at official.** A local file wired to the live company DB turns any stray script into a production incident. Official credentials are not kept on disk at all — pull them from the Vercel project only when a release needs `prisma db push`, use them in-memory, and delete them afterwards. Never write them to a file inside the repo: `.gitignore` now covers every `.env*` variant, but the safest secret is the one that was never written down.
 - Commit + push only when asked. Match existing code style.
