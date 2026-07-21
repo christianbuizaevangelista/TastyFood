@@ -9,7 +9,7 @@ export const api = axios.create({ baseURL, withCredentials: true });
 
 // Pages that anonymous visitors are meant to reach. A 401 on these is normal
 // (e.g. the landing page's own /auth/me probe) and must NOT bounce them away.
-const PUBLIC_PATHS = ['/login', '/set-password', '/join'];
+const PUBLIC_PATHS = ['/login', '/set-password', '/join', '/apply'];
 
 api.interceptors.response.use(
   (res) => res,

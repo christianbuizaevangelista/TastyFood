@@ -35,6 +35,8 @@ import FacebookAds from './pages/FacebookAds';
 import LeadFunnels from './pages/LeadFunnels';
 import LandingPage from './pages/LandingPage';
 import Join from './pages/Join';
+import Apply from './pages/Apply';
+import ApplyStatus from './pages/ApplyStatus';
 import Concerns from './pages/Concerns';
 import { HrDashboard, Employees, Attendance, Leave, Payroll } from './pages/Hr';
 import Users from './pages/Users';
@@ -85,6 +87,8 @@ export default function App() {
       <Route path="/set-password" element={<SetPassword />} />
       {/* Public recruitment landing page — no login, this is where ads point. */}
       <Route path="/join" element={<Join />} />
+      <Route path="/apply" element={<Apply />} />
+      <Route path="/apply/status/:token" element={<ApplyStatus />} />
       <Route path="/home" element={<Home />} />
       <Route path="/" element={<Protected path="/"><Dashboard /></Protected>} />
       <Route path="/inventory" element={<Protected path="/inventory"><Inventory /></Protected>} />

@@ -28,6 +28,8 @@ import { hrRouter } from './modules/hr/hr.routes';
 import { publicRouter } from './modules/public/public.routes';
 import { supportRouter } from './modules/support/support.routes';
 import { cronRouter } from './modules/cron/cron.routes';
+import { applyRouter } from './modules/public/apply.routes';
+import { applicationsRouter } from './modules/marketing/applications.routes';
 
 export function createApp() {
   const app = express();
@@ -70,6 +72,8 @@ export function createApp() {
 
   // Unauthenticated — backs the public recruitment landing page at /join.
   app.use('/api/public', publicRouter);
+  // The online distributorship application, also unauthenticated.
+  app.use('/api/public/apply', applyRouter);
   // Scheduler-invoked jobs; gated on CRON_SECRET, not on a user session.
   app.use('/api/cron', cronRouter);
 
@@ -91,6 +95,9 @@ export function createApp() {
   app.use('/api/customers', customersRouter);
   app.use('/api/referrals', referralsRouter);
   app.use('/api/accounting', accountingRouter);
+  // Mounted before the general marketing router so it matches first rather
+  // than falling through that router's middleware.
+  app.use('/api/marketing/applications', applicationsRouter);
   app.use('/api/marketing', marketingRouter);
   app.use('/api/hr', hrRouter);
   app.use('/api/support', supportRouter);

@@ -2,7 +2,9 @@ import { Router } from 'express';
 import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { unauthorized } from '../../lib/errors';
-import { sendWebinarReminderEmail, WebinarReminderKind } from '../../lib/email';
+import { sendWebinarReminderEmail, WebinarReminderKind, appOrigin } from '../../lib/email';
+import { sendOrientationThankYouEmail } from '../../lib/email.applications';
+import { advanceLead } from '../public/public.service';
 
 // Scheduled jobs, invoked by Vercel Cron (or any scheduler) rather than by a
 // signed-in user. Nothing here reads a session cookie, so every route is gated
@@ -112,6 +114,45 @@ cronRouter.all(
             where: { id: r.id },
             data: { [due.field]: null },
           });
+        }
+      }
+    }
+
+    // ---- The day after: thank the people who actually turned up -----------
+    // Only sessions that ran yesterday, and only registrants ticked off as
+    // attended. Someone who registered and never showed gets nothing — a
+    // thank-you for a meeting they missed reads as a form letter.
+    const yesterday = await prisma.webinarSession.findMany({
+      where: {
+        scheduledAt: {
+          gte: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000),
+          lt: now,
+        },
+      },
+      include: { webinar: true, registrations: { where: { attended: true, thankYouAt: null } } },
+    });
+
+    for (const s of yesterday) {
+      if (manilaDayNumber(now) - manilaDayNumber(s.scheduledAt) !== 1) continue;
+      for (const r of s.registrations) {
+        await prisma.webinarRegistration.update({
+          where: { id: r.id },
+          data: { thankYouAt: now },
+        });
+        const out = await sendOrientationThankYouEmail({
+          to: r.email,
+          name: r.name,
+          title: s.webinar.title,
+          // Carrying the registration id lets the application attach itself to
+          // the lead they already have, instead of creating a second one.
+          applyUrl: `${appOrigin()}/apply?ref=${r.id}`,
+        });
+        results.push({ kind: 'THANK_YOU', to: r.email, ...out });
+        if (!out.sent) {
+          await prisma.webinarRegistration.update({ where: { id: r.id }, data: { thankYouAt: null } });
+        } else {
+          // Attending is real progress worth showing in the funnel.
+          await advanceLead(r.leadId, ['attend', 'orientation']);
         }
       }
     }

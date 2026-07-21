@@ -120,28 +120,28 @@ enum CashflowSection {
 // ---------------------------------------------------------------------------
 
 model Organization {
-  id           String    @id @default(cuid())
-  name         String
-  type         OrgType
+  id       String         @id @default(cuid())
+  name     String
+  type     OrgType
   // Each tier purchases from exactly one level above it.
-  parentId     String?
-  parent       Organization?  @relation("OrgHierarchy", fields: [parentId], references: [id])
-  children     Organization[] @relation("OrgHierarchy")
+  parentId String?
+  parent   Organization?  @relation("OrgHierarchy", fields: [parentId], references: [id])
+  children Organization[] @relation("OrgHierarchy")
 
   // Discount off SRP this org receives when it BUYS from its parent.
   // PRINCIPAL 0, PROVINCIAL 0.20, CITY 0.15, RESELLER 0.08
-  discountRate Float     @default(0)
+  discountRate Float @default(0)
 
   // Market segment for downstream accounts: RESELLER (Provincial→City→Reseller
   // hierarchy) or RETAIL (a retail distributor with no downline).
-  segment      String    @default("RESELLER")
+  segment String @default("RESELLER")
 
   // Onboarding/approval state.
-  status       OrgStatus @default(PENDING)
+  status     OrgStatus @default(PENDING)
   // Membership activation (independent of approval; can be toggled later).
-  isActive     Boolean   @default(true)
+  isActive   Boolean   @default(true)
   // When set, the account is removed from CRM/structure but its records remain.
-  archivedAt   DateTime?
+  archivedAt DateTime?
 
   // CRM / contact details.
   contactName  String?
@@ -151,103 +151,103 @@ model Organization {
   notes        String?
 
   // KPI target (revenue) for the current period.
-  salesTarget  Float     @default(0)
+  salesTarget Float @default(0)
 
   // "Mana" credits wallet (1 PHP = 1 Mana). Used to pre-pay purchase orders.
-  manaBalance  Float     @default(0)
+  manaBalance Float @default(0)
 
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  users        User[]
-  inventory    Inventory[]
-  ledger       StockLedger[]
+  users     User[]
+  inventory Inventory[]
+  ledger    StockLedger[]
 
-  poAsBuyer    PurchaseOrder[] @relation("PoBuyer")
-  poAsSeller   PurchaseOrder[] @relation("PoSeller")
+  poAsBuyer  PurchaseOrder[] @relation("PoBuyer")
+  poAsSeller PurchaseOrder[] @relation("PoSeller")
 
   salesAsSeller Sale[] @relation("SaleSeller")
   salesAsBuyer  Sale[] @relation("SaleBuyer")
 
-  approvalsForOrg Approval[] @relation("ApprovalSubject")
-  kpiRecords    KPIRecord[]
+  approvalsForOrg Approval[]  @relation("ApprovalSubject")
+  kpiRecords      KPIRecord[]
 
   // The geographic territory this org occupies (if assigned).
-  territory     Territory? @relation("OrgTerritory")
+  territory Territory? @relation("OrgTerritory")
 
   manaPurchases ManaPurchase[]
   manaTxns      ManaTxn[]
-  customers     Customer[] @relation("OrgCustomers")
+  customers     Customer[]     @relation("OrgCustomers")
 
-  documents     OrgDocument[]
-  referralsSent     Referral[] @relation("ReferralFrom")
-  referralsReceived Referral[] @relation("ReferralTo")
-  journalEntries    JournalEntry[] @relation("EntryDistributor")
+  documents           OrgDocument[]
+  referralsSent       Referral[]           @relation("ReferralFrom")
+  referralsReceived   Referral[]           @relation("ReferralTo")
+  journalEntries      JournalEntry[]       @relation("EntryDistributor")
   distributorPayments DistributorPayment[]
-  supportTickets    SupportTicket[] @relation("OrgSupportTickets")
-  monthlyTargets    MonthlyTarget[] @relation("OrgMonthlyTargets")
+  supportTickets      SupportTicket[]      @relation("OrgSupportTickets")
+  monthlyTargets      MonthlyTarget[]      @relation("OrgMonthlyTargets")
 
   @@index([parentId])
   @@index([type])
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String?  // null until an invited staff sets their password
-  name         String
-  role         UserRole
-  orgId        String
-  org          Organization @relation(fields: [orgId], references: [id])
-  isActive     Boolean  @default(true)
+  id                  String       @id @default(cuid())
+  email               String       @unique
+  passwordHash        String? // null until an invited staff sets their password
+  name                String
+  role                UserRole
+  orgId               String
+  org                 Organization @relation(fields: [orgId], references: [id])
+  isActive            Boolean      @default(true)
   // The org's owner has full control; staff users get specific permissions.
-  isOwner      Boolean  @default(false)
-  permissions  String[] @default([])
+  isOwner             Boolean      @default(false)
+  permissions         String[]     @default([])
   // Invite flow for staff to set their own password.
-  inviteToken   String?  @unique
-  inviteExpires DateTime?
+  inviteToken         String?      @unique
+  inviteExpires       DateTime?
   // Brute-force protection: consecutive failed logins and a temporary lock.
-  failedLoginAttempts Int      @default(0)
+  failedLoginAttempts Int          @default(0)
   lockedUntil         DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
 
-  createdPOs   PurchaseOrder[] @relation("PoCreatedBy")
-  createdSales Sale[]          @relation("SaleCreatedBy")
-  requestedApprovals Approval[] @relation("ApprovalRequester")
-  decidedApprovals   Approval[] @relation("ApprovalDecider")
-  uploadedAttachments PoAttachment[] @relation("AttachmentUploader")
+  createdPOs          PurchaseOrder[] @relation("PoCreatedBy")
+  createdSales        Sale[]          @relation("SaleCreatedBy")
+  requestedApprovals  Approval[]      @relation("ApprovalRequester")
+  decidedApprovals    Approval[]      @relation("ApprovalDecider")
+  uploadedAttachments PoAttachment[]  @relation("AttachmentUploader")
   supportTickets      SupportTicket[] @relation("SupportTicketAuthor")
 
   @@index([orgId])
 }
 
 model Product {
-  id          String   @id @default(cuid())
-  sku         String   @unique
-  name        String
-  description String?
-  category    String?
+  id                 String   @id @default(cuid())
+  sku                String   @unique
+  name               String
+  description        String?
+  category           String?
   // Size of this SKU (e.g. "200g"). Each size is its own product with its own SKU & SRP.
-  size        String?
+  size               String?
   // Suggested Retail Price — the basis for all tier (reseller-channel) pricing.
-  srp         Float
+  srp                Float
   // Separate SRP for the RETAIL distribution channel (falls back to `srp` if unset).
-  retailSrp   Float?
+  retailSrp          Float?
   // Optional per-product tier discount overrides (fractions, e.g. 0.15). When set,
   // they replace the standard tier discount FOR THIS PRODUCT ONLY (e.g. institutional
   // pricing). Null = use the standard TIER_DISCOUNT for that tier.
   provincialDiscount Float?
   cityDiscount       Float?
   resellerDiscount   Float?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  inventory   Inventory[]
-  ledger      StockLedger[]
-  poItems     PurchaseOrderItem[]
-  saleItems   SaleItem[]
+  inventory Inventory[]
+  ledger    StockLedger[]
+  poItems   PurchaseOrderItem[]
+  saleItems SaleItem[]
 }
 
 // ---------------------------------------------------------------------------
@@ -255,19 +255,19 @@ model Product {
 // ---------------------------------------------------------------------------
 
 model Inventory {
-  id           String   @id @default(cuid())
-  orgId        String
-  org          Organization @relation(fields: [orgId], references: [id])
-  productId    String
-  product      Product  @relation(fields: [productId], references: [id])
-  quantity     Int      @default(0)
+  id                 String       @id @default(cuid())
+  orgId              String
+  org                Organization @relation(fields: [orgId], references: [id])
+  productId          String
+  product            Product      @relation(fields: [productId], references: [id])
+  quantity           Int          @default(0)
   // Unit cost set by the distributor (optional).
-  cost         Float?
+  cost               Float?
   // Critical/reorder level — blank by default; the distributor sets it.
-  reorderLevel Int?
+  reorderLevel       Int?
   // Debounce for the low-stock email (set when notified, cleared on restock).
   lowStockNotifiedAt DateTime?
-  updatedAt    DateTime @updatedAt
+  updatedAt          DateTime     @updatedAt
 
   @@unique([orgId, productId])
   @@index([orgId])
@@ -275,17 +275,17 @@ model Inventory {
 
 // Append-only per-SKU stock ledger for auditability.
 model StockLedger {
-  id        String   @id @default(cuid())
+  id        String       @id @default(cuid())
   orgId     String
   org       Organization @relation(fields: [orgId], references: [id])
   productId String
-  product   Product  @relation(fields: [productId], references: [id])
-  change    Int      // +in / -out
-  balance   Int      // resulting balance after this movement
-  reason    String   // e.g. PO_RECEIVED, PO_FULFILLED, POS_SALE, ADJUSTMENT
-  refType   String?  // PurchaseOrder | Sale | Adjustment
+  product   Product      @relation(fields: [productId], references: [id])
+  change    Int // +in / -out
+  balance   Int // resulting balance after this movement
+  reason    String // e.g. PO_RECEIVED, PO_FULFILLED, POS_SALE, ADJUSTMENT
+  refType   String? // PurchaseOrder | Sale | Adjustment
   refId     String?
-  createdAt DateTime @default(now())
+  createdAt DateTime     @default(now())
 
   @@index([orgId, productId])
 }
@@ -295,36 +295,36 @@ model StockLedger {
 // ---------------------------------------------------------------------------
 
 model PurchaseOrder {
-  id               String   @id @default(cuid())
-  number           String   @unique
+  id               String           @id @default(cuid())
+  number           String           @unique
   buyerOrgId       String
-  buyerOrg         Organization @relation("PoBuyer", fields: [buyerOrgId], references: [id])
+  buyerOrg         Organization     @relation("PoBuyer", fields: [buyerOrgId], references: [id])
   sellerOrgId      String
-  sellerOrg        Organization @relation("PoSeller", fields: [sellerOrgId], references: [id])
+  sellerOrg        Organization     @relation("PoSeller", fields: [sellerOrgId], references: [id])
   distributionType DistributionType @default(TRADE)
-  status           PoStatus @default(DRAFT)
+  status           PoStatus         @default(DRAFT)
 
-  discountRate     Float    // buyer tier discount applied to the whole PO
-  subtotal         Float    @default(0) // sum of line SRP * qty
-  total            Float    @default(0) // sum of discounted line totals
+  discountRate Float // buyer tier discount applied to the whole PO
+  subtotal     Float @default(0) // sum of line SRP * qty
+  total        Float @default(0) // sum of discounted line totals
 
   // Payment method; MANA transfers credits from buyer to seller on approval.
-  paymentMethod    PaymentMethod @default(CASH)
+  paymentMethod PaymentMethod @default(CASH)
 
   // Optional free-text note from the buyer.
-  note             String?
+  note String?
 
   // Shipping tracking link set by the Principal for drop-ship orders.
-  trackingLink     String?
+  trackingLink String?
 
   // Buyer's target/expected delivery date (optional).
   expectedDeliveryDate DateTime?
 
   // Drop-ship delivery details (end recipient the Principal ships to directly).
-  recipientName    String?
-  recipientAddress String?
-  recipientPhone   String?
-  landmark         String?
+  recipientName     String?
+  recipientAddress  String?
+  recipientPhone    String?
+  landmark          String?
   // The destination broken out from the address picker (PSGC names). Kept
   // separately so drop-ship can be checked against the buyer's own territory —
   // a distributor may not drop-ship into an area it already covers.
@@ -334,24 +334,24 @@ model PurchaseOrder {
 
   // Cancellation trail: why it was cancelled and when. Any proof of
   // reimbursement is stored as a PoAttachment with kind REIMBURSEMENT_PROOF.
-  cancelReason     String?
-  cancelledAt      DateTime?
+  cancelReason String?
+  cancelledAt  DateTime?
 
-  createdById      String
-  createdBy        User     @relation("PoCreatedBy", fields: [createdById], references: [id])
+  createdById String
+  createdBy   User   @relation("PoCreatedBy", fields: [createdById], references: [id])
 
-  submittedAt      DateTime?
-  approvedAt       DateTime?
-  fulfilledAt      DateTime?
-  receivedAt       DateTime?
+  submittedAt DateTime?
+  approvedAt  DateTime?
+  fulfilledAt DateTime?
+  receivedAt  DateTime?
 
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  items            PurchaseOrderItem[]
-  approvals        Approval[] @relation("ApprovalPO")
-  sale             Sale?      @relation("SaleFromPO")
-  attachments      PoAttachment[]
+  items       PurchaseOrderItem[]
+  approvals   Approval[]          @relation("ApprovalPO")
+  sale        Sale?               @relation("SaleFromPO")
+  attachments PoAttachment[]
 
   @@index([buyerOrgId])
   @@index([sellerOrgId])
@@ -361,33 +361,33 @@ model PurchaseOrder {
 // Buyer-uploaded files attached to a PO (e.g. proof of payment), visible to
 // the buyer and its supplier. Stored as base64 to keep setup serverless-simple.
 model PoAttachment {
-  id           String   @id @default(cuid())
+  id           String        @id @default(cuid())
   poId         String
   po           PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
-  kind         String   @default("PROOF_OF_PAYMENT")
+  kind         String        @default("PROOF_OF_PAYMENT")
   fileName     String
   mimeType     String
   size         Int
-  data         String   // base64-encoded file content
+  data         String // base64-encoded file content
   uploadedById String
-  uploadedBy   User     @relation("AttachmentUploader", fields: [uploadedById], references: [id])
-  createdAt    DateTime @default(now())
+  uploadedBy   User          @relation("AttachmentUploader", fields: [uploadedById], references: [id])
+  createdAt    DateTime      @default(now())
 
   @@index([poId])
 }
 
 model PurchaseOrderItem {
-  id        String   @id @default(cuid())
-  poId      String
-  po        PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
-  productId String
-  product   Product  @relation(fields: [productId], references: [id])
-  quantity  Int
+  id               String        @id @default(cuid())
+  poId             String
+  po               PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product       @relation(fields: [productId], references: [id])
+  quantity         Int
   // Cumulative quantity actually received by the buyer (supports partial receipts).
-  receivedQuantity Int @default(0)
-  unitSrp   Float    // SRP at time of order
-  unitPrice Float    // discounted unit price
-  lineTotal Float    // unitPrice * quantity
+  receivedQuantity Int           @default(0)
+  unitSrp          Float // SRP at time of order
+  unitPrice        Float // discounted unit price
+  lineTotal        Float // unitPrice * quantity
 
   @@index([poId])
 }
@@ -397,40 +397,40 @@ model PurchaseOrderItem {
 // ---------------------------------------------------------------------------
 
 model Sale {
-  id               String   @id @default(cuid())
-  number           String   @unique
+  id               String           @id @default(cuid())
+  number           String           @unique
   sellerOrgId      String
-  sellerOrg        Organization @relation("SaleSeller", fields: [sellerOrgId], references: [id])
+  sellerOrg        Organization     @relation("SaleSeller", fields: [sellerOrgId], references: [id])
   // Optional downstream org buyer (if selling to a known account).
   buyerOrgId       String?
-  buyerOrg         Organization? @relation("SaleBuyer", fields: [buyerOrgId], references: [id])
-  channel          SaleChannel @default(POS)
+  buyerOrg         Organization?    @relation("SaleBuyer", fields: [buyerOrgId], references: [id])
+  channel          SaleChannel      @default(POS)
   distributionType DistributionType @default(TRADE)
 
-  customerName     String?  // walk-in / end customer for POS
+  customerName String? // walk-in / end customer for POS
   // Optional link to a saved end-customer (captures who a reseller supplies).
-  customerId       String?
-  customer         Customer? @relation(fields: [customerId], references: [id])
-  discountRate     Float    @default(0)
-  subtotal         Float    @default(0)
-  total            Float    @default(0)
+  customerId   String?
+  customer     Customer? @relation(fields: [customerId], references: [id])
+  discountRate Float     @default(0)
+  subtotal     Float     @default(0)
+  total        Float     @default(0)
 
   // Payment terms for a POS sale to a distributor: true = on account (Accounts
   // Receivable), false = cash. Drives the finance posting + per-distributor A/R.
-  onAccount        Boolean  @default(false)
+  onAccount Boolean   @default(false)
   // When an on-account sale is expected to be paid (for the A/R aging report).
-  dueDate          DateTime?
+  dueDate   DateTime?
 
   // If this sale was generated from a fulfilled PO.
-  poId             String?  @unique
-  po               PurchaseOrder? @relation("SaleFromPO", fields: [poId], references: [id])
+  poId String?        @unique
+  po   PurchaseOrder? @relation("SaleFromPO", fields: [poId], references: [id])
 
-  createdById      String
-  createdBy        User     @relation("SaleCreatedBy", fields: [createdById], references: [id])
+  createdById String
+  createdBy   User   @relation("SaleCreatedBy", fields: [createdById], references: [id])
 
-  createdAt        DateTime @default(now())
+  createdAt DateTime @default(now())
 
-  items            SaleItem[]
+  items SaleItem[]
 
   @@index([sellerOrgId])
   @@index([channel])
@@ -440,29 +440,29 @@ model Sale {
 
 // A payment received from a distributor against their Accounts Receivable balance.
 model DistributorPayment {
-  id          String   @id @default(cuid())
+  id          String       @id @default(cuid())
   orgId       String
   org         Organization @relation(fields: [orgId], references: [id])
   amount      Float
   date        DateTime
   note        String?
   createdById String
-  createdAt   DateTime @default(now())
+  createdAt   DateTime     @default(now())
 
   @@index([orgId])
 }
 
 model SaleItem {
-  id        String   @id @default(cuid())
-  saleId    String
-  sale      Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  productId String
-  product   Product  @relation(fields: [productId], references: [id])
-  quantity  Int
-  refundedQuantity Int @default(0)
-  unitSrp   Float
-  unitPrice Float
-  lineTotal Float
+  id               String  @id @default(cuid())
+  saleId           String
+  sale             Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product @relation(fields: [productId], references: [id])
+  quantity         Int
+  refundedQuantity Int     @default(0)
+  unitSrp          Float
+  unitPrice        Float
+  lineTotal        Float
 
   @@index([saleId])
 }
@@ -472,26 +472,26 @@ model SaleItem {
 // ---------------------------------------------------------------------------
 
 model Approval {
-  id            String   @id @default(cuid())
-  type          ApprovalType
-  status        ApprovalStatus @default(PENDING)
+  id     String         @id @default(cuid())
+  type   ApprovalType
+  status ApprovalStatus @default(PENDING)
 
   // Subject org (the org being onboarded/approved).
-  orgId         String
-  org           Organization @relation("ApprovalSubject", fields: [orgId], references: [id])
+  orgId String
+  org   Organization @relation("ApprovalSubject", fields: [orgId], references: [id])
 
   // Optional PO subject (for PO_APPROVAL).
-  poId          String?
-  po            PurchaseOrder? @relation("ApprovalPO", fields: [poId], references: [id])
+  poId String?
+  po   PurchaseOrder? @relation("ApprovalPO", fields: [poId], references: [id])
 
   requestedById String?
-  requestedBy   User?    @relation("ApprovalRequester", fields: [requestedById], references: [id])
+  requestedBy   User?     @relation("ApprovalRequester", fields: [requestedById], references: [id])
   decidedById   String?
-  decidedBy     User?    @relation("ApprovalDecider", fields: [decidedById], references: [id])
+  decidedBy     User?     @relation("ApprovalDecider", fields: [decidedById], references: [id])
   decidedAt     DateTime?
   note          String?
 
-  createdAt     DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([orgId])
   @@index([status])
@@ -506,15 +506,15 @@ model Approval {
 // REGION level can be assigned to exactly one organization (its distributor);
 // an unassigned assignable territory is "vacant".
 model Territory {
-  id            String   @id @default(cuid())
+  id            String         @id @default(cuid())
   name          String
   level         TerritoryLevel
   parentId      String?
-  parent        Territory?  @relation("TerritoryTree", fields: [parentId], references: [id])
-  children      Territory[] @relation("TerritoryTree")
-  assignedOrgId String?  @unique
-  assignedOrg   Organization? @relation("OrgTerritory", fields: [assignedOrgId], references: [id])
-  createdAt     DateTime @default(now())
+  parent        Territory?     @relation("TerritoryTree", fields: [parentId], references: [id])
+  children      Territory[]    @relation("TerritoryTree")
+  assignedOrgId String?        @unique
+  assignedOrg   Organization?  @relation("OrgTerritory", fields: [assignedOrgId], references: [id])
+  createdAt     DateTime       @default(now())
 
   @@index([parentId])
   @@index([level])
@@ -523,16 +523,16 @@ model Territory {
 // An end-customer that a distributor (usually a Reseller) supplies. Captures
 // the last-mile customer database. Visible up the chain for the owner's parents.
 model Customer {
-  id          String   @id @default(cuid())
+  id          String       @id @default(cuid())
   name        String
-  type        String?  // Sub-Reseller | Retail | Bakery | Consumer
+  type        String? // Sub-Reseller | Retail | Bakery | Consumer
   phone       String?
   address     String?
   note        String?
-  ownerOrgId  String   // the org that serves this customer (e.g. the Reseller)
+  ownerOrgId  String // the org that serves this customer (e.g. the Reseller)
   ownerOrg    Organization @relation("OrgCustomers", fields: [ownerOrgId], references: [id])
   createdById String
-  createdAt   DateTime @default(now())
+  createdAt   DateTime     @default(now())
   sales       Sale[]
 
   @@index([ownerOrgId])
@@ -541,35 +541,39 @@ model Customer {
 // A downloadable material (catalog, price list, poster, etc.) the Principal
 // uploads for distributors to download. File stored inline as base64.
 model Material {
-  id           String   @id @default(cuid())
-  title        String
-  description  String?
-  fileName     String
-  mimeType     String
-  size         Int
-  data         String   // base64 (no data: prefix)
-  uploadedById String
-  createdAt    DateTime @default(now())
+  id              String   @id @default(cuid())
+  title           String
+  description     String?
+  fileName        String
+  mimeType        String
+  size            Int
+  data            String // base64 (no data: prefix)
+  // When set, this file IS the official application form for that tier and is
+  // what an online applicant is sent after applying.
+  applicationTier String?
+  uploadedById    String
+  createdAt       DateTime @default(now())
 
   @@index([createdAt])
+  @@index([applicationTier])
 }
 
 // A request to buy Mana credits, with proof of payment, approved by the Principal.
 model ManaPurchase {
-  id            String   @id @default(cuid())
+  id            String         @id @default(cuid())
   orgId         String
-  org           Organization @relation(fields: [orgId], references: [id])
+  org           Organization   @relation(fields: [orgId], references: [id])
   amount        Float
   status        ApprovalStatus @default(PENDING)
   fileName      String
   mimeType      String
   size          Int
-  data          String   // base64 proof of payment
+  data          String // base64 proof of payment
   requestedById String?
   decidedById   String?
   decidedAt     DateTime?
   note          String?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime       @default(now())
 
   @@index([orgId])
   @@index([status])
@@ -577,7 +581,7 @@ model ManaPurchase {
 
 // Append-only ledger of Mana movements per org.
 model ManaTxn {
-  id        String   @id @default(cuid())
+  id        String       @id @default(cuid())
   orgId     String
   org       Organization @relation(fields: [orgId], references: [id])
   change    Float
@@ -585,7 +589,7 @@ model ManaTxn {
   reason    String
   refType   String?
   refId     String?
-  createdAt DateTime @default(now())
+  createdAt DateTime     @default(now())
 
   @@index([orgId])
 }
@@ -594,16 +598,16 @@ model ManaTxn {
 // Principal uploads against a distributor/reseller account. Visible ONLY to the
 // Principal and its staff — never to the account itself. Stored inline as base64.
 model OrgDocument {
-  id           String   @id @default(cuid())
+  id           String          @id @default(cuid())
   orgId        String
-  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org          Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   type         OrgDocumentType @default(OTHER)
   fileName     String
   mimeType     String
   size         Int
-  data         String   // base64-encoded file content
+  data         String // base64-encoded file content
   uploadedById String
-  createdAt    DateTime @default(now())
+  createdAt    DateTime        @default(now())
 
   @@index([orgId])
 }
@@ -611,17 +615,17 @@ model OrgDocument {
 // A lead/customer the Principal refers down to a distributor or reseller. The
 // recipient org is notified by email and can see it in their Referrals page.
 model Referral {
-  id          String   @id @default(cuid())
-  fromOrgId   String   // the Principal making the referral
+  id          String       @id @default(cuid())
+  fromOrgId   String // the Principal making the referral
   fromOrg     Organization @relation("ReferralFrom", fields: [fromOrgId], references: [id])
-  toOrgId     String   // the distributor/reseller the lead is referred to
+  toOrgId     String // the distributor/reseller the lead is referred to
   toOrg       Organization @relation("ReferralTo", fields: [toOrgId], references: [id])
   name        String
   address     String
   cpNumber    String
   note        String?
   createdById String
-  createdAt   DateTime @default(now())
+  createdAt   DateTime     @default(now())
 
   @@index([toOrgId])
   @@index([fromOrgId])
@@ -629,30 +633,30 @@ model Referral {
 
 // A line in the chart of accounts. Company-wide (the Principal's books).
 model Account {
-  id              String  @id @default(cuid())
-  code            String  @unique
+  id              String           @id @default(cuid())
+  code            String           @unique
   name            String
   type            AccountType
   // Optional parent for sub-accounts (chart-of-accounts hierarchy).
   parentId        String?
-  parent          Account?  @relation("AccountTree", fields: [parentId], references: [id])
-  children        Account[] @relation("AccountTree")
+  parent          Account?         @relation("AccountTree", fields: [parentId], references: [id])
+  children        Account[]        @relation("AccountTree")
   // Cash & cash equivalents — these accounts ARE the cash on the cash-flow statement.
-  isCash          Boolean @default(false)
+  isCash          Boolean          @default(false)
   // For non-cash accounts: which section a cash movement against it belongs to.
   cashflowSection CashflowSection?
-  isActive        Boolean @default(true)
-  createdAt       DateTime @default(now())
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
 
-  lines           JournalLine[]
+  lines JournalLine[]
 
   @@index([type])
 }
 
 // A balanced double-entry journal entry (sum of debits == sum of credits).
 model JournalEntry {
-  id          String  @id @default(cuid())
-  number      String  @unique
+  id          String   @id @default(cuid())
+  number      String   @unique
   date        DateTime
   memo        String?
   reference   String?
@@ -679,7 +683,7 @@ model JournalEntry {
 
 // Per-SKU line of a distributor delivery recorded in a journal entry.
 model JournalItem {
-  id        String  @id @default(cuid())
+  id        String       @id @default(cuid())
   entryId   String
   entry     JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
   productId String?
@@ -693,13 +697,13 @@ model JournalItem {
 }
 
 model JournalLine {
-  id        String  @id @default(cuid())
+  id        String       @id @default(cuid())
   entryId   String
   entry     JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
   accountId String
-  account   Account @relation(fields: [accountId], references: [id])
-  debit     Float   @default(0)
-  credit    Float   @default(0)
+  account   Account      @relation(fields: [accountId], references: [id])
+  debit     Float        @default(0)
+  credit    Float        @default(0)
   memo      String?
 
   @@index([entryId])
@@ -708,7 +712,7 @@ model JournalLine {
 
 // Receipts / supporting documents attached to a journal entry (e.g. expense receipts).
 model JournalAttachment {
-  id           String  @id @default(cuid())
+  id           String       @id @default(cuid())
   entryId      String
   entry        JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
   // Optional: the account this receipt belongs to (a per-line attachment). Null =
@@ -718,27 +722,27 @@ model JournalAttachment {
   fileName     String
   mimeType     String
   size         Int
-  data         String   // base64-encoded file content
+  data         String // base64-encoded file content
   uploadedById String
-  createdAt    DateTime @default(now())
+  createdAt    DateTime     @default(now())
 
   @@index([entryId])
 }
 
 model KPIRecord {
-  id                String   @id @default(cuid())
+  id                String       @id @default(cuid())
   orgId             String
   org               Organization @relation(fields: [orgId], references: [id])
   periodStart       DateTime
   periodEnd         DateTime
-  salesVolume       Int      @default(0)   // units sold
-  revenue           Float    @default(0)
-  target            Float    @default(0)
-  activeMembers     Int      @default(0)   // active downstream members
-  poFulfillmentRate Float    @default(0)   // 0..1
-  inventoryTurnover Float    @default(0)
-  growthPct         Float    @default(0)   // period-over-period %
-  createdAt         DateTime @default(now())
+  salesVolume       Int          @default(0) // units sold
+  revenue           Float        @default(0)
+  target            Float        @default(0)
+  activeMembers     Int          @default(0) // active downstream members
+  poFulfillmentRate Float        @default(0) // 0..1
+  inventoryTurnover Float        @default(0)
+  growthPct         Float        @default(0) // period-over-period %
+  createdAt         DateTime     @default(now())
 
   @@index([orgId])
   @@index([periodStart, periodEnd])
@@ -748,27 +752,27 @@ model KPIRecord {
 // Marketing System — Facebook Ads Management (separate from DMS & Finance)
 // ---------------------------------------------------------------------------
 model FbAdCampaign {
-  id          String   @id @default(cuid())
-  name        String
-  objective   String   @default("AWARENESS") // AWARENESS | TRAFFIC | ENGAGEMENT | LEADS | SALES
-  status      String   @default("ACTIVE")    // ACTIVE | PAUSED | COMPLETED
-  budget      Float    @default(0)            // planned budget
-  spend       Float    @default(0)            // amount spent so far
-  reach       Int      @default(0)
-  impressions Int      @default(0)
-  clicks      Int      @default(0)
-  leads       Int      @default(0)            // results / conversions
-  startDate   DateTime?
-  endDate     DateTime?
-  notes       String?
+  id           String    @id @default(cuid())
+  name         String
+  objective    String    @default("AWARENESS") // AWARENESS | TRAFFIC | ENGAGEMENT | LEADS | SALES
+  status       String    @default("ACTIVE") // ACTIVE | PAUSED | COMPLETED
+  budget       Float     @default(0) // planned budget
+  spend        Float     @default(0) // amount spent so far
+  reach        Int       @default(0)
+  impressions  Int       @default(0)
+  clicks       Int       @default(0)
+  leads        Int       @default(0) // results / conversions
+  startDate    DateTime?
+  endDate      DateTime?
+  notes        String?
   // MANUAL entry vs pulled from Facebook. fbCampaignId links a synced row to its
   // Meta campaign so re-syncing updates in place instead of duplicating.
-  source       String   @default("MANUAL")   // MANUAL | FACEBOOK
-  fbCampaignId String?  @unique
+  source       String    @default("MANUAL") // MANUAL | FACEBOOK
+  fbCampaignId String?   @unique
   lastSyncedAt DateTime?
-  createdById String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdById  String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   // Individual leads attributed to this campaign (Lead Funnels module).
   // Distinct from `leads` above, which is the count reported by the ad platform.
@@ -795,23 +799,23 @@ model Budget {
 // HR System (separate workspace) — Employees, Attendance, Leave, Payroll
 // ---------------------------------------------------------------------------
 model Employee {
-  id             String   @id @default(cuid())
-  employeeNo     String   @unique
+  id             String    @id @default(cuid())
+  employeeNo     String    @unique
   firstName      String
   lastName       String
   position       String?
   department     String?
-  employmentType String   @default("REGULAR") // REGULAR | PROBATIONARY | CONTRACTUAL | PART_TIME
-  status         String   @default("ACTIVE")  // ACTIVE | INACTIVE | RESIGNED
+  employmentType String    @default("REGULAR") // REGULAR | PROBATIONARY | CONTRACTUAL | PART_TIME
+  status         String    @default("ACTIVE") // ACTIVE | INACTIVE | RESIGNED
   dateHired      DateTime?
   email          String?
   phone          String?
   address        String?
-  baseSalary     Float    @default(0) // monthly
+  baseSalary     Float     @default(0) // monthly
   notes          String?
   createdById    String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   attendance Attendance[]
   leaves     LeaveRequest[]
@@ -835,19 +839,19 @@ model Attendance {
 }
 
 model LeaveRequest {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   employeeId  String
-  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  type        String   @default("VACATION") // VACATION | SICK | EMERGENCY | UNPAID
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  type        String    @default("VACATION") // VACATION | SICK | EMERGENCY | UNPAID
   startDate   DateTime
   endDate     DateTime
-  days        Float    @default(1)
+  days        Float     @default(1)
   reason      String?
-  status      String   @default("PENDING")  // PENDING | APPROVED | REJECTED
+  status      String    @default("PENDING") // PENDING | APPROVED | REJECTED
   decidedById String?
   decidedAt   DateTime?
   createdById String
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 
   @@index([status])
   @@index([employeeId])
@@ -869,8 +873,8 @@ model LeadFunnel {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  leads       Lead[]
-  webinars    Webinar[]
+  leads    Lead[]
+  webinars Webinar[]
 
   @@index([isActive])
 }
@@ -880,9 +884,9 @@ model LeadFunnel {
 // Ads point at /join; whoever registers there becomes a lead in `funnel`.
 // ---------------------------------------------------------------------------
 model Webinar {
-  id            String    @id @default(cuid())
+  id            String      @id @default(cuid())
   // Landing-page copy, editable without a redeploy.
-  title         String    @default("Become a Tasty Food Distributor")
+  title         String      @default("Become a Tasty Food Distributor")
   headline      String?
   description   String?
   scheduledAt   DateTime?
@@ -891,13 +895,13 @@ model Webinar {
   zoomMeetingId String?
   zoomPasscode  String?
   // Only one webinar is live on the landing page at a time.
-  isActive      Boolean   @default(true)
+  isActive      Boolean     @default(true)
   // Registrations are pushed into this funnel as leads.
   funnelId      String?
   funnel        LeadFunnel? @relation(fields: [funnelId], references: [id], onDelete: SetNull)
   createdById   String
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
   registrations WebinarRegistration[]
   sessions      WebinarSession[]
@@ -906,32 +910,34 @@ model Webinar {
 }
 
 model WebinarRegistration {
-  id        String   @id @default(cuid())
-  webinarId String
-  webinar   Webinar  @relation(fields: [webinarId], references: [id], onDelete: Cascade)
-  name      String
-  email     String
-  phone     String
-  city      String?
-  province  String?
+  id           String          @id @default(cuid())
+  webinarId    String
+  webinar      Webinar         @relation(fields: [webinarId], references: [id], onDelete: Cascade)
+  name         String
+  email        String
+  phone        String
+  city         String?
+  province     String?
   // Which tier they are interested in operating.
-  interest  String   @default("UNSURE") // PROVINCIAL | CITY | RESELLER | RETAIL | UNSURE
-  message   String?
+  interest     String          @default("UNSURE") // PROVINCIAL | CITY | RESELLER | RETAIL | UNSURE
+  message      String?
   // The Lead row created from this sign-up, if a funnel is configured.
-  leadId    String?
+  leadId       String?
   // Which schedule they picked, when more than one is offered.
-  sessionId String?
-  session   WebinarSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  sessionId    String?
+  session      WebinarSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   // Hashed (never raw) client IP, used only to rate-limit the public form.
-  ipHash    String?
-  attended  Boolean  @default(false)
+  ipHash       String?
+  attended     Boolean         @default(false)
   // Timestamps of the automatic reminders already sent, so a cron that runs
   // more than once in a window can never email the same person twice.
   remind2dAt   DateTime?
   remind1dAt   DateTime?
   remindDayAt  DateTime?
   remindLateAt DateTime?
-  createdAt DateTime @default(now())
+  // The day-after thank-you and follow-up, sent only to people who attended.
+  thankYouAt   DateTime?
+  createdAt    DateTime        @default(now())
 
   // One sign-up per email per webinar; re-submitting updates the existing row.
   @@unique([webinarId, email])
@@ -940,34 +946,36 @@ model WebinarRegistration {
 }
 
 model Lead {
-  id         String   @id @default(cuid())
-  funnelId   String
-  funnel     LeadFunnel @relation(fields: [funnelId], references: [id], onDelete: Cascade)
-  name       String
-  company    String?
-  phone      String?
-  email      String?
-  address    String?
+  id          String        @id @default(cuid())
+  funnelId    String
+  funnel      LeadFunnel    @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+  name        String
+  company     String?
+  phone       String?
+  email       String?
+  address     String?
   // Structured location, so the funnel can be filtered by area.  stays
   // as the free-text version people type in.
-  city       String?
-  province   String?
+  city        String?
+  province    String?
   // Which tier they want to operate: PROVINCIAL | CITY | RESELLER | RETAIL | UNSURE.
-  interest   String?
+  interest    String?
   // Where the lead came from; FACEBOOK_ADS leads may name the campaign.
-  source     String   @default("MANUAL") // FACEBOOK_ADS | WALK_IN | REFERRAL | WEBSITE | MANUAL
-  campaignId String?
-  campaign   FbAdCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  source      String        @default("MANUAL") // FACEBOOK_ADS | WALK_IN | REFERRAL | WEBSITE | MANUAL
+  campaignId  String?
+  campaign    FbAdCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   // Position in funnel.stages while the lead is still OPEN.
-  stageIndex Int      @default(0)
-  status     String   @default("OPEN") // OPEN | WON | LOST
-  value      Float    @default(0)       // estimated deal value
-  note       String?
-  lostReason String?
-  closedAt   DateTime?
+  stageIndex  Int           @default(0)
+  status      String        @default("OPEN") // OPEN | WON | LOST
+  value       Float         @default(0) // estimated deal value
+  note        String?
+  lostReason  String?
+  closedAt    DateTime?
   createdById String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  applications Application[]
 
   @@index([funnelId])
   @@index([status])
@@ -982,26 +990,26 @@ model Lead {
 // submitted form, so it cannot be altered.
 // ---------------------------------------------------------------------------
 model SupportTicket {
-  id          String   @id @default(cuid())
+  id          String       @id @default(cuid())
   orgId       String
   org         Organization @relation("OrgSupportTickets", fields: [orgId], references: [id])
   createdById String
-  createdBy   User     @relation("SupportTicketAuthor", fields: [createdById], references: [id])
+  createdBy   User         @relation("SupportTicketAuthor", fields: [createdById], references: [id])
 
   // Snapshot of who raised it, captured at submission so the record stays
   // accurate even if the account's details are edited afterwards.
-  senderName  String
-  position    String
-  phone       String?
-  email       String
+  senderName String
+  position   String
+  phone      String?
+  email      String
 
-  message     String
-  status      String   @default("OPEN") // OPEN | RESOLVED
+  message   String
+  status    String    @default("OPEN") // OPEN | RESOLVED
   // The Principal's response, shown back to the sender.
-  reply       String?
-  repliedAt   DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  reply     String?
+  repliedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   attachments SupportAttachment[]
 
@@ -1014,14 +1022,14 @@ model SupportTicket {
 // Capped per ticket in the route; uploaded one request at a time so a batch
 // never exceeds the JSON body limit.
 model SupportAttachment {
-  id        String   @id @default(cuid())
+  id        String        @id @default(cuid())
   ticketId  String
   ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   fileName  String
   mimeType  String
   size      Int
-  data      String   // base64-encoded file content
-  createdAt DateTime @default(now())
+  data      String // base64-encoded file content
+  createdAt DateTime      @default(now())
 
   @@index([ticketId])
 }
@@ -1036,15 +1044,15 @@ model SupportAttachment {
 // silently pick up a target that was only agreed afterwards.
 // ---------------------------------------------------------------------------
 model MonthlyTarget {
-  id        String   @id @default(cuid())
+  id        String       @id @default(cuid())
   orgId     String
   org       Organization @relation("OrgMonthlyTargets", fields: [orgId], references: [id], onDelete: Cascade)
   year      Int
-  month     Int      // 1-12
-  target    Float    @default(0)
+  month     Int // 1-12
+  target    Float        @default(0)
   note      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
 
   @@unique([orgId, year, month])
   @@index([orgId])
@@ -1071,4 +1079,91 @@ model WebinarSession {
 
   @@index([webinarId])
   @@index([scheduledAt])
+}
+
+// An online distributorship application. Anyone can submit one from the public
+// /apply page — usually after attending an orientation, but the page stands on
+// its own so an ad can point straight at it.
+model Application {
+  id    String @id @default(cuid())
+  // Unguessable handle used in emailed links, so an applicant can fetch their
+  // own form and status without an account.
+  token String @unique
+  // Which tier they are applying for: PROVINCIAL | CITY | RESELLER | RETAIL.
+  tier  String
+
+  name     String
+  email    String
+  phone    String
+  address  String?
+  barangay String?
+  city     String?
+  province String?
+
+  // Background the Principal screens on.
+  businessName String?
+  hasStore     Boolean @default(false)
+  experience   String?
+  capital      Float?
+  targetArea   String?
+  note         String?
+
+  // SUBMITTED | REVIEWING | APPROVED | REJECTED
+  status     String    @default("SUBMITTED")
+  reviewNote String?
+  reviewedAt DateTime?
+
+  // The funnel lead this application belongs to, so applying advances them.
+  leadId         String?
+  lead           Lead?   @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  // The orientation sign-up it came from, when the applicant followed the
+  // link in their thank-you email.
+  registrationId String?
+
+  // Hashed client IP, used only to rate-limit the public form.
+  ipHash    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  appointments Appointment[]
+
+  @@index([status])
+  @@index([tier])
+  @@index([createdAt])
+}
+
+// A meeting an applicant asks for and the Principal confirms: either a Zoom
+// call or a visit to the office.
+model Appointment {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  // ZOOM | OFFICE_VISIT
+  kind           String
+  // What the applicant asked for.
+  requestedAt    DateTime
+  altRequestedAt DateTime?
+  // What the Principal settled on; only set once confirmed.
+  confirmedAt    DateTime?
+
+  // REQUESTED | CONFIRMED | RESCHEDULED | DECLINED | COMPLETED | NO_SHOW
+  status   String  @default("REQUESTED")
+  // Joining details for a Zoom meeting, or the address for an office visit.
+  zoomLink String?
+  location String?
+  note     String?
+  // Outcome the Principal records afterwards, which feeds the funnel stage.
+  outcome  String?
+
+  // Reminder stamps, same idea as the webinar ones.
+  remindDayAt  DateTime?
+  ownerBriefAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([applicationId])
+  @@index([status])
+  @@index([confirmedAt])
 }

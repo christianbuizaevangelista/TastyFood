@@ -11,7 +11,7 @@ function peso(n: number): string {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n || 0);
 }
 
-function appOrigin(): string {
+export function appOrigin(): string {
   return (process.env.CLIENT_ORIGIN || 'https://tastyfoodph.vercel.app').replace(/\/$/, '');
 }
 
@@ -22,7 +22,7 @@ function appOrigin(): string {
 // clients (Outlook especially) don't support modern CSS layout. The company
 // name is real text next to the logo, not baked into it, so the email still
 // reads correctly in clients that block images by default.
-function emailShell(subtitle: string, body: string): string {
+export function emailShell(subtitle: string, body: string): string {
   const logo = `${appOrigin()}/tasty-food-splash.png`;
   return `
     <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#333;line-height:1.55">

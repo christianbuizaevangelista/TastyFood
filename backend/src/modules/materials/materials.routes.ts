@@ -17,7 +17,7 @@ materialsRouter.get(
   '/',
   asyncHandler(async (_req, res) => {
     const materials = await prisma.material.findMany({
-      select: { id: true, title: true, description: true, fileName: true, mimeType: true, size: true, createdAt: true },
+      select: { id: true, title: true, description: true, fileName: true, mimeType: true, size: true, applicationTier: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
     });
     res.json({ materials });
@@ -46,6 +46,9 @@ const uploadSchema = z.object({
   fileName: z.string().min(1),
   mimeType: z.string().min(1),
   dataBase64: z.string().min(1),
+  // Tagging a file as the official application form for a tier is what makes
+  // it the one an online applicant is sent.
+  applicationTier: z.enum(['PROVINCIAL', 'CITY', 'RESELLER', 'RETAIL']).nullable().optional(),
 });
 
 // POST /materials — upload a material (Principal only).
@@ -65,9 +68,10 @@ materialsRouter.post(
         mimeType: body.mimeType,
         size,
         data,
+        applicationTier: body.applicationTier ?? null,
         uploadedById: req.auth!.sub,
       },
-      select: { id: true, title: true, fileName: true, size: true, createdAt: true },
+      select: { id: true, title: true, fileName: true, size: true, applicationTier: true, createdAt: true },
     });
     res.status(201).json(material);
   })

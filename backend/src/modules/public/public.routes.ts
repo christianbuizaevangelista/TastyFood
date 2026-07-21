@@ -5,6 +5,7 @@ import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { badRequest, notFound } from '../../lib/errors';
 import { sendWebinarConfirmationEmail } from '../../lib/email';
+import { resolveFunnel } from './public.service';
 
 // Public, UNAUTHENTICATED endpoints backing the recruitment landing page at
 // /join. Everything here is reachable by anyone on the internet, so each route
@@ -56,30 +57,6 @@ publicRouter.get(
     res.json({ webinar: w });
   })
 );
-
-// Every sign-up has to land in a funnel. Leaving the landing page's funnel
-// unset used to mean registrations quietly became leads for nobody, which is
-// indistinguishable from losing them — so fall back to an existing active
-// funnel, and create one if the account has none at all.
-async function resolveFunnel(funnelId: string | null, createdById: string) {
-  if (funnelId) {
-    const chosen = await prisma.leadFunnel.findUnique({ where: { id: funnelId } });
-    if (chosen) return chosen;
-  }
-  const existing = await prisma.leadFunnel.findFirst({
-    where: { isActive: true },
-    orderBy: { createdAt: 'asc' },
-  });
-  if (existing) return existing;
-  return prisma.leadFunnel.create({
-    data: {
-      name: 'Distributor Recruitment',
-      description: 'Sign-ups from the /join landing page and Zoom orientations.',
-      stages: ['Registered', 'Attended orientation', 'Application sent', 'Interviewed', 'Signed'],
-      createdById,
-    },
-  });
-}
 
 const registerSchema = z.object({
   name: z.string().min(1).max(120),
