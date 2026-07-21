@@ -333,13 +333,15 @@ export default function LandingPage() {
           <div className="border-t border-slate-100 pt-3">
             <label className="label">Send registrations to funnel</label>
             <select className="input" value={f.funnelId} onChange={(e) => set('funnelId', e.target.value)}>
-              <option value="">— don't create leads —</option>
+              <option value="">— use the first active funnel —</option>
               {(funnels.data?.funnels ?? []).map((fn) => (
                 <option key={fn.id} value={fn.id}>{fn.name}</option>
               ))}
             </select>
             <p className="mt-1 text-xs text-slate-400">
-              Each sign-up becomes a lead in the first stage of this funnel.
+              Every sign-up becomes a lead in the first stage of this funnel. Leave it unset and
+              we use your first active funnel, creating one if you have none — a registration
+              is never dropped.
             </p>
           </div>
 

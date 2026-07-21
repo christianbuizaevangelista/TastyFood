@@ -57,6 +57,30 @@ publicRouter.get(
   })
 );
 
+// Every sign-up has to land in a funnel. Leaving the landing page's funnel
+// unset used to mean registrations quietly became leads for nobody, which is
+// indistinguishable from losing them — so fall back to an existing active
+// funnel, and create one if the account has none at all.
+async function resolveFunnel(funnelId: string | null, createdById: string) {
+  if (funnelId) {
+    const chosen = await prisma.leadFunnel.findUnique({ where: { id: funnelId } });
+    if (chosen) return chosen;
+  }
+  const existing = await prisma.leadFunnel.findFirst({
+    where: { isActive: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (existing) return existing;
+  return prisma.leadFunnel.create({
+    data: {
+      name: 'Distributor Recruitment',
+      description: 'Sign-ups from the /join landing page and Zoom orientations.',
+      stages: ['Registered', 'Attended orientation', 'Application sent', 'Interviewed', 'Signed'],
+      createdById,
+    },
+  });
+}
+
 const registerSchema = z.object({
   name: z.string().min(1).max(120),
   email: z.string().email().max(160),
@@ -137,12 +161,12 @@ publicRouter.post(
         data: { webinarId: webinar.id, email, ...fields },
       });
 
-      // Push the sign-up into the configured funnel as a new lead so it can be
-      // worked like any other. Best-effort: a funnel problem must never cost us
-      // the registration itself.
-      if (webinar.funnelId) {
+      // Push the sign-up into a funnel as a new lead so it can be worked like
+      // any other. Best-effort: a funnel problem must never cost us the
+      // registration itself.
+      {
         try {
-          const funnel = await prisma.leadFunnel.findUnique({ where: { id: webinar.funnelId } });
+          const funnel = await resolveFunnel(webinar.funnelId, webinar.createdById);
           if (funnel) {
             const lead = await prisma.lead.create({
               data: {
