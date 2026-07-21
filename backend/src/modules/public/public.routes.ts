@@ -175,6 +175,11 @@ publicRouter.post(
                 phone: fields.phone,
                 email,
                 address: [fields.city, fields.province].filter(Boolean).join(', ') || null,
+                // Kept separately as well, so the funnel can be filtered by area
+                // and by the tier they are after without parsing the note.
+                city: fields.city,
+                province: fields.province,
+                interest: b.interest,
                 source: 'WEBSITE',
                 stageIndex: 0,
                 note: `Registered for "${webinar.title}"${

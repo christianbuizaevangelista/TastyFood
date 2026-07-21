@@ -228,6 +228,9 @@ marketingRouter.delete(
 // ---------------------------------------------------------------------------
 
 const SOURCES = ['FACEBOOK_ADS', 'WALK_IN', 'REFERRAL', 'WEBSITE', 'MANUAL'] as const;
+// The tier an applicant wants to operate. Kept as a plain string on Lead so a
+// funnel can be filtered by it without joining anything.
+const INTERESTS = ['PROVINCIAL', 'CITY', 'RESELLER', 'RETAIL', 'UNSURE'] as const;
 
 const funnelSchema = z.object({
   name: z.string().min(1).max(160),
@@ -243,6 +246,9 @@ const leadSchema = z.object({
   phone: z.string().max(60).nullable().optional(),
   email: z.union([z.string().email(), z.literal('')]).nullable().optional(),
   address: z.string().max(400).nullable().optional(),
+  city: z.string().max(120).nullable().optional(),
+  province: z.string().max(120).nullable().optional(),
+  interest: z.enum(INTERESTS).nullable().optional(),
   source: z.enum(SOURCES).default('MANUAL'),
   campaignId: z.string().nullable().optional(),
   stageIndex: z.number().int().min(0).default(0),
@@ -405,6 +411,9 @@ async function leadData(b: z.infer<typeof leadSchema>) {
     phone: b.phone || null,
     email: b.email || null,
     address: b.address || null,
+    city: b.city || null,
+    province: b.province || null,
+    interest: b.interest || null,
     source: b.source,
     campaignId: b.campaignId || null,
     stageIndex: b.stageIndex,

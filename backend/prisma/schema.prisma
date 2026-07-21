@@ -948,6 +948,12 @@ model Lead {
   phone      String?
   email      String?
   address    String?
+  // Structured location, so the funnel can be filtered by area.  stays
+  // as the free-text version people type in.
+  city       String?
+  province   String?
+  // Which tier they want to operate: PROVINCIAL | CITY | RESELLER | RETAIL | UNSURE.
+  interest   String?
   // Where the lead came from; FACEBOOK_ADS leads may name the campaign.
   source     String   @default("MANUAL") // FACEBOOK_ADS | WALK_IN | REFERRAL | WEBSITE | MANUAL
   campaignId String?
@@ -965,6 +971,8 @@ model Lead {
 
   @@index([funnelId])
   @@index([status])
+  @@index([interest])
+  @@index([province])
   @@index([campaignId])
 }
 

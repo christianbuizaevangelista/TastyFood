@@ -6,6 +6,7 @@ import { peso, num, pct, date } from '../lib/format';
 
 type Source = 'FACEBOOK_ADS' | 'WALK_IN' | 'REFERRAL' | 'WEBSITE' | 'MANUAL';
 type Status = 'OPEN' | 'WON' | 'LOST';
+type Interest = 'PROVINCIAL' | 'CITY' | 'RESELLER' | 'RETAIL' | 'UNSURE';
 
 const SOURCES: Source[] = ['FACEBOOK_ADS', 'WALK_IN', 'REFERRAL', 'WEBSITE', 'MANUAL'];
 const SOURCE_LABEL: Record<Source, string> = {
@@ -19,6 +20,14 @@ const STATUS_STYLE: Record<Status, string> = {
   OPEN: 'bg-blue-100 text-blue-700',
   WON: 'bg-green-100 text-green-700',
   LOST: 'bg-slate-100 text-slate-500',
+};
+const INTERESTS: Interest[] = ['PROVINCIAL', 'CITY', 'RESELLER', 'RETAIL', 'UNSURE'];
+const INTEREST_LABEL: Record<Interest, string> = {
+  PROVINCIAL: 'Provincial Distributor',
+  CITY: 'City Distributor',
+  RESELLER: 'Reseller',
+  RETAIL: 'Retail Distributor',
+  UNSURE: 'Not sure yet',
 };
 const DEFAULT_STAGES = ['New', 'Contacted', 'Qualified', 'Negotiation'];
 
@@ -51,6 +60,9 @@ interface Lead {
   phone: string | null;
   email: string | null;
   address: string | null;
+  city: string | null;
+  province: string | null;
+  interest: Interest | null;
   source: Source;
   campaignId: string | null;
   campaign?: { id: string; name: string } | null;
@@ -230,6 +242,10 @@ function FunnelDetailView({
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'ALL' | Status>('ALL');
+  const [interestFilter, setInterestFilter] = useState<'ALL' | Interest>('ALL');
+  const [areaFilter, setAreaFilter] = useState('');
+  const [fromFilter, setFromFilter] = useState('');
+  const [toFilter, setToFilter] = useState('');
 
   function reload() {
     refetch();
@@ -262,7 +278,27 @@ function FunnelDetailView({
   if (!data) return null;
 
   const s = data.summary;
-  const leads = statusFilter === 'ALL' ? data.leads : data.leads.filter((l) => l.status === statusFilter);
+  // Filters stack: a lead has to satisfy every one that is set. Area matches
+  // city, province or the free-text address, so it works whether the lead came
+  // from the landing page (structured) or was typed in by hand.
+  const areaQ = areaFilter.trim().toLowerCase();
+  const leads = data.leads.filter((l) => {
+    if (statusFilter !== 'ALL' && l.status !== statusFilter) return false;
+    if (interestFilter !== 'ALL' && l.interest !== interestFilter) return false;
+    if (areaQ && ![l.city, l.province, l.address].some((v) => v?.toLowerCase().includes(areaQ))) return false;
+    if (fromFilter && l.createdAt.slice(0, 10) < fromFilter) return false;
+    if (toFilter && l.createdAt.slice(0, 10) > toFilter) return false;
+    return true;
+  });
+  const filtersOn =
+    statusFilter !== 'ALL' || interestFilter !== 'ALL' || !!areaQ || !!fromFilter || !!toFilter;
+  const clearFilters = () => {
+    setStatusFilter('ALL');
+    setInterestFilter('ALL');
+    setAreaFilter('');
+    setFromFilter('');
+    setToFilter('');
+  };
 
   return (
     <div>
@@ -301,14 +337,47 @@ function FunnelDetailView({
       </div>
 
       <div className="card overflow-x-auto">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-slate-700">Leads</h3>
-          <select className="input w-40" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)}>
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-sm font-semibold text-slate-700">
+            Leads
+            {filtersOn && (
+              <span className="ml-2 text-xs font-normal text-slate-400">
+                showing {leads.length} of {data.leads.length}
+              </span>
+            )}
+          </h3>
+          {filtersOn && (
+            <button className="text-xs text-brand-600 hover:underline" onClick={clearFilters}>
+              Clear filters
+            </button>
+          )}
+        </div>
+
+        <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          <select className="input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)}>
             <option value="ALL">All statuses</option>
             <option value="OPEN">Open</option>
             <option value="WON">Won</option>
             <option value="LOST">Lost</option>
           </select>
+          <select className="input" value={interestFilter} onChange={(e) => setInterestFilter(e.target.value as any)}>
+            <option value="ALL">Applying for anything</option>
+            {INTERESTS.map((i) => (
+              <option key={i} value={i}>{INTEREST_LABEL[i]}</option>
+            ))}
+          </select>
+          <input
+            className="input" placeholder="Area — city or province"
+            value={areaFilter} onChange={(e) => setAreaFilter(e.target.value)}
+          />
+          <label className="flex items-center gap-2 text-xs text-slate-500">
+            <span className="shrink-0">From</span>
+            <input type="date" className="input" value={fromFilter} onChange={(e) => setFromFilter(e.target.value)} />
+          </label>
+          <label className="flex items-center gap-2 text-xs text-slate-500">
+            <span className="shrink-0">To</span>
+            <input type="date" className="input" value={toFilter} onChange={(e) => setToFilter(e.target.value)} />
+          </label>
         </div>
 
         {leads.length === 0 ? (
@@ -334,6 +403,16 @@ function FunnelDetailView({
                     </button>
                     <div className="text-xs text-slate-400">
                       {[l.company, l.phone].filter(Boolean).join(' · ') || date(l.createdAt)}
+                    </div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
+                      {l.interest && (
+                        <span className="badge bg-brand-50 text-brand-700">{INTEREST_LABEL[l.interest]}</span>
+                      )}
+                      {(l.city || l.province || l.address) && (
+                        <span className="text-slate-400">
+                          {[l.city, l.province].filter(Boolean).join(', ') || l.address}
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="td text-xs">
@@ -541,6 +620,9 @@ function LeadForm({
     phone: lead?.phone ?? '',
     email: lead?.email ?? '',
     address: lead?.address ?? '',
+    city: lead?.city ?? '',
+    province: lead?.province ?? '',
+    interest: (lead?.interest ?? '') as '' | Interest,
     source: (lead?.source ?? 'MANUAL') as Source,
     campaignId: lead?.campaignId ?? '',
     stageIndex: lead?.stageIndex ?? 0,
@@ -563,6 +645,9 @@ function LeadForm({
         phone: f.phone || null,
         email: f.email || null,
         address: f.address || null,
+        city: f.city || null,
+        province: f.province || null,
+        interest: f.interest || null,
         source: f.source,
         // Only Facebook-sourced leads carry a campaign.
         campaignId: f.source === 'FACEBOOK_ADS' ? f.campaignId || null : null,
@@ -605,6 +690,25 @@ function LeadForm({
         <div>
           <label className="label">Address</label>
           <input className="input" value={f.address} onChange={(e) => set('address', e.target.value)} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">City / municipality</label>
+            <input className="input" value={f.city} onChange={(e) => set('city', e.target.value)} />
+          </div>
+          <div>
+            <label className="label">Province</label>
+            <input className="input" value={f.province} onChange={(e) => set('province', e.target.value)} />
+          </div>
+        </div>
+        <div>
+          <label className="label">Applying for</label>
+          <select className="input" value={f.interest} onChange={(e) => set('interest', e.target.value)}>
+            <option value="">— not stated —</option>
+            {INTERESTS.map((i) => (
+              <option key={i} value={i}>{INTEREST_LABEL[i]}</option>
+            ))}
+          </select>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
