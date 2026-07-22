@@ -3,6 +3,7 @@ import cors from 'cors';
 import morgan from 'morgan';
 import helmet from 'helmet';
 import { env } from './lib/env';
+import { appOrigin } from './lib/email';
 import { errorHandler } from './middleware/error';
 
 import { authRouter } from './modules/auth/auth.routes';
@@ -68,7 +69,14 @@ export function createApp() {
   app.use(express.json({ limit: '6mb' }));
   if (env.nodeEnv !== 'test') app.use(morgan('dev'));
 
-  app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'tasty-food-api' }));
+  // `origin` is the host every link in every outgoing email is built from. It
+  // once pointed at a hostname that was not an alias of the project, so buttons
+  // in real people's inboxes led to a 404 while every other check here passed.
+  // Nothing else in the app can reveal a wrong value, so it is reported here
+  // where a release check can see it. The origin is a public URL, not a secret.
+  app.get('/api/health', (_req, res) =>
+    res.json({ status: 'ok', service: 'tasty-food-api', origin: appOrigin() })
+  );
 
   // Unauthenticated — backs the public recruitment landing page at /join.
   app.use('/api/public', publicRouter);
