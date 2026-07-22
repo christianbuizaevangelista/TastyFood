@@ -2,13 +2,20 @@
 // office actually is. Both the public booking form and the emails read from
 // here so the two can never drift apart.
 
-// Office visits happen at the plant. The maps link is what an applicant taps to
-// navigate — an address typed into a phone by hand is how people get lost.
+// Office visits happen at the plant. The maps link is the company's own pin —
+// an address typed into a phone at a junction is how people get lost, and a
+// search by address can land on the wrong side of a long street.
 export const OFFICE_ADDRESS =
   '9109 General Antonio Street, Purok 10, Bacao 2, General Trias City, Cavite 4107';
-export const OFFICE_MAPS_URL = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-  OFFICE_ADDRESS
-)}`;
+export const OFFICE_MAPS_URL = 'https://maps.app.goo.gl/8XcTD66EHXueKu9n8';
+
+// The standing Zoom room for applicant meetings. It lives in an environment
+// variable rather than in this file because the link carries its own passcode
+// and this repository is public — committing it would let anyone join.
+// Unset simply means the Principal types a link when confirming.
+export function defaultZoomLink(): string | null {
+  return process.env.ZOOM_DEFAULT_LINK?.trim() || null;
+}
 
 // The only times a meeting can be booked, in Manila hours. Kept as start/end so
 // the applicant sees a window rather than a single instant.

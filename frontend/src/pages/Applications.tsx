@@ -432,12 +432,12 @@ function AppointmentRow({
           {isZoom ? (
             <div>
               <label className="label">Zoom link</label>
-              <input className="input" value={zoomLink} onChange={(e) => setZoomLink(e.target.value)} placeholder="https://zoom.us/j/…" />
+              <input className="input" value={zoomLink} onChange={(e) => setZoomLink(e.target.value)} placeholder="leave blank to use your standing Zoom room" />
             </div>
           ) : (
             <div>
               <label className="label">Where</label>
-              <input className="input" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="9109 Gen. Antonio St., Bacao 2, Gen. Trias" />
+              <input className="input" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="leave blank to use the office address" />
             </div>
           )}
           <div>

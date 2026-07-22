@@ -8,6 +8,7 @@ import { notFound } from '../../lib/errors';
 import { advanceLead } from '../public/public.service';
 import { appOrigin } from '../../lib/email';
 import { ALLOWED_DOCUMENT_TYPES, sendStoredFile } from '../../lib/upload';
+import { defaultZoomLink, OFFICE_ADDRESS } from '../../lib/appointments';
 import {
   sendAppointmentConfirmedEmail,
   sendAppointmentDeclinedEmail,
@@ -178,13 +179,18 @@ applicationsRouter.patch(
 
     if (b.action === 'CONFIRM') {
       const confirmedAt = b.confirmedAt ?? existing.requestedAt;
+      // A Zoom meeting confirmed without a link falls back to the standing
+      // room, so forgetting to paste one never sends an applicant a
+      // confirmation with nowhere to join.
+      const zoomLink =
+        existing.kind === 'ZOOM' ? b.zoomLink || defaultZoomLink() : null;
       const appointment = await prisma.appointment.update({
         where: { id: existing.id },
         data: {
           status: 'CONFIRMED',
           confirmedAt,
-          zoomLink: b.zoomLink || null,
-          location: b.location || null,
+          zoomLink,
+          location: existing.kind === 'ZOOM' ? null : b.location || OFFICE_ADDRESS,
           note: b.note ?? existing.note,
         },
       });

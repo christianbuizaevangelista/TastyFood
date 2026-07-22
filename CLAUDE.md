@@ -52,7 +52,7 @@ Needs the user's **Vercel token** (and, only for schema changes, the official DB
 All calls use header `Authorization: Bearer {VERCEL_TOKEN}`. DEMO needs none of this — it auto-deploys on push. Note: demo runs its own Supabase DB (region `sin1`), official runs the real DB (region `hnd1`).
 
 ## Rules
-- **No secrets in the repo** (this repo is public). DB connection strings, JWT secret, Resend key, and API tokens live only in Vercel env vars and the local, git-ignored `backend/.env`.
+- **No secrets in the repo** (this repo is public). DB connection strings, JWT secret, Resend key, API tokens and `ZOOM_DEFAULT_LINK` live only in Vercel env vars and the local, git-ignored `backend/.env`. The Zoom link counts as a secret because it carries its own passcode — committing it would let anyone join a meeting.
 - To run locally you need `backend/.env` with `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `CLIENT_ORIGIN` (ask the owner).
 - **`backend/.env` must point at the DEMO database, never at official.** A local file wired to the live company DB turns any stray script into a production incident. Official credentials are not kept on disk at all — pull them from the Vercel project only when a release needs `prisma db push`, use them in-memory, and delete them afterwards. Never write them to a file inside the repo: `.gitignore` now covers every `.env*` variant, but the safest secret is the one that was never written down.
 - Commit + push only when asked. Match existing code style.
