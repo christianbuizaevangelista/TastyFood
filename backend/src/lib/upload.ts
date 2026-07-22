@@ -18,6 +18,27 @@ export function assertAllowedUploadType(mimeType: string): void {
   }
 }
 
+// Downloadables legitimately carry price lists and forms, not just proofs, so
+// they take a wider set — but still a list, never "anything the client says".
+export const ALLOWED_DOCUMENT_TYPES = [
+  ...ALLOWED_UPLOAD_TYPES,
+  'text/plain',
+  'text/csv',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/zip',
+] as const;
+
+export function assertAllowedDocumentType(mimeType: string): void {
+  if (!ALLOWED_DOCUMENT_TYPES.includes(mimeType.toLowerCase() as any)) {
+    throw badRequest('Unsupported file type. Use a PDF, image, Office document, CSV or ZIP.');
+  }
+}
+
 // Sends a stored file back to the browser with defenses against a stored file
 // ever being interpreted as active content in the app's origin:
 //  - nosniff: the browser must honour the declared type, not guess it;
@@ -26,9 +47,13 @@ export function assertAllowedUploadType(mimeType: string): void {
 export function sendStoredFile(
   res: Response,
   file: { mimeType: string; fileName: string; data: string },
-  disposition: 'inline' | 'attachment' = 'inline'
+  disposition: 'inline' | 'attachment' = 'inline',
+  // Which types may keep their declared value. Downloadables pass the wider
+  // document list so a spreadsheet is not flattened to octet-stream; anything
+  // outside the list still falls back, so the default stays strict.
+  allowed: readonly string[] = ALLOWED_UPLOAD_TYPES
 ): void {
-  const safeType = ALLOWED_UPLOAD_TYPES.includes(file.mimeType.toLowerCase() as any)
+  const safeType = allowed.includes(file.mimeType.toLowerCase())
     ? file.mimeType
     : 'application/octet-stream';
   // Strip anything that could break out of the filename header.

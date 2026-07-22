@@ -5,6 +5,7 @@ import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
 import { requirePermission, requireRole } from '../../middleware/rbac';
 import { badRequest, notFound } from '../../lib/errors';
+import { ALLOWED_DOCUMENT_TYPES, assertAllowedDocumentType, sendStoredFile } from '../../lib/upload';
 
 export const materialsRouter = Router();
 materialsRouter.use(authenticate);
@@ -30,13 +31,10 @@ materialsRouter.get(
   asyncHandler(async (req, res) => {
     const m = await prisma.material.findUnique({ where: { id: req.params.id } });
     if (!m) throw notFound('Material not found');
-    // Always a download (never rendered inline) + nosniff, so a material file is
-    // never interpreted as active content in the app's origin.
-    const safeName = m.fileName.replace(/[\r\n"\\]/g, '_');
-    res.setHeader('Content-Type', m.mimeType);
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
-    res.send(Buffer.from(m.data, 'base64'));
+    // Shared helper: forces a download, coerces an unrecognised type to
+    // octet-stream, and adds nosniff plus a sandbox CSP — so a stored file can
+    // never be interpreted as active content in the app's origin.
+    sendStoredFile(res, m, 'attachment', ALLOWED_DOCUMENT_TYPES);
   })
 );
 
@@ -57,6 +55,9 @@ materialsRouter.post(
   requireRole('PRINCIPAL'),
   asyncHandler(async (req, res) => {
     const body = uploadSchema.parse(req.body);
+    // Never store a type the client simply asserted — an allowlist at the door
+    // is cheaper than trusting the download path to defend every case.
+    assertAllowedDocumentType(body.mimeType);
     const data = body.dataBase64.replace(/^data:[^;]+;base64,/, '');
     const size = Math.floor((data.length * 3) / 4);
     if (size > MAX_BYTES) throw badRequest('File too large (max 3 MB)');

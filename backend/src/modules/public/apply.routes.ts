@@ -96,7 +96,10 @@ applyRouter.post(
     let registrationId: string | null = null;
     if (b.ref) {
       const reg = await prisma.webinarRegistration.findUnique({ where: { id: b.ref } });
-      if (reg) {
+      // The ref comes from a link in someone's email, so it has to be checked
+      // against the address applying. Without this, anyone holding a
+      // registration id could staple their application onto that person's lead.
+      if (reg && reg.email.toLowerCase() === email) {
         registrationId = reg.id;
         leadId = reg.leadId;
       }
