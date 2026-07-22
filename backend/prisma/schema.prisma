@@ -1164,6 +1164,11 @@ model Appointment {
   // Outcome the Principal records afterwards, which feeds the funnel stage.
   outcome  String?
 
+  // The applicant's own answer to the morning-of check: YES | NO.
+  applicantAnswer     String?
+  applicantAnsweredAt DateTime?
+  applicantNote       String?
+
   // Reminder stamps, same idea as the webinar ones.
   remindDayAt  DateTime?
   ownerBriefAt DateTime?

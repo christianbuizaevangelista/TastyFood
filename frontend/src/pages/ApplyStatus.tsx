@@ -1,19 +1,24 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { api, apiError } from '../api/client';
 
 // Public application tracker (no login). The link lives in the applicant's
 // confirmation email; the token in the URL is what stands in for an account.
 
 interface Appointment {
+  id: string;
   kind: 'ZOOM' | 'OFFICE_VISIT';
   status: string;
   requestedAt: string;
   confirmedAt: string | null;
+  applicantAnswer: string | null;
   zoomLink: string | null;
   location: string | null;
   note: string | null;
 }
+interface Slot { start: string; end: string; label: string }
+interface Office { address: string; mapsUrl: string }
+
 interface Attachment {
   id: string;
   label: string;
@@ -33,6 +38,8 @@ interface Application {
   appointments: Appointment[];
 }
 
+// Meetings run on weekdays only, in three fixed windows.
+const WEEKDAY_HINT = 'Monday to Friday only';
 const MAX_FILES = 5;
 const MAX_BYTES = 3 * 1024 * 1024;
 
@@ -161,10 +168,21 @@ function when(iso: string): string {
     dateStyle: 'full', timeStyle: 'short', timeZone: 'Asia/Manila',
   });
 }
-// <input type="datetime-local"> wants local time, and we never want a past slot.
-function minLocal(): string {
+// The earliest bookable day: tomorrow, so nobody books an hour from now.
+function minDate(): string {
   const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+// Midday is used deliberately: reading the day at midnight risks landing on the
+// wrong side of the date in another timezone.
+function isWeekend(ymd: string): boolean {
+  const day = new Date(`${ymd}T12:00:00+08:00`).getUTCDay();
+  return day === 0 || day === 6;
+}
+// A Manila wall-clock slot on a given day, as a real instant. +08:00 is fixed —
+// the Philippines has no daylight saving.
+function slotInstant(ymd: string, start: string): string {
+  return new Date(`${ymd}T${start}:00+08:00`).toISOString();
 }
 
 export default function ApplyStatus() {
@@ -173,7 +191,11 @@ export default function ApplyStatus() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [f, setF] = useState({ kind: 'ZOOM' as 'ZOOM' | 'OFFICE_VISIT', requestedAt: '', altRequestedAt: '', note: '' });
+  const [params, setParams] = useSearchParams();
+  const confirmId = params.get('confirm');
+  const [slots, setSlots] = useState<Slot[]>([]);
+  const [office, setOffice] = useState<Office | null>(null);
+  const [f, setF] = useState({ kind: 'ZOOM' as 'ZOOM' | 'OFFICE_VISIT', date: '', slot: '', note: '' });
   const set = (k: keyof typeof f, v: string) => setF((prev) => ({ ...prev, [k]: v }));
   const [uploading, setUploading] = useState(false);
   const [uploadErr, setUploadErr] = useState<string | null>(null);
@@ -187,6 +209,18 @@ export default function ApplyStatus() {
       .finally(() => setLoading(false));
   }
   useEffect(load, [token]);
+
+  // The bookable windows and the office pin come from the server, so the rules
+  // live in one place rather than being repeated here.
+  useEffect(() => {
+    api
+      .get<{ slots: Slot[]; office: Office }>('/public/apply/config')
+      .then(({ data }) => {
+        setSlots(data.slots ?? []);
+        setOffice(data.office ?? null);
+      })
+      .catch(() => undefined);
+  }, []);
 
   async function upload(file: File | null) {
     if (!file) return;
@@ -215,19 +249,40 @@ export default function ApplyStatus() {
   async function request(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
-    if (!f.requestedAt) {
-      setErr('Please pick a date and time.');
+    if (!f.date || !f.slot) {
+      setErr('Please pick a day and a time.');
+      return;
+    }
+    if (isWeekend(f.date)) {
+      setErr('Meetings are held Monday to Friday only. Please pick a weekday.');
       return;
     }
     setSaving(true);
     try {
       await api.post(`/public/apply/${token}/appointment`, {
         kind: f.kind,
-        requestedAt: new Date(f.requestedAt).toISOString(),
-        altRequestedAt: f.altRequestedAt ? new Date(f.altRequestedAt).toISOString() : null,
+        requestedAt: slotInstant(f.date, f.slot),
         note: f.note || undefined,
       });
-      setF({ kind: 'ZOOM', requestedAt: '', altRequestedAt: '', note: '' });
+      setF({ kind: 'ZOOM', date: '', slot: '', note: '' });
+      load();
+    } catch (e2) {
+      setErr(apiError(e2));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // The morning-of email links here with ?confirm=<id>; that is what turns the
+  // card below on. Answering is a POST from a button, never a link in the mail —
+  // inbox scanners follow links, and a scanner answering "yes" would leave the
+  // Principal waiting for someone who is not coming.
+  async function respond(appointmentId: string, answer: 'YES' | 'NO') {
+    setErr(null);
+    setSaving(true);
+    try {
+      await api.post(`/public/apply/${token}/appointment/${appointmentId}/respond`, { answer });
+      setParams({}, { replace: true });
       load();
     } catch (e2) {
       setErr(apiError(e2));
@@ -438,6 +493,37 @@ export default function ApplyStatus() {
           </div>
         )}
 
+        {/* The morning-of email lands here. Asking on the page rather than by
+            reply means the answer is recorded, not sitting in a no-reply inbox. */}
+        {confirmed && confirmId === confirmed.id && !confirmed.applicantAnswer && (
+          <div className="rounded-xl border-2 border-brand-500 bg-white p-5 shadow-sm">
+            <h2 className="font-bold text-slate-800">Are you still coming today?</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {when(confirmed.confirmedAt ?? confirmed.requestedAt)} ·{' '}
+              {confirmed.kind === 'ZOOM' ? 'over Zoom' : 'at our office'}
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                className="flex-1 rounded-xl bg-brand-600 px-5 py-3 font-bold text-white transition hover:bg-brand-700 disabled:opacity-60"
+                disabled={saving}
+                onClick={() => respond(confirmed.id, 'YES')}
+              >
+                Yes, I'll be there
+              </button>
+              <button
+                className="flex-1 rounded-xl border-2 border-slate-300 px-5 py-3 font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-60"
+                disabled={saving}
+                onClick={() => respond(confirmed.id, 'NO')}
+              >
+                I can't make it
+              </button>
+            </div>
+            <p className="mt-2 text-center text-xs text-slate-400">
+              Either answer is fine — we would much rather know than wait.
+            </p>
+          </div>
+        )}
+
         {confirmed && (
           <div className="rounded-xl border border-green-200 bg-white p-5 shadow-sm">
             <div className="text-xs font-bold uppercase tracking-wide text-green-700">Your meeting is confirmed</div>
@@ -455,8 +541,33 @@ export default function ApplyStatus() {
                 Join the Zoom meeting
               </a>
             )}
-            {confirmed.location && <p className="mt-2 text-sm text-slate-600">{confirmed.location}</p>}
+            {confirmed.kind === 'OFFICE_VISIT' && office && (
+              <div className="mt-3">
+                <p className="text-sm text-slate-600">{confirmed.location || office.address}</p>
+                <a
+                  href={office.mapsUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 inline-block rounded-lg border-2 border-brand-600 px-5 py-2.5 font-bold text-brand-700 transition hover:bg-brand-50"
+                >
+                  📍 Open in Google Maps
+                </a>
+              </div>
+            )}
             {confirmed.note && <p className="mt-2 text-sm text-slate-500">{confirmed.note}</p>}
+            {confirmed.applicantAnswer && (
+              <p
+                className={`mt-3 rounded-lg px-3 py-2 text-sm ${
+                  confirmed.applicantAnswer === 'YES'
+                    ? 'bg-green-50 text-green-800'
+                    : 'bg-amber-50 text-amber-800'
+                }`}
+              >
+                {confirmed.applicantAnswer === 'YES'
+                  ? "You told us you're coming — see you then."
+                  : "You told us you can't make it. We'll be in touch to rearrange."}
+              </p>
+            )}
           </div>
         )}
 
@@ -506,21 +617,42 @@ export default function ApplyStatus() {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Preferred date &amp; time *</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Which day? *</label>
               <input
-                type="datetime-local" min={minLocal()}
+                type="date" min={minDate()}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2.5 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
-                value={f.requestedAt} onChange={(e) => set('requestedAt', e.target.value)} required
+                value={f.date} onChange={(e) => set('date', e.target.value)} required
               />
+              <p className="mt-1 text-xs text-slate-400">{WEEKDAY_HINT}.</p>
+              {f.date && isWeekend(f.date) && (
+                <p className="mt-1 text-xs font-medium text-amber-600">
+                  That is a weekend — please pick a day from Monday to Friday.
+                </p>
+              )}
             </div>
+
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">A second choice (optional)</label>
-              <input
-                type="datetime-local" min={minLocal()}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2.5 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
-                value={f.altRequestedAt} onChange={(e) => set('altRequestedAt', e.target.value)}
-              />
-              <p className="mt-1 text-xs text-slate-400">Giving a second option usually gets you confirmed faster.</p>
+              <label className="mb-1 block text-sm font-medium text-slate-700">What time? *</label>
+              <div className="space-y-2">
+                {slots.map((s) => {
+                  const picked = f.slot === s.start;
+                  return (
+                    <label
+                      key={s.start}
+                      className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition ${
+                        picked ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <input
+                        type="radio" name="slot" value={s.start} checked={picked}
+                        onChange={() => set('slot', s.start)} className="h-4 w-4 accent-brand-600"
+                      />
+                      <span className="font-medium text-slate-800">{s.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="mt-1 text-xs text-slate-400">All times are Philippine time.</p>
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Anything to add?</label>

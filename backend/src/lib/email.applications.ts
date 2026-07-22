@@ -1,4 +1,5 @@
 import { BRAND_GREEN, appOrigin, emailShell } from './email';
+import { OFFICE_ADDRESS, OFFICE_MAPS_URL, slotLabel } from './appointments';
 
 // Emails for the recruitment pipeline that follows an orientation: the
 // day-after thank-you, the application receipt, and the alert to the owner.
@@ -217,9 +218,11 @@ export async function sendAppointmentConfirmedEmail(p: {
   const isZoom = p.kind === 'ZOOM';
 
   const details = [
-    `<tr><td style="padding:5px 14px 5px 0;color:#888;white-space:nowrap">When</td><td style="padding:5px 0"><strong>${manilaWhen(p.confirmedAt)}</strong></td></tr>`,
+    `<tr><td style="padding:5px 14px 5px 0;color:#888;white-space:nowrap">When</td><td style="padding:5px 0"><strong>${manilaWhen(
+      p.confirmedAt
+    )}</strong>${slotLabel(p.confirmedAt) ? `<br><span style="color:#888;font-size:13px">${slotLabel(p.confirmedAt)}</span>` : ''}</td></tr>`,
     `<tr><td style="padding:5px 14px 5px 0;color:#888;white-space:nowrap">Where</td><td style="padding:5px 0">${
-      isZoom ? 'Over Zoom' : p.location || 'Our office in General Trias, Cavite'
+      isZoom ? 'Over Zoom' : p.location || OFFICE_ADDRESS
     }</td></tr>`,
     p.note ? `<tr><td style="padding:5px 14px 5px 0;color:#888;vertical-align:top">Note</td><td style="padding:5px 0">${p.note}</td></tr>` : '',
   ].join('');
@@ -243,7 +246,8 @@ export async function sendAppointmentConfirmedEmail(p: {
          ? button(p.zoomLink, 'Join the Zoom meeting')
          : isZoom
          ? '<p style="color:#666">We will send the Zoom link before the meeting.</p>'
-         : '<p style="color:#666">Please bring a valid ID and your filled-in application form.</p>'
+         : `${button(OFFICE_MAPS_URL, '📍 Open the location in Google Maps')}
+            <p style="color:#666">Please bring a valid ID and your filled-in application form.</p>`
      }
      <p style="color:#888;font-size:13px">Something came up? Reply to this email and we will move it.</p>`
   );
@@ -280,6 +284,7 @@ export async function sendAppointmentMorningEmail(p: {
   confirmedAt: Date;
   zoomLink?: string | null;
   location?: string | null;
+  confirmUrl: string;
 }): Promise<SendResult> {
   const isZoom = p.kind === 'ZOOM';
   const time = new Date(p.confirmedAt).toLocaleTimeString('en-PH', {
@@ -287,20 +292,90 @@ export async function sendAppointmentMorningEmail(p: {
     minute: '2-digit',
     timeZone: 'Asia/Manila',
   });
+  const window = slotLabel(p.confirmedAt);
 
   const html = emailShell(
     'Today',
     `<h2 style="margin:0 0 8px;color:${BRAND_GREEN};font-size:18px">We are meeting today at ${time}</h2>
-     <p>Good morning ${p.name}. This is a reminder that your meeting with Tasty Food is today
-     at <strong>${time}</strong>, ${isZoom ? 'over Zoom' : `at ${p.location || 'our office in General Trias, Cavite'}`}.</p>
-     ${isZoom && p.zoomLink ? button(p.zoomLink, 'Join the Zoom meeting') : ''}
-     <p style="background:${'#eef7f1'};border-left:4px solid ${BRAND_GREEN};padding:10px 14px;margin:16px 0">
-       <strong>Can you still make it?</strong> Just reply <strong>YES</strong> to this email — or tell us
-       if you need to move it. Either answer is fine; we would rather know than wait.
+     <p>Good morning ${p.name}. Your meeting with Tasty Food is today,
+     <strong>${window ?? time}</strong>, ${isZoom ? 'over Zoom' : 'at our office'}.</p>
+
+     ${
+       isZoom
+         ? p.zoomLink
+           ? button(p.zoomLink, 'Join the Zoom meeting')
+           : ''
+         : `<table style="border-collapse:collapse;margin:14px 0;font-size:14px">
+              <tr><td style="padding:5px 14px 5px 0;color:#888;vertical-align:top;white-space:nowrap">Where</td>
+                  <td style="padding:5px 0">${p.location || OFFICE_ADDRESS}</td></tr>
+            </table>
+            ${button(OFFICE_MAPS_URL, '📍 Open the location in Google Maps')}`
+     }
+
+     <p style="background:#eef7f1;border-left:4px solid ${BRAND_GREEN};padding:12px 14px;margin:18px 0">
+       <strong>Are you still coming today?</strong> Please tap one of the buttons below so we know
+       whether to expect you. Either answer is fine — we would much rather know than wait.
      </p>
-     ${!isZoom ? '<p style="color:#888;font-size:13px">Please bring a valid ID and your filled-in application form.</p>' : ''}`
+     ${button(p.confirmUrl, 'Answer: am I coming today?')}
+
+     ${
+       !isZoom
+         ? '<p style="color:#888;font-size:13px">Please bring a valid ID and your filled-in application form.</p>'
+         : ''
+     }`
   );
-  return send(p.to, `Today at ${time}: your Tasty Food meeting`, html, 'appointment morning');
+  return send(p.to, `Today at ${time}: please confirm your Tasty Food meeting`, html, 'appointment morning');
+}
+
+// The applicant has answered the morning-of check. Whichever way they answered,
+// this is the thing that decides whether the Principal drives to the office.
+export async function sendAppointmentAnswerAlert(p: {
+  to: string;
+  name: string;
+  tier: string;
+  phone: string;
+  email: string;
+  kind: string;
+  confirmedAt: Date;
+  answer: 'YES' | 'NO';
+  note?: string | null;
+}): Promise<SendResult> {
+  const tier = TIER_LABEL[p.tier] ?? p.tier;
+  const yes = p.answer === 'YES';
+  const time = new Date(p.confirmedAt).toLocaleTimeString('en-PH', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'Asia/Manila',
+  });
+  const tone = yes ? BRAND_GREEN : '#c0392b';
+
+  const html = emailShell(
+    'Meeting Confirmation',
+    `<h2 style="margin:0 0 8px;color:${tone};font-size:18px">
+       ${p.name} ${yes ? 'is coming today' : 'cannot make it today'}
+     </h2>
+     <p style="background:${yes ? '#eef7f1' : '#fdecea'};border-left:4px solid ${tone};padding:12px 14px;margin:14px 0">
+       <strong>${yes ? 'CONFIRMED' : 'CANNOT ATTEND'}</strong> — ${tier} meeting today at
+       <strong>${time}</strong>, ${p.kind === 'ZOOM' ? 'over Zoom' : 'at the office'}.
+     </p>
+     ${p.note ? `<p><strong>They added:</strong> ${p.note}</p>` : ''}
+     <table style="border-collapse:collapse;margin:12px 0;font-size:14px">
+       <tr><td style="padding:5px 14px 5px 0;color:#888">Mobile</td><td style="padding:5px 0"><a href="tel:${p.phone}" style="color:${BRAND_GREEN}">${p.phone}</a></td></tr>
+       <tr><td style="padding:5px 14px 5px 0;color:#888">Email</td><td style="padding:5px 0"><a href="mailto:${p.email}" style="color:${BRAND_GREEN}">${p.email}</a></td></tr>
+     </table>
+     ${
+       yes
+         ? ''
+         : `<p style="color:#888;font-size:13px">They can pick another time from their tracker,
+            or reply to their email to arrange one.</p>`
+     }`
+  );
+  return send(
+    p.to,
+    `${yes ? 'Confirmed' : 'Cannot attend'}: ${p.name} — today at ${time}`,
+    html,
+    'appointment answer'
+  );
 }
 
 // The owner's morning brief: everything happening today, in one email, so the

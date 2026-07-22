@@ -39,6 +39,7 @@ interface Appointment {
   location: string | null;
   note: string | null;
   outcome: string | null;
+  applicantAnswer: string | null;
 }
 interface Attachment {
   id: string;
@@ -387,6 +388,17 @@ function AppointmentRow({
         <div className="mt-1 text-xs text-slate-500">or {dateTime(appt.altRequestedAt)}</div>
       )}
       {appt.note && <div className="mt-1 text-xs italic text-slate-500">“{appt.note}”</div>}
+      {appt.applicantAnswer && (
+        <div
+          className={`mt-2 inline-block rounded px-2 py-1 text-xs font-semibold ${
+            appt.applicantAnswer === 'YES'
+              ? 'bg-green-100 text-green-700'
+              : 'bg-red-100 text-red-700'
+          }`}
+        >
+          {appt.applicantAnswer === 'YES' ? '✓ they confirmed they are coming' : '✕ they said they cannot make it'}
+        </div>
+      )}
       {appt.outcome && <div className="mt-1 text-xs text-slate-600">Outcome: {appt.outcome}</div>}
 
       {appt.status === 'REQUESTED' && !confirming && (

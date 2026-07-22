@@ -10,8 +10,10 @@ import {
   sendApplicationOwnerAlert,
   sendAppointmentRequestedAlert,
   sendApplicationFormReceivedAlert,
+  sendAppointmentAnswerAlert,
 } from '../../lib/email.applications';
 import { resolveFunnel, advanceLead, principalOwnerEmail } from './public.service';
+import { SLOTS, slotProblem, OFFICE_ADDRESS, OFFICE_MAPS_URL } from '../../lib/appointments';
 
 // Public, UNAUTHENTICATED endpoints for the online distributorship application
 // at /apply. Usually reached from the thank-you email after an orientation,
@@ -58,6 +60,8 @@ applyRouter.get(
     res.json({
       tiers: TIERS,
       formsAvailable: forms.map((f) => f.applicationTier).filter(Boolean),
+      slots: SLOTS,
+      office: { address: OFFICE_ADDRESS, mapsUrl: OFFICE_MAPS_URL },
     });
   })
 );
@@ -273,10 +277,12 @@ applyRouter.get(
       formSubmittedAt: a.formSubmittedAt,
       attachments: a.attachments,
       appointments: a.appointments.map((p) => ({
+        id: p.id,
         kind: p.kind,
         status: p.status,
         requestedAt: p.requestedAt,
         confirmedAt: p.confirmedAt,
+        applicantAnswer: p.applicantAnswer,
         // Joining details only exist once the meeting is actually confirmed.
         zoomLink: p.status === 'CONFIRMED' ? p.zoomLink : null,
         location: p.status === 'CONFIRMED' ? p.location : null,
@@ -308,6 +314,9 @@ applyRouter.post(
     if (b.requestedAt.getTime() < Date.now()) {
       throw badRequest('Please pick a date and time in the future');
     }
+    // Meetings only run on weekdays, in one of three fixed windows.
+    const problem = slotProblem(b.requestedAt) ?? (b.altRequestedAt ? slotProblem(b.altRequestedAt) : null);
+    if (problem) throw badRequest(problem);
     // One live request at a time, or the queue fills with duplicates.
     if (a.appointments.some((p) => p.status === 'REQUESTED')) {
       throw badRequest('You already have a meeting request waiting for confirmation');
@@ -420,6 +429,57 @@ applyRouter.post(
         )
         .catch((e) => console.error('[apply] form-received alert failed', e?.message));
     }
+  })
+);
+
+const respondSchema = z.object({
+  answer: z.enum(['YES', 'NO']),
+  note: z.string().max(300).optional(),
+});
+
+// POST /public/apply/:token/appointment/:id/respond — the applicant answers the
+// morning-of check. Deliberately a POST from a button on the tracker rather
+// than a link in the email: mail clients pre-fetch links, and a scanner
+// silently answering "yes" would have the Principal waiting for a no-show.
+applyRouter.post(
+  '/:token/appointment/:id/respond',
+  asyncHandler(async (req, res) => {
+    const a = await prisma.application.findUnique({ where: { token: req.params.token } });
+    if (!a) throw notFound('Application not found');
+    const appt = await prisma.appointment.findFirst({
+      where: { id: req.params.id, applicationId: a.id },
+    });
+    if (!appt) throw notFound('Meeting not found');
+    if (appt.status !== 'CONFIRMED') throw badRequest('That meeting is not confirmed');
+
+    const b = respondSchema.parse(req.body);
+    const updated = await prisma.appointment.update({
+      where: { id: appt.id },
+      data: {
+        applicantAnswer: b.answer,
+        applicantAnsweredAt: new Date(),
+        applicantNote: b.note?.trim() || null,
+      },
+    });
+    res.json({ ok: true, answer: updated.applicantAnswer });
+
+    principalOwnerEmail()
+      .then((owner) =>
+        owner
+          ? sendAppointmentAnswerAlert({
+              to: owner,
+              name: a.name,
+              tier: a.tier,
+              phone: a.phone,
+              email: a.email,
+              kind: appt.kind,
+              confirmedAt: appt.confirmedAt ?? appt.requestedAt,
+              answer: b.answer,
+              note: b.note ?? null,
+            })
+          : null
+      )
+      .catch((e) => console.error('[apply] answer alert failed', e?.message));
   })
 );
 

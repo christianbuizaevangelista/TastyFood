@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { unauthorized } from '../../lib/errors';
-import { sendWebinarReminderEmail, WebinarReminderKind } from '../../lib/email';
+import { sendWebinarReminderEmail, WebinarReminderKind, appOrigin } from '../../lib/email';
 import {
   sendAppointmentMorningEmail,
   sendOwnerDayBriefEmail,
@@ -152,6 +152,8 @@ cronRouter.all(
         confirmedAt: m.confirmedAt!,
         zoomLink: m.zoomLink,
         location: m.location,
+        // The answer is given from the tracker, not by replying to a no-reply address.
+        confirmUrl: `${appOrigin()}/apply/status/${m.application.token}?confirm=${m.id}`,
       });
       results.push({ kind: 'MEETING_TODAY', to: m.application.email, ...out });
       if (!out.sent) {
