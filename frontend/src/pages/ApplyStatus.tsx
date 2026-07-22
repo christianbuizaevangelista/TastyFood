@@ -41,6 +41,74 @@ function fmtSize(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+type StepState = 'done' | 'current' | 'pending' | 'stopped';
+interface Step {
+  title: string;
+  detail: string;
+  at: string | null;
+  state: StepState;
+}
+
+// The whole journey, read off the timestamps the app already records — the same
+// idea as a courier's tracking page: what has happened, what is happening now,
+// and what is still ahead. A step never claims a date it does not have.
+function buildTimeline(app: Application): Step[] {
+  const confirmed = app.appointments.find((a) => a.status === 'CONFIRMED');
+  const completed = app.appointments.find((a) => a.status === 'COMPLETED');
+  const requested = app.appointments.find((a) => a.status === 'REQUESTED');
+  const declined = app.appointments.find((a) => a.status === 'DECLINED');
+  const rejected = app.status === 'REJECTED';
+  const approved = app.status === 'APPROVED';
+
+  // Once a decision is made, everything before it is history.
+  const step = (done: boolean, current: boolean): StepState =>
+    done ? 'done' : rejected ? 'stopped' : current ? 'current' : 'pending';
+
+  const meetingDone = !!completed;
+  const meetingSet = !!confirmed || meetingDone;
+
+  return [
+    {
+      title: 'Application received',
+      detail: 'We have your details.',
+      at: app.submittedAt,
+      state: 'done',
+    },
+    {
+      title: 'Form returned',
+      detail: app.formSubmittedAt
+        ? `${app.attachments.length} document${app.attachments.length === 1 ? '' : 's'} received.`
+        : 'Send us your filled-in form to move forward.',
+      at: app.formSubmittedAt,
+      state: step(!!app.formSubmittedAt, !app.formSubmittedAt),
+    },
+    {
+      title: meetingDone ? 'Meeting done' : meetingSet ? 'Meeting scheduled' : 'Meeting',
+      detail: meetingDone
+        ? 'Thank you for your time.'
+        : confirmed
+        ? `Confirmed for ${when(confirmed.confirmedAt ?? confirmed.requestedAt)}.`
+        : requested
+        ? 'You asked for a time — we are confirming it.'
+        : declined
+        ? 'That time did not work. Please pick another.'
+        : 'We will meet over Zoom or at our office.',
+      at: meetingDone ? null : confirmed?.confirmedAt ?? null,
+      state: step(meetingSet || meetingDone, !!app.formSubmittedAt && !meetingSet),
+    },
+    {
+      title: rejected ? 'Not proceeding' : approved ? 'Approved' : 'Decision',
+      detail: rejected
+        ? 'We are not able to move forward this time.'
+        : approved
+        ? 'Welcome aboard — we will be in touch about signing.'
+        : 'We confirm your territory and come back to you.',
+      at: null,
+      state: rejected ? 'stopped' : approved ? 'done' : meetingDone ? 'current' : 'pending',
+    },
+  ];
+}
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -186,6 +254,7 @@ export default function ApplyStatus() {
   const status = STATUS_COPY[app.status] ?? STATUS_COPY.SUBMITTED;
   const pending = app.appointments.find((a) => a.status === 'REQUESTED');
   const confirmed = app.appointments.find((a) => a.status === 'CONFIRMED');
+  const timeline = buildTimeline(app);
   const closed = app.status === 'APPROVED' || app.status === 'REJECTED';
 
   return (
@@ -204,6 +273,60 @@ export default function ApplyStatus() {
         <div className={`rounded-xl border p-5 ${status.tone}`}>
           <div className="text-xs font-bold uppercase tracking-wide">{status.label}</div>
           <p className="mt-1 text-sm">{status.body}</p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-4 font-bold text-slate-800">Progress</h2>
+          <ol className="relative">
+            {timeline.map((s, i) => {
+              const last = i === timeline.length - 1;
+              const dot =
+                s.state === 'done'
+                  ? 'border-brand-600 bg-brand-600 text-white'
+                  : s.state === 'current'
+                  ? 'border-brand-600 bg-white text-brand-700'
+                  : s.state === 'stopped'
+                  ? 'border-slate-300 bg-slate-200 text-slate-500'
+                  : 'border-slate-200 bg-white text-slate-300';
+              return (
+                <li key={s.title} className="flex gap-3 pb-6 last:pb-0">
+                  <div className="flex flex-col items-center">
+                    <span
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold ${dot}`}
+                      aria-hidden="true"
+                    >
+                      {s.state === 'done' ? '✓' : s.state === 'stopped' ? '—' : i + 1}
+                    </span>
+                    {!last && (
+                      <span
+                        className={`mt-1 w-0.5 flex-1 ${
+                          s.state === 'done' ? 'bg-brand-600' : 'bg-slate-200'
+                        }`}
+                      />
+                    )}
+                  </div>
+                  <div className={`flex-1 pt-0.5 ${s.state === 'pending' ? 'opacity-60' : ''}`}>
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      <span
+                        className={`font-semibold ${
+                          s.state === 'current' ? 'text-brand-700' : 'text-slate-800'
+                        }`}
+                      >
+                        {s.title}
+                      </span>
+                      {s.state === 'current' && (
+                        <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+                          now
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-slate-500">{s.detail}</p>
+                    {s.at && <p className="text-xs text-slate-400">{when(s.at)}</p>}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
         </div>
 
         {/* The form round-trip: download it, fill it in, send it back. Both

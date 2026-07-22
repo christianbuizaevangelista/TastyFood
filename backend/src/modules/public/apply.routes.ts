@@ -64,7 +64,9 @@ const applySchema = z.object({
   hasStore: z.boolean().default(false),
   experience: z.string().max(1000).optional(),
   capital: z.number().min(0).max(100000000).optional(),
-  targetArea: z.string().max(200).optional(),
+  // The area they want is what we check availability against, so an
+  // application without it cannot actually be assessed.
+  targetArea: z.string().min(1).max(200),
   note: z.string().max(1000).optional(),
   // The orientation sign-up this came from, when they followed the emailed link.
   ref: z.string().optional(),
@@ -157,7 +159,7 @@ applyRouter.post(
         hasStore: b.hasStore,
         experience: b.experience?.trim() || null,
         capital: b.capital ?? null,
-        targetArea: b.targetArea?.trim() || null,
+        targetArea: b.targetArea.trim(),
         note: b.note?.trim() || null,
         leadId,
         registrationId,

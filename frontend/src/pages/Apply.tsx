@@ -63,6 +63,10 @@ export default function Apply() {
       setErr('Please choose which level you are applying for.');
       return;
     }
+    if (!f.targetArea.trim()) {
+      setErr("Please tell us which area you want to cover.");
+      return;
+    }
     setSubmitting(true);
     try {
       const { data } = await api.post<{ token: string; formAvailable: boolean }>('/public/apply', {
@@ -216,10 +220,10 @@ export default function Apply() {
               <AddressPicker onChange={(a) => set('address', a)} onParts={onParts} />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Area you want to cover</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Area you want to cover *</label>
               <input
                 className="w-full rounded-lg border border-slate-200 px-3 py-2.5 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
-                value={f.targetArea} onChange={(e) => set('targetArea', e.target.value)}
+                value={f.targetArea} onChange={(e) => set('targetArea', e.target.value)} required
                 placeholder="e.g. Tanza and Naic, or the whole of Cavite"
               />
             </div>
