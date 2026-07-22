@@ -125,6 +125,59 @@ export async function sendApplicationReceivedEmail(p: {
   return send(p.to, `Your ${tier} application — Tasty Food`, html, 'application receipt');
 }
 
+// The decision, to the applicant. Approval is the start of onboarding, so it
+// says plainly what happens next rather than leaving them waiting again.
+export async function sendApplicationApprovedEmail(p: {
+  to: string;
+  name: string;
+  tier: string;
+  targetArea?: string | null;
+  note?: string | null;
+}): Promise<SendResult> {
+  const tier = TIER_LABEL[p.tier] ?? p.tier;
+  const html = emailShell(
+    'Application Approved',
+    `<h2 style="margin:0 0 8px;color:${BRAND_GREEN};font-size:18px">Congratulations — you're approved 🎉</h2>
+     <p>Hi ${p.name}, we are glad to tell you that your application to become a
+     <strong>${tier}</strong>${p.targetArea ? ` for <strong>${p.targetArea}</strong>` : ''} has been
+     approved.</p>
+     ${p.note ? `<p style="background:#eef7f1;border-left:4px solid ${BRAND_GREEN};padding:10px 14px">${p.note}</p>` : ''}
+     <p><strong>What happens next.</strong></p>
+     <ol style="padding-left:20px;color:#444">
+       <li style="margin-bottom:6px">We prepare your distributorship agreement and send it over for signing.</li>
+       <li style="margin-bottom:6px">You place your first order, and we set up your delivery.</li>
+       <li>We create your account on the Tasty Food portal so you can order, track stock and see your sales in one place.</li>
+     </ol>
+     <p>We will be in touch shortly to arrange the signing. If you have questions before then, simply
+     reply to this email.</p>
+     <p style="margin:18px 0 0">Welcome aboard,<br><strong>Tasty Food Manufacturing Inc.</strong></p>`
+  );
+  return send(p.to, `Approved: your ${tier} application — Tasty Food`, html, 'application approved');
+}
+
+// A decline. Kept short and without false hope, but it does not slam the door:
+// territories open up, and someone turned down this year may be right next year.
+export async function sendApplicationRejectedEmail(p: {
+  to: string;
+  name: string;
+  tier: string;
+}): Promise<SendResult> {
+  const tier = TIER_LABEL[p.tier] ?? p.tier;
+  const html = emailShell(
+    'Application Update',
+    `<h2 style="margin:0 0 8px;color:#333;font-size:18px">About your application</h2>
+     <p>Hi ${p.name}, thank you for your interest in becoming a <strong>${tier}</strong> with
+     Tasty Food, and for the time you put into your application.</p>
+     <p>After reviewing it, we are not able to move forward with your application at this time.
+     This is often down to the coverage we already have in an area rather than anything you did.</p>
+     <p>Territories do open up, and we would be glad to hear from you again. If you would like to
+     understand our decision or discuss a different area or level, just reply to this email — a real
+     person will answer.</p>
+     <p style="margin:18px 0 0">With thanks,<br><strong>Tasty Food Manufacturing Inc.</strong></p>`
+  );
+  return send(p.to, `About your ${tier} application — Tasty Food`, html, 'application rejected');
+}
+
 // The applicant has sent their filled-in form back. This is the point where an
 // application stops being an enquiry and becomes a decision waiting on you.
 export async function sendApplicationFormReceivedAlert(p: {

@@ -12,6 +12,8 @@ import { defaultZoomLink, OFFICE_ADDRESS } from '../../lib/appointments';
 import {
   sendAppointmentConfirmedEmail,
   sendAppointmentDeclinedEmail,
+  sendApplicationApprovedEmail,
+  sendApplicationRejectedEmail,
 } from '../../lib/email.applications';
 
 // The Principal's side of the online application: review what came in from the
@@ -136,6 +138,26 @@ applicationsRouter.patch(
     }
 
     res.json(application);
+
+    // Tell the applicant either way. A decision they are never told about is
+    // the same as no decision at all from where they are sitting.
+    if (b.status === 'APPROVED' && existing.status !== 'APPROVED') {
+      sendApplicationApprovedEmail({
+        to: existing.email,
+        name: existing.name,
+        tier: existing.tier,
+        targetArea: existing.targetArea,
+        // Only a note written for this moment is passed on; an older internal
+        // review note was never meant for their eyes.
+        note: b.reviewNote ?? null,
+      }).catch((e) => console.error('[applications] approval email failed', e?.message));
+    } else if (b.status === 'REJECTED' && existing.status !== 'REJECTED') {
+      sendApplicationRejectedEmail({
+        to: existing.email,
+        name: existing.name,
+        tier: existing.tier,
+      }).catch((e) => console.error('[applications] rejection email failed', e?.message));
+    }
   })
 );
 

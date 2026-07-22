@@ -112,8 +112,16 @@ export default function Applications() {
     setErr(null);
     let note: string | null = null;
     if (next === 'REJECTED') {
-      note = prompt('Why are you not proceeding? (the applicant is not shown this)') ?? null;
+      // Kept for your records only — the applicant's email says we cannot
+      // proceed without repeating an internal judgement back to them.
+      note = prompt(`Why are you not proceeding with ${a.name}? (for your records — not shown to them)`) ?? null;
       if (note === null) return;
+      if (!confirm(`Decline ${a.name}'s application and email them?`)) return;
+    }
+    if (next === 'APPROVED') {
+      note = prompt(`Approving ${a.name}. Anything to add to their email? (they WILL see this — leave blank for none)`) ?? null;
+      if (note === null) return;
+      if (!confirm(`Approve ${a.name} and email them the good news?`)) return;
     }
     try {
       await api.patch(`/marketing/applications/${a.id}`, { status: next, reviewNote: note });
