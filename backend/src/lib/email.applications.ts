@@ -81,6 +81,7 @@ export async function sendApplicationReceivedEmail(p: {
   name: string;
   tier: string;
   token: string;
+  code?: string | null;
   formTitle?: string | null;
 }): Promise<SendResult> {
   const origin = appOrigin();
@@ -99,6 +100,19 @@ export async function sendApplicationReceivedEmail(p: {
     `<h2 style="margin:0 0 8px;color:${BRAND_GREEN};font-size:18px">We have your application</h2>
      <p>Hi ${p.name}, thank you for applying to become a <strong>${tier}</strong> with Tasty Food.
      We have everything we need to start reviewing it.</p>
+     ${
+       p.code
+         ? `<p style="text-align:center;margin:18px 0">
+              <span style="display:inline-block;border:2px dashed ${BRAND_GREEN};border-radius:10px;padding:12px 22px">
+                <span style="display:block;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#888">Your tracking code</span>
+                <span style="display:block;font-size:22px;font-weight:bold;letter-spacing:2px;color:${BRAND_GREEN}">${p.code}</span>
+              </span>
+            </p>
+            <p style="text-align:center;color:#888;font-size:12px">Keep this — you can check your
+            progress any time at <strong>${appOrigin()}/track</strong> with this code and your
+            email address.</p>`
+         : ''
+     }
      ${formBlock}
      <p><strong>What happens next.</strong> Send us the filled-in form, and we will check whether your
      area is still open and invite you to a short meeting — over Zoom, or at our office in General

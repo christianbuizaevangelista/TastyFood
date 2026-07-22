@@ -309,12 +309,18 @@ export default function Join() {
               </div>
             )}
 
-            <div className="mt-7">
+            <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3">
               <a href="#register" className="inline-block rounded-xl bg-white px-7 py-3.5 font-bold text-brand-700 shadow-sm transition hover:bg-green-50">
                 Reserve my free slot →
               </a>
-              <p className="mt-2 text-sm text-green-100">Free · Online via Zoom · No obligation</p>
+              <a
+                href="/track"
+                className="inline-flex items-center gap-2 border-b border-white/40 pb-0.5 text-sm font-semibold text-white transition hover:border-white"
+              >
+                📦 Track your application
+              </a>
             </div>
+            <p className="mt-3 text-sm text-green-100">Free · Online via Zoom · No obligation</p>
           </div>
 
           <div className="relative">

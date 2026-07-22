@@ -28,7 +28,7 @@ export default function Apply() {
   const ref = params.get('ref') ?? undefined;
 
   const [formsAvailable, setFormsAvailable] = useState<string[]>([]);
-  const [done, setDone] = useState<{ token: string; formAvailable: boolean } | null>(null);
+  const [done, setDone] = useState<{ token: string; code: string; formAvailable: boolean } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [f, setF] = useState({
@@ -69,13 +69,13 @@ export default function Apply() {
     }
     setSubmitting(true);
     try {
-      const { data } = await api.post<{ token: string; formAvailable: boolean }>('/public/apply', {
+      const { data } = await api.post<{ token: string; code: string; formAvailable: boolean }>('/public/apply', {
         ...f,
         tier: f.tier,
         capital: f.capital ? Number(f.capital) : undefined,
         ref,
       });
-      setDone({ token: data.token, formAvailable: data.formAvailable });
+      setDone({ token: data.token, code: data.code, formAvailable: data.formAvailable });
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e2) {
       setErr(apiError(e2));
@@ -99,6 +99,22 @@ export default function Apply() {
               Thank you, {f.name.split(' ')[0]}. We're reviewing your application to become a{' '}
               <strong>{tier?.label}</strong> and we've emailed a copy to {f.email}.
             </p>
+
+            {done.code && (
+              <div className="mt-6 rounded-xl border-2 border-dashed border-brand-500 px-5 py-4">
+                <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+                  Your tracking code
+                </div>
+                <div className="mt-1 text-2xl font-bold tracking-widest text-brand-700">{done.code}</div>
+                <p className="mt-2 text-xs text-slate-500">
+                  Write this down. You can check your progress any time at{' '}
+                  <a href="/track" className="font-semibold text-brand-600 hover:underline">
+                    /track
+                  </a>{' '}
+                  with this code and your email address. It's in your email too.
+                </p>
+              </div>
+            )}
 
             {done.formAvailable && (
               <a

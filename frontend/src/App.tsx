@@ -38,6 +38,7 @@ import LandingPage from './pages/LandingPage';
 import Join from './pages/Join';
 import Apply from './pages/Apply';
 import ApplyStatus from './pages/ApplyStatus';
+import Track from './pages/Track';
 import Concerns from './pages/Concerns';
 import { HrDashboard, Employees, Attendance, Leave, Payroll } from './pages/Hr';
 import Users from './pages/Users';
@@ -90,6 +91,7 @@ export default function App() {
       <Route path="/join" element={<Join />} />
       <Route path="/apply" element={<Apply />} />
       <Route path="/apply/status/:token" element={<ApplyStatus />} />
+      <Route path="/track" element={<Track />} />
       <Route path="/home" element={<Home />} />
       <Route path="/" element={<Protected path="/"><Dashboard /></Protected>} />
       <Route path="/inventory" element={<Protected path="/inventory"><Inventory /></Protected>} />

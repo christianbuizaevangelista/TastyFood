@@ -23,6 +23,7 @@ interface Attachment {
 }
 interface Application {
   name: string;
+  code: string | null;
   tier: string;
   status: string;
   submittedAt: string;
@@ -266,6 +267,11 @@ export default function ApplyStatus() {
           <p className="text-sm text-green-50">
             {TIER_LABEL[app.tier] ?? app.tier} · submitted {when(app.submittedAt)}
           </p>
+          {app.code && (
+            <p className="mt-2 text-sm text-green-50">
+              Tracking code <span className="font-bold tracking-widest text-white">{app.code}</span>
+            </p>
+          )}
         </div>
       </div>
 

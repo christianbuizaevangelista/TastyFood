@@ -1089,6 +1089,9 @@ model Application {
   // Unguessable handle used in emailed links, so an applicant can fetch their
   // own form and status without an account.
   token String @unique
+  // Short, readable reference an applicant can type in to look themselves up.
+  // Nullable only so existing rows can be backfilled; always set on create.
+  code  String? @unique
   // Which tier they are applying for: PROVINCIAL | CITY | RESELLER | RETAIL.
   tier  String
 

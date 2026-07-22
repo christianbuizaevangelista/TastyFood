@@ -26,6 +26,17 @@ const TIERS = ['PROVINCIAL', 'CITY', 'RESELLER'] as const;
 const MAX_ATTACHMENTS = 5;
 const MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
 
+// A reference an applicant can read off a screen and type back in. The alphabet
+// leaves out 0/O, 1/I/L and similar so a code copied by hand still resolves.
+const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+function newTrackingCode(): string {
+  const pick = (n: number) =>
+    Array.from(crypto.randomBytes(n))
+      .map((b) => CODE_ALPHABET[b % CODE_ALPHABET.length])
+      .join('');
+  return `TF-${pick(4)}-${pick(4)}`;
+}
+
 const MAX_PER_IP_PER_HOUR = 5;
 function hashIp(req: Request): string | null {
   const fwd = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim();
@@ -147,6 +158,7 @@ applyRouter.post(
     const application = await prisma.application.create({
       data: {
         token: crypto.randomBytes(24).toString('base64url'),
+        code: newTrackingCode(),
         tier: b.tier,
         name: b.name.trim(),
         email,
@@ -179,7 +191,7 @@ applyRouter.post(
     }
 
     const form = await prisma.material.findFirst({ where: { applicationTier: b.tier } });
-    res.status(201).json({ ok: true, token: application.token, formAvailable: !!form });
+    res.status(201).json({ ok: true, token: application.token, code: application.code, formAvailable: !!form });
 
     // Confirmation to the applicant, and a heads-up to the Principal. Both are
     // best-effort: an email problem must never cost us the application.
@@ -188,6 +200,7 @@ applyRouter.post(
       name: application.name,
       tier: b.tier,
       token: application.token,
+      code: application.code,
       formTitle: form?.title ?? null,
     }).catch((e) => console.error('[apply] applicant email failed', e?.message));
 
@@ -210,6 +223,33 @@ applyRouter.post(
   })
 );
 
+const lookupSchema = z.object({
+  code: z.string().min(4).max(24),
+  email: z.string().email().max(160),
+});
+
+// POST /public/apply/lookup — exchange a tracking code for the private link.
+//
+// The code is short enough to read off a screen, which also means it is short
+// enough to guess. The email address is required alongside it so a guessed code
+// on its own reveals nothing — and the reply is identical whether the code does
+// not exist or the email does not match, so this cannot be used to discover
+// which codes are real.
+applyRouter.post(
+  '/lookup',
+  asyncHandler(async (req, res) => {
+    const b = lookupSchema.parse(req.body);
+    const code = b.code.trim().toUpperCase().replace(/\s+/g, '');
+    const email = b.email.trim().toLowerCase();
+
+    const a = await prisma.application.findUnique({ where: { code } });
+    if (!a || a.email.toLowerCase() !== email) {
+      throw notFound('We could not find an application with that code and email address');
+    }
+    res.json({ token: a.token });
+  })
+);
+
 // GET /public/apply/:token — an applicant checking their own status.
 applyRouter.get(
   '/:token',
@@ -225,6 +265,7 @@ applyRouter.get(
     const form = await prisma.material.findFirst({ where: { applicationTier: a.tier } });
     res.json({
       name: a.name,
+      code: a.code,
       tier: a.tier,
       status: a.status,
       submittedAt: a.createdAt,
