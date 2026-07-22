@@ -55,6 +55,18 @@ function Protected({ children, path }: { children: ReactNode; path: string }) {
   return <Layout>{children}</Layout>;
 }
 
+// The root is the front door for two different people. A signed-in distributor
+// wants their dashboard; everyone else — someone who saw an ad, or who lost the
+// email holding their application link — should meet the public landing page
+// rather than a login screen they cannot get past. Waiting on `loading` first
+// keeps either audience from seeing the wrong page flash by.
+function Root() {
+  const { user, loading } = useAuth();
+  if (loading) return <Spinner />;
+  if (!user) return <Join />;
+  return <Protected path="/"><Dashboard /></Protected>;
+}
+
 // Guards the separate Finance & Accounting workspace (Principal + accounting access).
 function FinanceProtected({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -93,7 +105,7 @@ export default function App() {
       <Route path="/apply/status/:token" element={<ApplyStatus />} />
       <Route path="/track" element={<Track />} />
       <Route path="/home" element={<Home />} />
-      <Route path="/" element={<Protected path="/"><Dashboard /></Protected>} />
+      <Route path="/" element={<Root />} />
       <Route path="/inventory" element={<Protected path="/inventory"><Inventory /></Protected>} />
       <Route path="/purchase-orders" element={<Protected path="/purchase-orders"><PurchaseOrders /></Protected>} />
       <Route path="/pos" element={<Protected path="/pos"><POS /></Protected>} />

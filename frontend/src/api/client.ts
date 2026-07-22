@@ -15,8 +15,12 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     const onPublicPage = PUBLIC_PATHS.some((p) => location.pathname.startsWith(p));
-    // Session expired/invalid — bounce to login, but never from a public page.
-    if (err.response?.status === 401 && !onPublicPage) {
+    // "Who am I" is a question, not a failure: a 401 from it is simply the
+    // answer "nobody", which is exactly what an anonymous visitor on the root
+    // landing page gets. Bouncing on it would send them to a login screen they
+    // never asked for. Every other 401 still means a session went away.
+    const isAuthProbe = (err.config?.url ?? '').includes('/auth/me');
+    if (err.response?.status === 401 && !onPublicPage && !isAuthProbe) {
       location.href = '/login';
     }
     return Promise.reject(err);
