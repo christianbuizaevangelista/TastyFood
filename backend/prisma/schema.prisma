@@ -754,6 +754,9 @@ model KPIRecord {
 model FbAdCampaign {
   id           String    @id @default(cuid())
   name         String
+  // Which of the businesses this spend belongs to, so the four can be read
+  // apart instead of pooled into one indistinguishable total.
+  brand        String    @default("TASTY_FOOD") // TASTY_FOOD | JUANPALAMAN | CIELOS | CHRISTIAN_E
   objective    String    @default("AWARENESS") // AWARENESS | TRAFFIC | ENGAGEMENT | LEADS | SALES
   status       String    @default("ACTIVE") // ACTIVE | PAUSED | COMPLETED
   budget       Float     @default(0) // planned budget
@@ -777,8 +780,10 @@ model FbAdCampaign {
   // Individual leads attributed to this campaign (Lead Funnels module).
   // Distinct from `leads` above, which is the count reported by the ad platform.
   funnelLeads Lead[]
+  adSets      FbAdSet[]
 
   @@index([status])
+  @@index([brand])
 }
 
 // Annual budget per account (Finance — Budgeting & Forecasting). Actuals come
@@ -1197,4 +1202,80 @@ model ApplicationAttachment {
   createdAt     DateTime @default(now())
 
   @@index([applicationId])
+}
+
+// An ad set inside a campaign: one audience, one budget. This is the level
+// where targeting lives, so it is also the level where "who did we reach"
+// can actually be answered.
+model FbAdSet {
+  id         String       @id @default(cuid())
+  campaignId String
+  campaign   FbAdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  name       String
+  status     String       @default("ACTIVE") // ACTIVE | PAUSED | COMPLETED
+
+  budget      Float @default(0)
+  spend       Float @default(0)
+  reach       Int   @default(0)
+  impressions Int   @default(0)
+  clicks      Int   @default(0)
+  leads       Int   @default(0)
+
+  // Targeting, kept as plain fields so it can be compared across ad sets.
+  ageMin     Int?
+  ageMax     Int?
+  genders    String?  @default("ALL") // ALL | MALE | FEMALE
+  locations  String[] @default([])
+  interests  String[] @default([])
+  behaviours String[] @default([])
+  placements String[] @default([])
+  // The audience this was built for, e.g. DISTRIBUTOR | RESELLER | CONSUMER.
+  audience   String?
+  notes      String?
+
+  source       String    @default("MANUAL") // MANUAL | FACEBOOK
+  fbAdSetId    String?   @unique
+  lastSyncedAt DateTime?
+  createdById  String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  ads FbAd[]
+
+  @@index([campaignId])
+  @@index([status])
+}
+
+// A single ad — the creative that actually ran. Comparing these is how you
+// find out which message works, rather than which campaign happened to be
+// funded most.
+model FbAd {
+  id       String  @id @default(cuid())
+  adSetId  String
+  adSet    FbAdSet @relation(fields: [adSetId], references: [id], onDelete: Cascade)
+  name     String
+  status   String  @default("ACTIVE") // ACTIVE | PAUSED | COMPLETED
+  // IMAGE | VIDEO | CAROUSEL | REELS | STORY
+  format   String? @default("IMAGE")
+
+  headline     String?
+  primaryText  String?
+  callToAction String?
+  mediaUrl     String?
+
+  spend       Float @default(0)
+  reach       Int   @default(0)
+  impressions Int   @default(0)
+  clicks      Int   @default(0)
+  leads       Int   @default(0)
+
+  source       String    @default("MANUAL") // MANUAL | FACEBOOK
+  fbAdId       String?   @unique
+  lastSyncedAt DateTime?
+  createdById  String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([adSetId])
+  @@index([status])
 }

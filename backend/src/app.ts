@@ -31,6 +31,7 @@ import { supportRouter } from './modules/support/support.routes';
 import { cronRouter } from './modules/cron/cron.routes';
 import { applyRouter } from './modules/public/apply.routes';
 import { applicationsRouter } from './modules/marketing/applications.routes';
+import { adsRouter } from './modules/marketing/ads.routes';
 
 export function createApp() {
   const app = express();
@@ -106,6 +107,7 @@ export function createApp() {
   // Mounted before the general marketing router so it matches first rather
   // than falling through that router's middleware.
   app.use('/api/marketing/applications', applicationsRouter);
+  app.use('/api/marketing/ads', adsRouter);
   app.use('/api/marketing', marketingRouter);
   app.use('/api/hr', hrRouter);
   app.use('/api/support', supportRouter);

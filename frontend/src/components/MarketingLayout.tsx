@@ -5,6 +5,7 @@ import { hasDmsAccess } from '../lib/nav';
 
 const MARKETING_NAV = [
   { to: '/marketing/facebook-ads', label: 'Facebook Ads', icon: '📣', exact: false },
+  { to: '/marketing/ad-manager', label: 'Ad Manager', icon: '📈', exact: false },
   { to: '/marketing/lead-funnels', label: 'Lead Funnels', icon: '🎯', exact: false },
   { to: '/marketing/applications', label: 'Applications', icon: '📋', exact: false },
   { to: '/marketing/landing-page', label: 'Landing Page', icon: '🌐', exact: false },

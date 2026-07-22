@@ -20,6 +20,7 @@ const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 const campaignSchema = z.object({
   name: z.string().min(1).max(160),
+  brand: z.enum(['TASTY_FOOD', 'JUANPALAMAN', 'CIELOS', 'CHRISTIAN_E']).default('TASTY_FOOD'),
   objective: z.enum(['AWARENESS', 'TRAFFIC', 'ENGAGEMENT', 'LEADS', 'SALES']).default('AWARENESS'),
   status: z.enum(['ACTIVE', 'PAUSED', 'COMPLETED']).default('ACTIVE'),
   budget: z.number().min(0).default(0),
@@ -36,6 +37,7 @@ const campaignSchema = z.object({
 function toData(b: z.infer<typeof campaignSchema>) {
   return {
     name: b.name,
+    brand: b.brand,
     objective: b.objective,
     status: b.status,
     budget: round2(b.budget),

@@ -32,6 +32,7 @@ import AgingReport from './pages/AgingReport';
 import Budget from './pages/Budget';
 import ResellerSale from './pages/ResellerSale';
 import FacebookAds from './pages/FacebookAds';
+import AdManager from './pages/AdManager';
 import LeadFunnels from './pages/LeadFunnels';
 import Applications from './pages/Applications';
 import LandingPage from './pages/LandingPage';
@@ -128,6 +129,7 @@ export default function App() {
       <Route path="/finance/accounts" element={<FinanceProtected><ChartOfAccounts /></FinanceProtected>} />
       <Route path="/marketing" element={<Navigate to="/marketing/facebook-ads" replace />} />
       <Route path="/marketing/facebook-ads" element={<MarketingProtected><FacebookAds /></MarketingProtected>} />
+      <Route path="/marketing/ad-manager" element={<MarketingProtected><AdManager /></MarketingProtected>} />
       <Route path="/marketing/lead-funnels" element={<MarketingProtected><LeadFunnels /></MarketingProtected>} />
       <Route path="/marketing/applications" element={<MarketingProtected><Applications /></MarketingProtected>} />
       <Route path="/marketing/landing-page" element={<MarketingProtected><LandingPage /></MarketingProtected>} />
