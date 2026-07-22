@@ -32,6 +32,15 @@ There are **two Vercel projects** on the same GitHub repo:
 Needs the user's **Vercel token** (and, only for schema changes, the official DB connection). Always ask for fresh ones at release time — never commit them. Get the OFFICIAL project id, team id, and the numeric GitHub repo id from the Vercel dashboard / project settings. The frozen state means the Git link is disconnected, so the exact order below matters:
 
 1. **(Schema changes only)** `prisma db push` against the official DB (verify the diff first; the nullable-unique-index warning is safe). No schema change → skip.
+   - **A new table arrives with RLS off.** Every table in `public` has Row-Level Security enabled with zero policies, which is what keeps the Supabase Data API from reading anything. `db push` does not carry that over, so after any push that creates a table, run:
+     ```sql
+     DO $$ DECLARE t record; BEGIN
+       FOR t IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                WHERE n.nspname='public' AND c.relkind='r' AND NOT c.relrowsecurity
+       LOOP EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.relname); END LOOP;
+     END $$;
+     ```
+     `ENABLE`, never `FORCE` — the app connects as `postgres`, which has BYPASSRLS, and `FORCE` would apply the policy to it too and break every query.
 2. **Clear the Ignored Build Step FIRST** (else the build auto-cancels):
    `PATCH https://api.vercel.com/v9/projects/{PROJECT_ID}?teamId={TEAM_ID}` body `{"commandForIgnoringBuildStep":""}`
 3. **Relink Git:** `POST https://api.vercel.com/v9/projects/{PROJECT_ID}/link?teamId={TEAM_ID}` body `{"type":"github","repo":"christianbuizaevangelista/TastyFood"}`

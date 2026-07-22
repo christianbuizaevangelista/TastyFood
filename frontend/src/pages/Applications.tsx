@@ -40,6 +40,14 @@ interface Appointment {
   note: string | null;
   outcome: string | null;
 }
+interface Attachment {
+  id: string;
+  label: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
+}
 interface Application {
   id: string;
   tier: Tier;
@@ -58,10 +66,18 @@ interface Application {
   status: Status;
   reviewNote: string | null;
   createdAt: string;
+  formSubmittedAt: string | null;
+  attachments: Attachment[];
   appointments: Appointment[];
 }
 interface Summary {
   total: number; submitted: number; reviewing: number; approved: number; rejected: number;
+}
+
+function fmtSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 // <input type="datetime-local"> needs local time, so the UTC ISO from the API
@@ -101,6 +117,25 @@ export default function Applications() {
     try {
       await api.patch(`/marketing/applications/${a.id}`, { status: next, reviewNote: note });
       refetch();
+    } catch (e) {
+      setErr(apiError(e));
+    }
+  }
+
+  // Fetched as a blob rather than linked directly, so the request carries the
+  // session and the file never needs a public URL.
+  async function downloadAttachment(a: Application, f: Attachment) {
+    setErr(null);
+    try {
+      const res = await api.get(`/marketing/applications/${a.id}/attachments/${f.id}`, {
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = f.fileName;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (e) {
       setErr(apiError(e));
     }
@@ -240,6 +275,39 @@ export default function Applications() {
                       {a.note && <Detail label="Their note" wide>{a.note}</Detail>}
                       {a.reviewNote && <Detail label="Your note" wide>{a.reviewNote}</Detail>}
                     </dl>
+
+                    <div className="mt-5">
+                      <h4 className="mb-2 text-sm font-semibold text-slate-700">
+                        Documents they sent
+                        {a.formSubmittedAt && (
+                          <span className="ml-2 text-xs font-normal text-slate-400">
+                            first received {dateTime(a.formSubmittedAt)}
+                          </span>
+                        )}
+                      </h4>
+                      {a.attachments.length === 0 ? (
+                        <p className="text-sm text-slate-400">
+                          They haven't sent their filled-in form yet.
+                        </p>
+                      ) : (
+                        <ul className="space-y-1">
+                          {a.attachments.map((f) => (
+                            <li key={f.id} className="flex flex-wrap items-baseline gap-2 text-sm">
+                              <span className="font-medium text-slate-700">{f.label}</span>
+                              <button
+                                className="text-brand-600 hover:underline"
+                                onClick={() => downloadAttachment(a, f)}
+                              >
+                                {f.fileName}
+                              </button>
+                              <span className="text-xs text-slate-400">
+                                {fmtSize(f.size)} · {dateTime(f.createdAt)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
 
                     <div className="mt-5">
                       <h4 className="mb-2 text-sm font-semibold text-slate-700">Meetings</h4>

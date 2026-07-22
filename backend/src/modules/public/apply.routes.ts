@@ -4,11 +4,12 @@ import crypto from 'crypto';
 import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { badRequest, notFound } from '../../lib/errors';
-import { sendStoredFile } from '../../lib/upload';
+import { assertAllowedDocumentType, sendStoredFile } from '../../lib/upload';
 import {
   sendApplicationReceivedEmail,
   sendApplicationOwnerAlert,
   sendAppointmentRequestedAlert,
+  sendApplicationFormReceivedAlert,
 } from '../../lib/email.applications';
 import { resolveFunnel, advanceLead, principalOwnerEmail } from './public.service';
 
@@ -17,7 +18,13 @@ import { resolveFunnel, advanceLead, principalOwnerEmail } from './public.servic
 // but the page stands on its own so an ad can point straight at it.
 export const applyRouter = Router();
 
-const TIERS = ['PROVINCIAL', 'CITY', 'RESELLER', 'RETAIL'] as const;
+// Retail is not offered online — it is appointed directly by the Principal, so
+// putting it on a public form only invites applications that go nowhere.
+const TIERS = ['PROVINCIAL', 'CITY', 'RESELLER'] as const;
+
+// What an applicant may send back. Same shape as every other upload in the app.
+const MAX_ATTACHMENTS = 5;
+const MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
 
 const MAX_PER_IP_PER_HOUR = 5;
 function hashIp(req: Request): string | null {
@@ -207,7 +214,10 @@ applyRouter.get(
   asyncHandler(async (req, res) => {
     const a = await prisma.application.findUnique({
       where: { token: req.params.token },
-      include: { appointments: { orderBy: { createdAt: 'desc' } } },
+      include: {
+        appointments: { orderBy: { createdAt: 'desc' } },
+        attachments: { orderBy: { createdAt: 'asc' }, select: { id: true, label: true, fileName: true, size: true, createdAt: true } },
+      },
     });
     if (!a) throw notFound('Application not found');
     const form = await prisma.material.findFirst({ where: { applicationTier: a.tier } });
@@ -217,6 +227,8 @@ applyRouter.get(
       status: a.status,
       submittedAt: a.createdAt,
       formAvailable: !!form,
+      formSubmittedAt: a.formSubmittedAt,
+      attachments: a.attachments,
       appointments: a.appointments.map((p) => ({
         kind: p.kind,
         status: p.status,
@@ -288,6 +300,83 @@ applyRouter.post(
           : null
       )
       .catch((e) => console.error('[apply] appointment alert failed', e?.message));
+  })
+);
+
+const uploadSchema = z.object({
+  label: z.string().max(80).optional(),
+  fileName: z.string().min(1).max(200),
+  mimeType: z.string().min(1),
+  dataBase64: z.string().min(1),
+});
+
+// POST /public/apply/:token/upload — the applicant sends back their filled-in
+// form (or a supporting document). This is the step that puts the application
+// in front of the Principal for a decision.
+applyRouter.post(
+  '/:token/upload',
+  asyncHandler(async (req, res) => {
+    const a = await prisma.application.findUnique({
+      where: { token: req.params.token },
+      include: { attachments: { select: { id: true } } },
+    });
+    if (!a) throw notFound('Application not found');
+    if (a.status === 'REJECTED') throw badRequest('This application is closed');
+    if (a.attachments.length >= MAX_ATTACHMENTS) {
+      throw badRequest(`You can attach up to ${MAX_ATTACHMENTS} files`);
+    }
+
+    const b = uploadSchema.parse(req.body);
+    assertAllowedDocumentType(b.mimeType);
+    const data = b.dataBase64.replace(/^data:[^;]+;base64,/, '');
+    const size = Math.floor((data.length * 3) / 4);
+    if (size > MAX_UPLOAD_BYTES) throw badRequest('File too large (max 3 MB)');
+
+    const attachment = await prisma.applicationAttachment.create({
+      data: {
+        applicationId: a.id,
+        label: b.label?.trim() || 'Application form',
+        fileName: b.fileName,
+        mimeType: b.mimeType,
+        size,
+        data,
+      },
+      select: { id: true, label: true, fileName: true, size: true, createdAt: true },
+    });
+
+    // The first file returned is what moves this from "we have your details" to
+    // something actually reviewable.
+    const first = !a.formSubmittedAt;
+    if (first) {
+      await prisma.application.update({
+        where: { id: a.id },
+        data: {
+          formSubmittedAt: new Date(),
+          // Only nudge the status forward; never overwrite a decision already made.
+          ...(a.status === 'SUBMITTED' ? { status: 'REVIEWING' } : {}),
+        },
+      });
+      await advanceLead(a.leadId, ['review', 'qualif', 'application']);
+    }
+
+    res.status(201).json({ ok: true, attachment });
+
+    if (first) {
+      principalOwnerEmail()
+        .then((owner) =>
+          owner
+            ? sendApplicationFormReceivedAlert({
+                to: owner,
+                name: a.name,
+                tier: a.tier,
+                email: a.email,
+                phone: a.phone,
+                fileName: attachment.fileName,
+              })
+            : null
+        )
+        .catch((e) => console.error('[apply] form-received alert failed', e?.message));
+    }
   })
 );
 

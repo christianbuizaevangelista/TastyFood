@@ -1125,7 +1125,12 @@ model Application {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // When they sent back the filled-in form, which is what puts the
+  // application in front of the Principal for a decision.
+  formSubmittedAt DateTime?
+
   appointments Appointment[]
+  attachments  ApplicationAttachment[]
 
   @@index([status])
   @@index([tier])
@@ -1166,4 +1171,22 @@ model Appointment {
   @@index([applicationId])
   @@index([status])
   @@index([confirmedAt])
+}
+
+// A file the applicant sends back: the filled-in application form, a valid ID,
+// business permit, and so on. Uploaded from the public tracker with no account,
+// so the route that writes these is rate-limited and type-checked.
+model ApplicationAttachment {
+  id            String   @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  // What the applicant says this file is, e.g. "Application form", "Valid ID".
+  label         String   @default("Application form")
+  fileName      String
+  mimeType      String
+  size          Int
+  data          String   // base64 (no data: prefix)
+  createdAt     DateTime @default(now())
+
+  @@index([applicationId])
 }

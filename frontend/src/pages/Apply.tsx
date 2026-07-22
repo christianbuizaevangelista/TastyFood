@@ -6,7 +6,7 @@ import AddressPicker, { AddressParts } from '../components/AddressPicker';
 // Public distributorship application (no login). Reached from the thank-you
 // email after an orientation, or straight from an ad.
 
-type Tier = 'PROVINCIAL' | 'CITY' | 'RESELLER' | 'RETAIL';
+type Tier = 'PROVINCIAL' | 'CITY' | 'RESELLER';
 
 const TIERS: { value: Tier; label: string; territory: string; entry: string; blurb: string }[] = [
   {
@@ -20,10 +20,6 @@ const TIERS: { value: Tier; label: string; territory: string; entry: string; blu
   {
     value: 'RESELLER', label: 'Reseller', territory: 'Your own area',
     entry: '8% off SRP', blurb: 'Sell in your barangay, online, or through your own store.',
-  },
-  {
-    value: 'RETAIL', label: 'Retail Distributor', territory: 'Your own store',
-    entry: '15% off retail SRP', blurb: 'Stock your own shop or canteen at distributor pricing.',
   },
 ];
 

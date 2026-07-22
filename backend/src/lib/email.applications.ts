@@ -89,8 +89,8 @@ export async function sendApplicationReceivedEmail(p: {
   const tier = TIER_LABEL[p.tier] ?? p.tier;
 
   const formBlock = p.formTitle
-    ? `<p>Here is the official application form for a <strong>${tier}</strong>. Please fill it in
-         and bring it to your meeting with us — or email it back before then.</p>
+    ? `<p>Here is the official application form for a <strong>${tier}</strong>. Fill it in, then send
+         it back through the link below — a clear photo or scan is fine.</p>
        ${button(formUrl, `Download the ${tier} form`)}`
     : `<p>We will email you the official <strong>${tier}</strong> application form shortly.</p>`;
 
@@ -100,14 +100,40 @@ export async function sendApplicationReceivedEmail(p: {
      <p>Hi ${p.name}, thank you for applying to become a <strong>${tier}</strong> with Tasty Food.
      We have everything we need to start reviewing it.</p>
      ${formBlock}
-     <p><strong>What happens next.</strong> We check whether your area is still open, then invite you
-     to a short meeting — over Zoom, or at our office in General Trias, whichever suits you. You can
-     ask for a schedule and follow your application here:</p>
-     ${button(statusUrl, 'Request a meeting', false)}
+     <p><strong>What happens next.</strong> Send us the filled-in form, and we will check whether your
+     area is still open and invite you to a short meeting — over Zoom, or at our office in General
+     Trias, whichever suits you. Everything happens on one page:</p>
+     ${button(statusUrl, 'Send my form and request a meeting', false)}
      <p style="color:#888;font-size:13px">Keep this email — that link is how you check your
      application without needing an account.</p>`
   );
   return send(p.to, `Your ${tier} application — Tasty Food`, html, 'application receipt');
+}
+
+// The applicant has sent their filled-in form back. This is the point where an
+// application stops being an enquiry and becomes a decision waiting on you.
+export async function sendApplicationFormReceivedAlert(p: {
+  to: string;
+  name: string;
+  tier: string;
+  email: string;
+  phone: string;
+  fileName: string;
+}): Promise<SendResult> {
+  const tier = TIER_LABEL[p.tier] ?? p.tier;
+  const html = emailShell(
+    'Form Received',
+    `<h2 style="margin:0 0 8px;color:${BRAND_GREEN};font-size:18px">${p.name} sent their application form</h2>
+     <p><strong>${p.name}</strong> has returned the filled-in <strong>${tier}</strong> form
+     (<em>${p.fileName}</em>). The application is now waiting for your review.</p>
+     <table style="border-collapse:collapse;margin:12px 0;font-size:14px">
+       <tr><td style="padding:5px 14px 5px 0;color:#888">Mobile</td><td style="padding:5px 0"><a href="tel:${p.phone}" style="color:${BRAND_GREEN}">${p.phone}</a></td></tr>
+       <tr><td style="padding:5px 14px 5px 0;color:#888">Email</td><td style="padding:5px 0"><a href="mailto:${p.email}" style="color:${BRAND_GREEN}">${p.email}</a></td></tr>
+     </table>
+     <p style="color:#888;font-size:13px">Open <strong>Marketing &rsaquo; Applications</strong> to read
+     the file and approve or decline.</p>`
+  );
+  return send(p.to, `Form received: ${p.name} (${tier})`, html, 'form received');
 }
 
 const KIND_LABEL: Record<string, string> = {

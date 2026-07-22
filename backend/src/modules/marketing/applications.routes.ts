@@ -7,6 +7,7 @@ import { requireRole, requirePermission } from '../../middleware/rbac';
 import { notFound } from '../../lib/errors';
 import { advanceLead } from '../public/public.service';
 import { appOrigin } from '../../lib/email';
+import { ALLOWED_DOCUMENT_TYPES, sendStoredFile } from '../../lib/upload';
 import {
   sendAppointmentConfirmedEmail,
   sendAppointmentDeclinedEmail,
@@ -64,6 +65,12 @@ applicationsRouter.get(
       include: {
         lead: { select: { id: true, funnelId: true, stageIndex: true } },
         appointments: { orderBy: { createdAt: 'desc' } },
+        // Metadata only — the file bytes are streamed on demand, not loaded
+        // into every list response.
+        attachments: {
+          orderBy: { createdAt: 'asc' },
+          select: { id: true, label: true, fileName: true, mimeType: true, size: true, createdAt: true },
+        },
       },
     });
 
@@ -128,6 +135,20 @@ applicationsRouter.patch(
     }
 
     res.json(application);
+  })
+);
+
+// GET /marketing/applications/:id/attachments/:attId — read a file the
+// applicant sent back. Cross-referenced against the application so an id from
+// one cannot be used to reach another's.
+applicationsRouter.get(
+  '/:id/attachments/:attId',
+  asyncHandler(async (req, res) => {
+    const att = await prisma.applicationAttachment.findFirst({
+      where: { id: req.params.attId, applicationId: req.params.id },
+    });
+    if (!att) throw notFound('Attachment not found');
+    sendStoredFile(res, att, 'attachment', ALLOWED_DOCUMENT_TYPES);
   })
 );
 

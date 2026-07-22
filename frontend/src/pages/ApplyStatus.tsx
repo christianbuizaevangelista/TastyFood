@@ -14,13 +14,40 @@ interface Appointment {
   location: string | null;
   note: string | null;
 }
+interface Attachment {
+  id: string;
+  label: string;
+  fileName: string;
+  size: number;
+  createdAt: string;
+}
 interface Application {
   name: string;
   tier: string;
   status: string;
   submittedAt: string;
   formAvailable: boolean;
+  formSubmittedAt: string | null;
+  attachments: Attachment[];
   appointments: Appointment[];
+}
+
+const MAX_FILES = 5;
+const MAX_BYTES = 3 * 1024 * 1024;
+
+function fmtSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
 }
 
 const TIER_LABEL: Record<string, string> = {
@@ -79,6 +106,9 @@ export default function ApplyStatus() {
   const [saving, setSaving] = useState(false);
   const [f, setF] = useState({ kind: 'ZOOM' as 'ZOOM' | 'OFFICE_VISIT', requestedAt: '', altRequestedAt: '', note: '' });
   const set = (k: keyof typeof f, v: string) => setF((prev) => ({ ...prev, [k]: v }));
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
+  const [label, setLabel] = useState('Application form');
 
   function load() {
     api
@@ -88,6 +118,30 @@ export default function ApplyStatus() {
       .finally(() => setLoading(false));
   }
   useEffect(load, [token]);
+
+  async function upload(file: File | null) {
+    if (!file) return;
+    setUploadErr(null);
+    if (file.size > MAX_BYTES) {
+      setUploadErr('That file is over 3 MB. Please send a smaller scan or photo.');
+      return;
+    }
+    setUploading(true);
+    try {
+      await api.post(`/public/apply/${token}/upload`, {
+        label,
+        fileName: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        dataBase64: await fileToBase64(file),
+      });
+      setLabel('Application form');
+      load();
+    } catch (e) {
+      setUploadErr(apiError(e));
+    } finally {
+      setUploading(false);
+    }
+  }
 
   async function request(e: React.FormEvent) {
     e.preventDefault();
@@ -152,13 +206,107 @@ export default function ApplyStatus() {
           <p className="mt-1 text-sm">{status.body}</p>
         </div>
 
-        {app.formAvailable && (
-          <a
-            href={`/api/public/apply/${token}/form`}
-            className="block rounded-xl border border-slate-200 bg-white p-5 text-center font-semibold text-brand-700 shadow-sm transition hover:bg-slate-50"
-          >
-            ⬇ Download your application form
-          </a>
+        {/* The form round-trip: download it, fill it in, send it back. Both
+            halves sit together so the second step is impossible to miss. */}
+        {!closed && (
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="font-bold text-slate-800">Your application form</h2>
+
+            <ol className="mt-3 space-y-4">
+              {app.formAvailable && (
+                <li className="flex gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700">
+                    1
+                  </span>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-slate-700">Download and fill it in</div>
+                    <a
+                      href={`/api/public/apply/${token}/form`}
+                      className="mt-2 inline-block rounded-lg border-2 border-brand-600 px-4 py-2 text-sm font-bold text-brand-700 transition hover:bg-brand-50"
+                    >
+                      ⬇ Download the form
+                    </a>
+                  </div>
+                </li>
+              )}
+
+              <li className="flex gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700">
+                  {app.formAvailable ? 2 : 1}
+                </span>
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-slate-700">Send it back to us</div>
+                  <p className="text-xs text-slate-500">
+                    Upload the filled-in form — a clear photo or scan is fine. You can also attach a
+                    valid ID or business permit.
+                  </p>
+
+                  {uploadErr && (
+                    <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                      {uploadErr}
+                    </div>
+                  )}
+
+                  {app.attachments.length < MAX_FILES ? (
+                    <div className="mt-3 space-y-2">
+                      <select
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-500"
+                        value={label} onChange={(e) => setLabel(e.target.value)}
+                      >
+                        <option>Application form</option>
+                        <option>Valid ID</option>
+                        <option>Business permit</option>
+                        <option>Proof of address</option>
+                        <option>Other document</option>
+                      </select>
+                      <label className="block">
+                        <span className="sr-only">Choose a file</span>
+                        <input
+                          type="file" disabled={uploading}
+                          accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx,.csv"
+                          onChange={(e) => {
+                            upload(e.target.files?.[0] ?? null);
+                            e.target.value = '';
+                          }}
+                          className="block w-full text-sm text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-600 file:px-4 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-brand-700 disabled:opacity-60"
+                        />
+                      </label>
+                      <p className="text-xs text-slate-400">
+                        PDF, photo or Office file · up to 3 MB · {MAX_FILES - app.attachments.length} left
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">
+                      You've sent the maximum of {MAX_FILES} files. Reply to our email if you need to send more.
+                    </p>
+                  )}
+
+                  {uploading && <p className="mt-2 text-sm text-brand-700">Uploading…</p>}
+
+                  {app.attachments.length > 0 && (
+                    <ul className="mt-3 space-y-1 border-t border-slate-100 pt-3">
+                      {app.attachments.map((a) => (
+                        <li key={a.id} className="flex items-baseline justify-between gap-2 text-sm">
+                          <span className="min-w-0">
+                            <span className="text-green-600">✓</span>{' '}
+                            <span className="font-medium text-slate-700">{a.label}</span>{' '}
+                            <span className="truncate text-xs text-slate-400">{a.fileName}</span>
+                          </span>
+                          <span className="shrink-0 text-xs text-slate-400">{fmtSize(a.size)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </li>
+            </ol>
+
+            {app.formSubmittedAt && (
+              <p className="mt-4 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+                Received — your application is now with us for review.
+              </p>
+            )}
+          </div>
         )}
 
         {confirmed && (
