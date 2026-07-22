@@ -273,9 +273,19 @@ export default function Join() {
       <div className="sticky top-0 z-30 border-b border-slate-100 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
           <img src="/tasty-food-splash.png" alt="Tasty Food" className="h-8 w-auto object-contain" />
-          <a href="#register" className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-brand-700">
-            Reserve free slot
-          </a>
+          <div className="flex items-center gap-3 sm:gap-5">
+            {/* People coming back to check on an application are not reading the
+                page again — they need this before anything else on it. */}
+            <a
+              href="/track"
+              className="whitespace-nowrap text-sm font-semibold text-slate-600 transition hover:text-brand-700"
+            >
+              Track application
+            </a>
+            <a href="#register" className="whitespace-nowrap rounded-lg bg-brand-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-brand-700">
+              Reserve free slot
+            </a>
+          </div>
         </div>
       </div>
 
@@ -309,15 +319,9 @@ export default function Join() {
               </div>
             )}
 
-            <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3">
+            <div className="mt-7">
               <a href="#register" className="inline-block rounded-xl bg-white px-7 py-3.5 font-bold text-brand-700 shadow-sm transition hover:bg-green-50">
                 Reserve my free slot →
-              </a>
-              <a
-                href="/track"
-                className="inline-flex items-center gap-2 border-b border-white/40 pb-0.5 text-sm font-semibold text-white transition hover:border-white"
-              >
-                📦 Track your application
               </a>
             </div>
             <p className="mt-3 text-sm text-green-100">Free · Online via Zoom · No obligation</p>
