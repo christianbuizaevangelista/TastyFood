@@ -21,8 +21,8 @@ export function defaultZoomLink(): string | null {
 // the applicant sees a window rather than a single instant.
 export const SLOTS = [
   { start: '10:00', end: '11:30', label: '10:00 AM – 11:30 AM' },
-  { start: '12:00', end: '13:30', label: '12:00 NN – 1:30 PM' },
-  { start: '14:00', end: '15:30', label: '2:00 PM – 3:30 PM' },
+  { start: '13:30', end: '15:00', label: '1:30 PM – 3:00 PM' },
+  { start: '15:30', end: '17:00', label: '3:30 PM – 5:00 PM' },
 ] as const;
 
 export type SlotStart = (typeof SLOTS)[number]['start'];
