@@ -44,10 +44,11 @@ function button(href: string, text: string, filled = true): string {
   const style = filled
     ? `background:${BRAND_GREEN};color:#fff;border:2px solid ${BRAND_GREEN}`
     : `background:#fff;color:${BRAND_GREEN};border:2px solid ${BRAND_GREEN}`;
+  // No raw-URL fallback underneath: these go to people who are not distributors
+  // yet, so a bare link only adds clutter they cannot act on.
   return `<p style="text-align:center;margin:22px 0">
      <a href="${href}" style="${style};text-decoration:none;padding:11px 24px;border-radius:8px;font-weight:bold;display:inline-block">${text}</a>
-   </p>
-   <p style="color:#999;font-size:12px;word-break:break-all">Or paste this into your browser: ${href}</p>`;
+   </p>`;
 }
 
 // The day after an orientation, thank the people who actually showed up and

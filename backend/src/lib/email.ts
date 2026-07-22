@@ -666,8 +666,7 @@ export async function sendWebinarConfirmationEmail(p: {
   const button = p.zoomLink
     ? `<p style="text-align:center;margin:22px 0">
          <a href="${p.zoomLink}" style="background:#0b9444;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:bold;display:inline-block">Join the Zoom orientation</a>
-       </p>
-       <p style="color:#999;font-size:12px;word-break:break-all">Or paste this link into your browser: ${p.zoomLink}</p>`
+       </p>`
     : `<p style="color:#666">We will email you the Zoom link before the session starts.</p>`;
 
   const html = emailShell(
@@ -972,8 +971,7 @@ export async function sendWebinarReminderEmail(p: {
   const button = p.zoomLink
     ? `<p style="text-align:center;margin:22px 0">
          <a href="${p.zoomLink}" style="background:#0b9444;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:bold;display:inline-block">Join the Zoom orientation</a>
-       </p>
-       <p style="color:#999;font-size:12px;word-break:break-all">Or paste this link into your browser: ${p.zoomLink}</p>`
+       </p>`
     : `<p style="color:#666">We will email you the Zoom link before the session starts.</p>`;
 
   const html = emailShell(

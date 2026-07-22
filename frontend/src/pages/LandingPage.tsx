@@ -152,10 +152,14 @@ export default function LandingPage() {
     }
   }
 
-  async function toggleAttended(r: Registration) {
+  // Ticking attendance emails the thank-you straight away, and that cannot be
+  // unsent — so it is confirmed once and then locked.
+  async function markAttended(r: Registration) {
+    if (r.attended) return;
+    if (!confirm(`Mark ${r.name} as having attended? This emails them the thank-you and cannot be undone.`)) return;
     setErr(null);
     try {
-      await api.patch(`/marketing/webinar/registrations/${r.id}`, { attended: !r.attended });
+      await api.patch(`/marketing/webinar/registrations/${r.id}`, { attended: true });
       refetch();
     } catch (e) {
       setErr(apiError(e));
@@ -407,7 +411,16 @@ export default function LandingPage() {
                         {r.leadId && <div className="mt-1 text-xs text-green-600">in funnel</div>}
                       </td>
                       <td className="td text-center">
-                        <input type="checkbox" checked={r.attended} onChange={() => toggleAttended(r)} />
+                        {r.attended ? (
+                          <span
+                            className="badge bg-green-100 text-green-700"
+                            title="Recorded — the thank-you email has been sent"
+                          >
+                            ✓ attended
+                          </span>
+                        ) : (
+                          <input type="checkbox" checked={false} onChange={() => markAttended(r)} />
+                        )}
                       </td>
                       <td className="td text-right">
                         <button

@@ -5,6 +5,9 @@ import { asyncHandler } from '../../lib/http';
 import { authenticate } from '../../middleware/auth';
 import { requireRole, requirePermission } from '../../middleware/rbac';
 import { notFound, badRequest } from '../../lib/errors';
+import { appOrigin } from '../../lib/email';
+import { sendOrientationThankYouEmail } from '../../lib/email.applications';
+import { advanceLead } from '../public/public.service';
 
 // Marketing System — a workspace separate from the DMS and Finance & Accounting.
 // First module: Facebook Ads Management. Principal-only (owner or 'marketing').
@@ -613,13 +616,45 @@ marketingRouter.patch(
   '/webinar/registrations/:id',
   asyncHandler(async (req, res) => {
     const { attended } = z.object({ attended: z.boolean() }).parse(req.body);
-    const existing = await prisma.webinarRegistration.findUnique({ where: { id: req.params.id } });
+    const existing = await prisma.webinarRegistration.findUnique({
+      where: { id: req.params.id },
+      include: { webinar: { select: { title: true } } },
+    });
     if (!existing) throw notFound('Registration not found');
+
+    // Ticking attendance sends a thank-you immediately, and that cannot be
+    // unsent — so the tick is one-way. Otherwise an accidental un-tick and
+    // re-tick would mail the same person twice.
+    if (existing.attended && !attended) {
+      throw badRequest('Attendance has already been recorded and cannot be undone');
+    }
+    if (existing.attended && attended) return res.json(existing);
+
     const reg = await prisma.webinarRegistration.update({
       where: { id: existing.id },
-      data: { attended },
+      data: { attended, ...(attended ? { thankYouAt: new Date() } : {}) },
     });
     res.json(reg);
+
+    if (attended && !existing.thankYouAt) {
+      // Thank them while the session is still fresh, and move the lead.
+      sendOrientationThankYouEmail({
+        to: reg.email,
+        name: reg.name,
+        title: existing.webinar.title,
+        applyUrl: `${appOrigin()}/apply?ref=${reg.id}`,
+      })
+        .then((out) => {
+          if (!out.sent) {
+            // Clear the stamp so it can be retried rather than lost.
+            return prisma.webinarRegistration
+              .update({ where: { id: reg.id }, data: { thankYouAt: null } })
+              .then(() => undefined);
+          }
+          return advanceLead(reg.leadId, ['attend', 'orientation']);
+        })
+        .catch((e) => console.error('[webinar] thank-you failed', e?.message));
+    }
   })
 );
 
