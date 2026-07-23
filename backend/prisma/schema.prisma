@@ -1312,6 +1312,9 @@ model ShopOrder {
   // PENDING | CONFIRMED | PAID | SHIPPED | DELIVERED | CANCELLED
   status     String  @default("PENDING")
   note       String?
+  // The DMS Sale this order became once delivered. Set once, so the order is
+  // never booked into inventory and finance twice.
+  saleId     String? @unique
   // Proof of payment for a pay-first order (base64), attached by the buyer.
   proofData     String?
   proofName     String?

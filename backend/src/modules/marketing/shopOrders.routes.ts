@@ -6,6 +6,7 @@ import { authenticate } from '../../middleware/auth';
 import { requireRole, requirePermission } from '../../middleware/rbac';
 import { notFound } from '../../lib/errors';
 import { sendStoredFile } from '../../lib/upload';
+import { fulfilShopOrder } from './shopFulfil';
 
 // The Principal's side of the JuanPalaman shop: read the orders that came in
 // and move them through fulfilment.
@@ -48,6 +49,7 @@ shopOrdersRouter.get(
         note: o.note,
         total: o.total,
         hasProof: !!o.proofData,
+        saleId: o.saleId,
         createdAt: o.createdAt,
         items: o.items.map((i) => ({ name: i.name, quantity: i.quantity, unitPrice: i.unitPrice, lineTotal: i.lineTotal })),
       })),
@@ -83,6 +85,17 @@ shopOrdersRouter.patch(
       where: { id: existing.id },
       data: { status: b.status, note: b.note ?? existing.note },
     });
+
+    // Delivery is the point of no return: book it into the DMS as a real sale —
+    // stock deducted, customer created, revenue posted, sales report updated —
+    // exactly once. Best-effort so a bookkeeping hiccup never blocks the status
+    // change the operator just made.
+    if (b.status === 'DELIVERED' && !existing.saleId) {
+      await fulfilShopOrder(order.id, req.auth!.orgId, req.auth!.sub).catch((e) =>
+        console.error('[shop] fulfil failed', e?.message)
+      );
+    }
+
     res.json({ id: order.id, status: order.status });
   })
 );

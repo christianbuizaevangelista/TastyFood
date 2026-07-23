@@ -13,7 +13,7 @@ interface Order {
   id: string; code: string; name: string; phone: string; email: string | null;
   address: string; landmark: string | null; customerType: string;
   paymentMethod: string; status: Status; note: string | null;
-  total: number; hasProof: boolean; createdAt: string; items: Item[];
+  total: number; hasProof: boolean; saleId: string | null; createdAt: string; items: Item[];
 }
 interface Summary {
   total: number; pending: number; confirmed: number; shipped: number;
@@ -119,6 +119,7 @@ export default function ShopOrders() {
                         {o.code}
                       </button>
                       <span className={`badge ${STATUS_STYLE[o.status]}`}>{o.status.toLowerCase()}</span>
+                      {o.saleId && <span className="badge bg-green-50 text-green-700" title="Recorded as a sale in the DMS — inventory and finance updated">in DMS</span>}
                       {o.customerType === 'REPEAT' && <span className="badge bg-green-50 text-green-700">repeat</span>}
                       <span className="badge bg-slate-100 text-slate-600">
                         {o.paymentMethod === 'CASH_ON_DELIVERY' ? 'COD' : 'paid first'}
