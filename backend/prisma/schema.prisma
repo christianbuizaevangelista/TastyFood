@@ -241,13 +241,17 @@ model Product {
   cityDiscount       Float?
   resellerDiscount   Float?
   isActive           Boolean  @default(true)
+  // Shown on the public JuanPalaman shop page. Off by default, so nothing is
+  // sold to the public until it is deliberately listed.
+  shopVisible        Boolean  @default(false)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  inventory Inventory[]
-  ledger    StockLedger[]
-  poItems   PurchaseOrderItem[]
-  saleItems SaleItem[]
+  inventory  Inventory[]
+  ledger     StockLedger[]
+  poItems    PurchaseOrderItem[]
+  saleItems  SaleItem[]
+  shopItems  ShopOrderItem[]
 }
 
 // ---------------------------------------------------------------------------
@@ -1278,4 +1282,63 @@ model FbAd {
 
   @@index([adSetId])
   @@index([status])
+}
+
+// A retail order placed on the public JuanPalaman shop page (no login). Ads
+// point here; the buyer fills in their details and either pays first or takes
+// cash on delivery.
+model ShopOrder {
+  id     String @id @default(cuid())
+  // Human-readable reference for the buyer and for you, e.g. JP-7K2M-4QX9.
+  code   String @unique
+
+  // Buyer details, exactly as the form collects them.
+  name     String
+  phone    String
+  email    String?
+  address  String
+  landmark String?
+  // NEW | REPEAT — a repeat buyer is worth more and worth knowing about.
+  customerType String @default("NEW")
+
+  // CASH_ON_DELIVERY | PAY_FIRST
+  paymentMethod String @default("CASH_ON_DELIVERY")
+
+  subtotal Float
+  // Delivery is free, kept as a field so a future change does not need a migration.
+  deliveryFee Float @default(0)
+  total       Float
+
+  // PENDING | CONFIRMED | PAID | SHIPPED | DELIVERED | CANCELLED
+  status     String  @default("PENDING")
+  note       String?
+  // Proof of payment for a pay-first order (base64), attached by the buyer.
+  proofData     String?
+  proofName     String?
+  proofMimeType String?
+
+  ipHash    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items ShopOrderItem[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ShopOrderItem {
+  id        String    @id @default(cuid())
+  orderId   String
+  order     ShopOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product   @relation(fields: [productId], references: [id])
+  // Snapshot of name and price at order time, so later edits to the product
+  // never rewrite what the buyer actually ordered.
+  name      String
+  unitPrice Float
+  quantity  Int
+  lineTotal Float
+
+  @@index([orderId])
 }

@@ -40,6 +40,9 @@ import Join from './pages/Join';
 import Apply from './pages/Apply';
 import ApplyStatus from './pages/ApplyStatus';
 import Track from './pages/Track';
+import Shop from './pages/Shop';
+import ShopOrder from './pages/ShopOrder';
+import ShopOrders from './pages/ShopOrders';
 import Concerns from './pages/Concerns';
 import { HrDashboard, Employees, Attendance, Leave, Payroll } from './pages/Hr';
 import Users from './pages/Users';
@@ -105,6 +108,8 @@ export default function App() {
       <Route path="/apply" element={<Apply />} />
       <Route path="/apply/status/:token" element={<ApplyStatus />} />
       <Route path="/track" element={<Track />} />
+      <Route path="/shop" element={<Shop />} />
+      <Route path="/shop/order/:code" element={<ShopOrder />} />
       <Route path="/home" element={<Home />} />
       <Route path="/" element={<Root />} />
       <Route path="/inventory" element={<Protected path="/inventory"><Inventory /></Protected>} />
@@ -132,6 +137,7 @@ export default function App() {
       <Route path="/marketing/ad-manager" element={<MarketingProtected><AdManager /></MarketingProtected>} />
       <Route path="/marketing/lead-funnels" element={<MarketingProtected><LeadFunnels /></MarketingProtected>} />
       <Route path="/marketing/applications" element={<MarketingProtected><Applications /></MarketingProtected>} />
+      <Route path="/marketing/shop-orders" element={<MarketingProtected><ShopOrders /></MarketingProtected>} />
       <Route path="/marketing/landing-page" element={<MarketingProtected><LandingPage /></MarketingProtected>} />
       <Route path="/hr" element={<HrProtected><HrDashboard /></HrProtected>} />
       <Route path="/hr/employees" element={<HrProtected><Employees /></HrProtected>} />

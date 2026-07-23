@@ -32,6 +32,8 @@ import { cronRouter } from './modules/cron/cron.routes';
 import { applyRouter } from './modules/public/apply.routes';
 import { applicationsRouter } from './modules/marketing/applications.routes';
 import { adsRouter } from './modules/marketing/ads.routes';
+import { shopRouter } from './modules/public/shop.routes';
+import { shopOrdersRouter } from './modules/marketing/shopOrders.routes';
 
 export function createApp() {
   const app = express();
@@ -83,6 +85,8 @@ export function createApp() {
   app.use('/api/public', publicRouter);
   // The online distributorship application, also unauthenticated.
   app.use('/api/public/apply', applyRouter);
+  // The public JuanPalaman shop, also unauthenticated.
+  app.use('/api/public/shop', shopRouter);
   // Scheduler-invoked jobs; gated on CRON_SECRET, not on a user session.
   app.use('/api/cron', cronRouter);
 
@@ -108,6 +112,7 @@ export function createApp() {
   // than falling through that router's middleware.
   app.use('/api/marketing/applications', applicationsRouter);
   app.use('/api/marketing/ads', adsRouter);
+  app.use('/api/marketing/shop-orders', shopOrdersRouter);
   app.use('/api/marketing', marketingRouter);
   app.use('/api/hr', hrRouter);
   app.use('/api/support', supportRouter);

@@ -194,6 +194,7 @@ interface SizeRow {
   provPct: string;
   cityPct: string;
   resPct: string;
+  shopVisible: boolean;
 }
 
 const pctToFrac = (s: string) => (s.trim() === '' ? null : Number(s) / 100);
@@ -206,7 +207,7 @@ function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => v
     group.items.map((i) => ({
       id: i.id, size: i.size ?? '', sku: i.sku, srp: String(i.srp),
       retailSrp: i.retailSrp != null ? String(i.retailSrp) : '',
-      provPct: fracToPct(i.provincialDiscount), cityPct: fracToPct(i.cityDiscount), resPct: fracToPct(i.resellerDiscount),
+      provPct: fracToPct(i.provincialDiscount), cityPct: fracToPct(i.cityDiscount), resPct: fracToPct(i.resellerDiscount), shopVisible: !!i.shopVisible,
     }))
   );
   const [err, setErr] = useState<string | null>(null);
@@ -216,7 +217,7 @@ function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => v
     setRows((r) => r.map((row, i) => (i === idx ? { ...row, ...patch } : row)));
   }
   function addRow() {
-    setRows((r) => [...r, { size: '', sku: '', srp: '', retailSrp: '', provPct: '', cityPct: '', resPct: '' }]);
+    setRows((r) => [...r, { size: '', sku: '', srp: '', retailSrp: '', provPct: '', cityPct: '', resPct: '', shopVisible: false }]);
   }
   function removeRow(idx: number) {
     setRows((r) => r.filter((_, i) => i !== idx));
@@ -246,6 +247,7 @@ function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => v
           provincialDiscount: pctToFrac(row.provPct),
           cityDiscount: pctToFrac(row.cityPct),
           resellerDiscount: pctToFrac(row.resPct),
+          shopVisible: row.shopVisible,
         };
         if (row.id) await api.put(`/products/${row.id}`, payload);
         else await api.post('/products', payload);
@@ -290,6 +292,7 @@ function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => v
                 <th className="th text-right">Prov %</th>
                 <th className="th text-right">City %</th>
                 <th className="th text-right">Res %</th>
+                <th className="th text-center" title="Sell on the public JuanPalaman shop">Shop</th>
                 <th className="th"></th>
               </tr>
             </thead>
@@ -303,6 +306,7 @@ function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => v
                   <td className="td"><input className="input text-right" type="number" step="0.1" placeholder="std" value={row.provPct} onChange={(e) => setRow(idx, { provPct: e.target.value })} /></td>
                   <td className="td"><input className="input text-right" type="number" step="0.1" placeholder="std" value={row.cityPct} onChange={(e) => setRow(idx, { cityPct: e.target.value })} /></td>
                   <td className="td"><input className="input text-right" type="number" step="0.1" placeholder="std" value={row.resPct} onChange={(e) => setRow(idx, { resPct: e.target.value })} /></td>
+                  <td className="td text-center"><input type="checkbox" checked={row.shopVisible} onChange={(e) => setRow(idx, { shopVisible: e.target.checked })} title="Sell online" /></td>
                   <td className="td text-right">
                     <button className="text-xs font-semibold text-red-600 hover:underline" onClick={() => removeRow(idx)}>Remove</button>
                   </td>

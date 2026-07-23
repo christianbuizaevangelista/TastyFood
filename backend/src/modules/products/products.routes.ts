@@ -35,6 +35,8 @@ const productSchema = z.object({
   provincialDiscount: z.number().min(0).max(1).nullable().optional(),
   cityDiscount: z.number().min(0).max(1).nullable().optional(),
   resellerDiscount: z.number().min(0).max(1).nullable().optional(),
+  // Whether this product is listed on the public JuanPalaman shop page.
+  shopVisible: z.boolean().optional(),
 });
 
 // Only the Principal manages the product catalog.
