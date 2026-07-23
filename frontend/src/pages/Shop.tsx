@@ -78,6 +78,7 @@ export default function Shop() {
     e.preventDefault();
     setErr(null);
     if (items.length === 0) return setErr('Please add at least one item to your order.');
+    if (!f.email.trim()) return setErr('Please give your email address — we send your receipt and tracking link there.');
     if (!meetsMin) return setErr(`The minimum order is ${peso(minOrder)}. Please add a little more.`);
     if (f.paymentMethod === 'PAY_FIRST' && !proof) {
       return setErr('Please attach your proof of payment, or choose Cash on Delivery.');
@@ -144,11 +145,15 @@ export default function Shop() {
             <div className="mt-4 text-lg font-bold text-slate-800">{peso(done.total)}</div>
             <p className="text-sm text-slate-500">delivery free · {cod ? 'cash on delivery' : 'paid in advance'}</p>
             <p className="mt-5 rounded-lg bg-amber-50 px-4 py-3 text-sm text-slate-600">
-              We'll contact you on the number you gave to arrange delivery.
+              We've emailed your receipt and a tracking link to {f.email}. We'll also contact you on
+              the number you gave to arrange delivery.
               {done.paymentMethod === 'CASH_ON_DELIVERY' && ' Please have the exact amount ready.'}
             </p>
-            <a href={`/shop/order/${done.code}`} className="mt-5 inline-block text-sm font-semibold text-amber-700 hover:underline">
-              Track this order →
+            <a
+              href={`/shop/order/${done.code}`}
+              className="mt-5 inline-block rounded-xl bg-amber-600 px-6 py-3 font-bold text-white transition hover:bg-amber-700"
+            >
+              Track my order →
             </a>
           </div>
         </div>
@@ -245,8 +250,8 @@ export default function Shop() {
                 </div>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Email address</label>
-                <input type="email" className="input-shop" value={f.email} onChange={(e) => set('email', e.target.value)} placeholder="for your order updates" />
+                <label className="mb-1 block text-sm font-medium text-slate-700">Email address *</label>
+                <input type="email" className="input-shop" value={f.email} onChange={(e) => set('email', e.target.value)} required placeholder="we'll email your receipt and tracking link here" />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">Complete address *</label>

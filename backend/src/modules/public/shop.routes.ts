@@ -91,7 +91,9 @@ shopRouter.get(
 const orderSchema = z.object({
   name: z.string().min(1).max(120),
   phone: z.string().min(7).max(40),
-  email: z.string().email().max(160).optional().or(z.literal('')),
+  // Required: the buyer's receipt and order-tracking link are emailed here, so
+  // an order without an address to send them to leaves the buyer with nothing.
+  email: z.string().email().max(160),
   address: z.string().min(1).max(400),
   landmark: z.string().max(200).optional(),
   customerType: z.enum(['NEW', 'REPEAT']).default('NEW'),
@@ -178,7 +180,7 @@ shopRouter.post(
         code: newOrderCode(),
         name: b.name.trim(),
         phone: b.phone.trim(),
-        email: b.email?.trim().toLowerCase() || null,
+        email: b.email.trim().toLowerCase(),
         address: b.address.trim(),
         landmark: b.landmark?.trim() || null,
         customerType: b.customerType,
