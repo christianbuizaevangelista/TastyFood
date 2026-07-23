@@ -58,7 +58,9 @@ export default function ShopOrder() {
     <div className="min-h-screen bg-amber-50">
       <div className="bg-gradient-to-br from-amber-500 to-orange-600 px-4 py-8 text-white">
         <div className="mx-auto max-w-lg">
-          <img src="/tasty-food-splash.png" alt="Tasty Food" className="mb-3 h-10 w-auto" />
+          <img src="/juanpalaman-logo.png" alt="JuanPalaman"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/tasty-food-splash.png'; }}
+            className="mb-3 h-12 w-auto drop-shadow" />
           <h1 className="text-2xl font-bold">Order {order.code}</h1>
           <p className="text-sm text-amber-50">
             {order.paymentMethod === 'CASH_ON_DELIVERY' ? 'Cash on delivery' : 'Paid in advance'} · {peso(order.total)}

@@ -190,6 +190,8 @@ interface SizeRow {
   sku: string;
   srp: string;
   retailSrp: string;
+  // Suggested resale price shown on the public shop ('' = show nothing).
+  sellPrice: string;
   // Institutional / custom tier discount overrides, entered as percentages ('' = standard).
   provPct: string;
   cityPct: string;
@@ -207,6 +209,7 @@ function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => v
     group.items.map((i) => ({
       id: i.id, size: i.size ?? '', sku: i.sku, srp: String(i.srp),
       retailSrp: i.retailSrp != null ? String(i.retailSrp) : '',
+      sellPrice: i.shopSellPrice != null ? String(i.shopSellPrice) : '',
       provPct: fracToPct(i.provincialDiscount), cityPct: fracToPct(i.cityDiscount), resPct: fracToPct(i.resellerDiscount), shopVisible: !!i.shopVisible,
     }))
   );
@@ -217,7 +220,7 @@ function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => v
     setRows((r) => r.map((row, i) => (i === idx ? { ...row, ...patch } : row)));
   }
   function addRow() {
-    setRows((r) => [...r, { size: '', sku: '', srp: '', retailSrp: '', provPct: '', cityPct: '', resPct: '', shopVisible: false }]);
+    setRows((r) => [...r, { size: '', sku: '', srp: '', retailSrp: '', sellPrice: '', provPct: '', cityPct: '', resPct: '', shopVisible: false }]);
   }
   function removeRow(idx: number) {
     setRows((r) => r.filter((_, i) => i !== idx));
@@ -244,6 +247,7 @@ function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => v
           sku: row.sku,
           srp: Number(row.srp),
           retailSrp: row.retailSrp ? Number(row.retailSrp) : null,
+          shopSellPrice: row.sellPrice ? Number(row.sellPrice) : null,
           provincialDiscount: pctToFrac(row.provPct),
           cityDiscount: pctToFrac(row.cityPct),
           resellerDiscount: pctToFrac(row.resPct),
@@ -289,6 +293,7 @@ function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => v
                 <th className="th">SKU</th>
                 <th className="th text-right">SRP</th>
                 <th className="th text-right">Retail SRP</th>
+                <th className="th text-right" title="Suggested resale price shown on the public shop">Sell price</th>
                 <th className="th text-right">Prov %</th>
                 <th className="th text-right">City %</th>
                 <th className="th text-right">Res %</th>
@@ -303,6 +308,7 @@ function EditGroup({ group, onClose, onSaved }: { group: Group; onClose: () => v
                   <td className="td"><input className="input" value={row.sku} onChange={(e) => setRow(idx, { sku: e.target.value })} /></td>
                   <td className="td"><input className="input text-right" type="number" step="0.01" value={row.srp} onChange={(e) => setRow(idx, { srp: e.target.value })} /></td>
                   <td className="td"><input className="input text-right" type="number" step="0.01" placeholder="= SRP" value={row.retailSrp} onChange={(e) => setRow(idx, { retailSrp: e.target.value })} /></td>
+                  <td className="td"><input className="input text-right" type="number" step="0.01" placeholder="—" value={row.sellPrice} onChange={(e) => setRow(idx, { sellPrice: e.target.value })} /></td>
                   <td className="td"><input className="input text-right" type="number" step="0.1" placeholder="std" value={row.provPct} onChange={(e) => setRow(idx, { provPct: e.target.value })} /></td>
                   <td className="td"><input className="input text-right" type="number" step="0.1" placeholder="std" value={row.cityPct} onChange={(e) => setRow(idx, { cityPct: e.target.value })} /></td>
                   <td className="td"><input className="input text-right" type="number" step="0.1" placeholder="std" value={row.resPct} onChange={(e) => setRow(idx, { resPct: e.target.value })} /></td>

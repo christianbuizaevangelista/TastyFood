@@ -13,6 +13,7 @@ interface Product {
   description: string | null;
   category: string | null;
   price: number;
+  sellPrice?: number | null;
 }
 interface Config {
   active: boolean;
@@ -20,6 +21,7 @@ interface Config {
   tagline?: string | null;
   bannerText?: string | null;
   sellingPoints?: string[];
+  bankDetails?: string | null;
   closedMessage?: string;
   products: Product[];
   minOrder: number;
@@ -118,7 +120,9 @@ export default function Shop() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-amber-50 px-4">
         <div className="max-w-md rounded-2xl bg-white p-8 text-center shadow-sm">
-          <img src="/tasty-food-splash.png" alt="Tasty Food" className="mx-auto mb-4 h-12 w-auto" />
+          <img src="/juanpalaman-logo.png" alt="JuanPalaman"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/tasty-food-splash.png'; }}
+            className="mx-auto mb-4 h-14 w-auto" />
           <h1 className="text-xl font-bold text-slate-800">{cfg.headline || 'JuanPalaman'}</h1>
           <p className="mt-2 text-slate-500">
             {cfg.closedMessage || 'Our online shop is taking a short break. Please check back soon.'}
@@ -169,7 +173,9 @@ export default function Shop() {
       )}
       <header className="bg-gradient-to-br from-amber-500 to-orange-600 px-4 py-10 text-white">
         <div className="mx-auto max-w-3xl">
-          <img src="/tasty-food-splash.png" alt="Tasty Food" className="mb-4 h-12 w-auto" />
+          <img src="/juanpalaman-logo.png" alt="JuanPalaman"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/tasty-food-splash.png'; }}
+            className="mb-4 h-16 w-auto drop-shadow" />
           <h1 className="text-3xl font-bold">{cfg?.headline || 'JuanPalaman — order online'}</h1>
           <p className="mt-2 text-amber-50">
             {cfg?.tagline || 'Creamy, crunchy and choco spreads, delivered to your door.'} Free delivery ·
@@ -211,7 +217,14 @@ export default function Shop() {
                           {p.name}{p.size ? ` · ${p.size}` : ''}
                         </div>
                         {p.description && <div className="truncate text-xs text-slate-500">{p.description}</div>}
-                        <div className="text-sm font-medium text-amber-700">{peso(p.price)}</div>
+                        <div className="flex flex-wrap items-baseline gap-x-2">
+                          <span className="text-sm font-medium text-amber-700">{peso(p.price)}</span>
+                          {p.sellPrice != null && (
+                            <span className="text-xs text-slate-500">
+                              Ibenta mo sa <span className="font-semibold text-green-700">{peso(p.sellPrice)}</span>
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <button type="button" onClick={() => step(p.id, -1)}
@@ -288,13 +301,26 @@ export default function Shop() {
                 ))}
               </div>
               {f.paymentMethod === 'PAY_FIRST' && (
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Proof of payment *</label>
-                  <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp"
-                    onChange={(e) => setProof(e.target.files?.[0] ?? null)}
-                    className="block w-full text-sm text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-600 file:px-4 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-amber-700" />
-                  <p className="mt-1 text-xs text-slate-400">A screenshot of your GCash / bank transfer is fine.</p>
-                </div>
+                <>
+                  {cfg?.bankDetails?.trim() && (
+                    <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+                      <div className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-amber-800">
+                        <span>🏦</span> Send your payment here
+                      </div>
+                      <pre className="whitespace-pre-wrap break-words font-sans text-sm text-slate-700">{cfg.bankDetails}</pre>
+                      <p className="mt-2 text-xs text-slate-500">
+                        Pay the total above, then attach a screenshot of your transfer below.
+                      </p>
+                    </div>
+                  )}
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700">Proof of payment *</label>
+                    <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp"
+                      onChange={(e) => setProof(e.target.files?.[0] ?? null)}
+                      className="block w-full text-sm text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-600 file:px-4 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-amber-700" />
+                    <p className="mt-1 text-xs text-slate-400">A screenshot of your GCash / bank transfer is fine.</p>
+                  </div>
+                </>
               )}
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">Note for us (optional)</label>

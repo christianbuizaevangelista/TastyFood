@@ -65,7 +65,7 @@ shopRouter.get(
     const products = await prisma.product.findMany({
       where: { isActive: true, shopVisible: true },
       orderBy: { srp: 'asc' },
-      select: { id: true, name: true, size: true, description: true, srp: true, retailSrp: true, category: true },
+      select: { id: true, name: true, size: true, description: true, srp: true, retailSrp: true, shopSellPrice: true, category: true },
     });
     res.json({
       active: true,
@@ -73,6 +73,7 @@ shopRouter.get(
       tagline: settings.tagline,
       bannerText: settings.bannerText,
       sellingPoints: settings.sellingPoints,
+      bankDetails: settings.bankDetails,
       products: products.map((p) => ({
         id: p.id,
         name: p.name,
@@ -80,6 +81,7 @@ shopRouter.get(
         description: p.description,
         category: p.category,
         price: retailPrice(p),
+        sellPrice: p.shopSellPrice,
       })),
       minOrder: settings.minOrder,
       deliveryFee: 0,

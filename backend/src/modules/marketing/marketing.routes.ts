@@ -736,6 +736,7 @@ const shopSettingsSchema = z.object({
   tagline: z.string().max(300).nullable().optional(),
   bannerText: z.string().max(200).nullable().optional(),
   sellingPoints: z.array(z.string().max(160)).max(6).default([]),
+  bankDetails: z.string().max(1000).nullable().optional(),
   minOrder: z.number().min(0).max(1_000_000).default(1000),
   closedMessage: z.string().max(300).nullable().optional(),
 });
@@ -751,6 +752,7 @@ marketingRouter.put(
       tagline: b.tagline || '',
       bannerText: b.bannerText || null,
       sellingPoints: b.sellingPoints.map((s) => s.trim()).filter(Boolean),
+      bankDetails: b.bankDetails || null,
       minOrder: round2(b.minOrder),
       closedMessage: b.closedMessage || 'Our online shop is taking a short break. Please check back soon.',
       updatedById: req.auth!.sub,

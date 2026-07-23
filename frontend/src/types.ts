@@ -49,6 +49,7 @@ export interface Product {
   size?: string | null;
   srp: number;
   retailSrp?: number | null;
+  shopSellPrice?: number | null;
   shopVisible?: boolean;
   provincialDiscount?: number | null;
   cityDiscount?: number | null;

@@ -236,6 +236,10 @@ model Product {
   srp                Float
   // Separate SRP for the RETAIL distribution channel (falls back to `srp` if unset).
   retailSrp          Float?
+  // Suggested resale price shown beside the shop price on the public JuanPalaman
+  // shop, so a reseller who buys there knows what they can sell it on for. Display
+  // only — never charged. Null = show nothing.
+  shopSellPrice      Float?
   // Optional per-product tier discount overrides (fractions, e.g. 0.15). When set,
   // they replace the standard tier discount FOR THIS PRODUCT ONLY (e.g. institutional
   // pricing). Null = use the standard TIER_DISCOUNT for that tier.
@@ -1360,6 +1364,9 @@ model ShopSettings {
   bannerText  String?
   // Added-value points shown to the buyer (why buy, what's guaranteed).
   sellingPoints String[] @default([])
+  // Where a pay-first buyer sends the money — bank / GCash details, free text so
+  // any number of accounts can be listed. Shown only when Pay First is chosen.
+  bankDetails String?
   minOrder    Float   @default(1000)
   // Message shown when the shop is switched off.
   closedMessage String @default("Our online shop is taking a short break. Please check back soon.")

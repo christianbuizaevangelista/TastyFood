@@ -12,6 +12,7 @@ interface Settings {
   tagline: string | null;
   bannerText: string | null;
   sellingPoints: string[];
+  bankDetails: string | null;
   minOrder: number;
   closedMessage: string | null;
 }
@@ -19,7 +20,7 @@ interface Settings {
 export default function ShopSettings() {
   const { data, loading, error, refetch } = useFetch<Settings>('/marketing/shop-settings');
   const [f, setF] = useState<Settings>({
-    active: true, headline: '', tagline: '', bannerText: '', sellingPoints: [], minOrder: 1000, closedMessage: '',
+    active: true, headline: '', tagline: '', bannerText: '', sellingPoints: [], bankDetails: '', minOrder: 1000, closedMessage: '',
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -33,6 +34,7 @@ export default function ShopSettings() {
       tagline: data.tagline ?? '',
       bannerText: data.bannerText ?? '',
       sellingPoints: data.sellingPoints ?? [],
+      bankDetails: data.bankDetails ?? '',
       minOrder: data.minOrder ?? 1000,
       closedMessage: data.closedMessage ?? '',
     });
@@ -55,6 +57,7 @@ export default function ShopSettings() {
         tagline: f.tagline || null,
         bannerText: f.bannerText || null,
         sellingPoints: f.sellingPoints.map((s) => s.trim()).filter(Boolean),
+        bankDetails: f.bankDetails?.trim() || null,
         minOrder: Number(f.minOrder) || 0,
         closedMessage: f.closedMessage || null,
       });
@@ -154,6 +157,23 @@ export default function ShopSettings() {
             Which products appear in the shop, and their prices, are set per product in
             <strong> DMS › Products</strong> using the “Sell online” checkbox and the retail SRP.
           </div>
+        </section>
+
+        <section className="card space-y-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-700">Pay-first payment details</h3>
+            <p className="text-xs text-slate-400">
+              Shown only to buyers who choose <strong>Pay first</strong>, so they know where to send the money.
+              List any bank or GCash accounts — one per line. Leave blank to hide.
+            </p>
+          </div>
+          <textarea
+            className="input font-mono text-sm"
+            rows={5}
+            value={f.bankDetails ?? ''}
+            onChange={(e) => set('bankDetails', e.target.value)}
+            placeholder={'GCash: 0917 123 4567 (Juan Dela Cruz)\nBDO: 1234 5678 9012 (Tasty Food Manufacturing Inc.)\nBPI: 9876 5432 1098 (Tasty Food Manufacturing Inc.)'}
+          />
         </section>
 
         <button type="submit" className="btn-primary" disabled={saving}>
