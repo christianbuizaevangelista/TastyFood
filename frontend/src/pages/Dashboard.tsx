@@ -38,7 +38,7 @@ interface DashboardData {
       thisMonthTotal: number;
       lastMonthTotal: number;
     };
-    byDistributionType: { trade: number; dropShip: number };
+    byDistributionType: { trade: number; dropShip: number; online: number };
     byMarketSegment: { reseller: number; retail: number };
     topPerformers: { orgId: string; name: string; type: string; segment: string; revenue: number }[];
   };
@@ -187,7 +187,7 @@ export default function Dashboard() {
         </div>
 
         <div className="card">
-          <h2 className="mb-4 text-sm font-semibold text-slate-700">Regular vs Dropship</h2>
+          <h2 className="mb-4 text-sm font-semibold text-slate-700">Regular · Dropship · Online</h2>
           <ResponsiveContainer width="100%" height={260}>
             <PieChart>
               <Pie data={pieData} dataKey="value" nameKey="name" outerRadius={90} label>

@@ -46,7 +46,7 @@ const ACTION_LABEL: Record<Status, string> = {
 export default function ShopOrders() {
   const [status, setStatus] = useState<'' | Status>('');
   const { data, loading, error, refetch } = useFetch<{ orders: Order[]; summary: Summary }>(
-    `/marketing/shop-orders${status ? `?status=${status}` : ''}`
+    `/shop-orders${status ? `?status=${status}` : ''}`
   );
   const [err, setErr] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -55,7 +55,7 @@ export default function ShopOrders() {
     if (next === 'CANCELLED' && !confirm(`Cancel order ${o.code}?`)) return;
     setErr(null);
     try {
-      await api.patch(`/marketing/shop-orders/${o.id}`, { status: next });
+      await api.patch(`/shop-orders/${o.id}`, { status: next });
       refetch();
     } catch (e) {
       setErr(apiError(e));
@@ -65,7 +65,7 @@ export default function ShopOrders() {
   async function viewProof(o: Order) {
     setErr(null);
     try {
-      const res = await api.get(`/marketing/shop-orders/${o.id}/proof`, { responseType: 'blob' });
+      const res = await api.get(`/shop-orders/${o.id}/proof`, { responseType: 'blob' });
       const url = URL.createObjectURL(res.data);
       window.open(url, '_blank');
       setTimeout(() => URL.revokeObjectURL(url), 60000);

@@ -38,9 +38,11 @@ interface SalesResponse {
     units: number;
     trade: { count: number; revenue: number };
     dropShip: { count: number; revenue: number };
+    online: { count: number; revenue: number };
     byChannel: {
       PO: { count: number; units: number; revenue: number; grossProfit: number };
       POS: { count: number; units: number; revenue: number; grossProfit: number };
+      ONLINE: { count: number; units: number; revenue: number; grossProfit: number };
     };
     bySku: { sku: string; name: string; units: number; revenue: number; grossProfit: number }[];
   };
@@ -111,11 +113,13 @@ export default function SalesReport() {
     ? [
         { name: 'Regular', value: data.summary.trade.revenue },
         { name: 'Dropship', value: data.summary.dropShip.revenue },
+        { name: 'Online', value: data.summary.online.revenue },
       ]
     : [];
   const channelPie = data
     ? [
         { name: 'POS', value: data.summary.byChannel.POS.revenue },
+        { name: 'Online', value: data.summary.byChannel.ONLINE.revenue },
         { name: 'Purchase Order', value: data.summary.byChannel.PO.revenue },
       ]
     : [];

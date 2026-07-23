@@ -12,10 +12,18 @@ import { principalOwnerEmail } from './public.service';
 // picks products, fills in delivery details, and pays first or on delivery.
 export const shopRouter = Router();
 
-// Orders must clear this before they can be placed. Delivery is free, so the
-// floor is what makes each drop worth dispatching.
+// Fallback floor, used only before any settings row exists. Delivery is free,
+// so the minimum is what makes each drop worth dispatching.
 export const MIN_ORDER = 1000;
 const MAX_QTY = 200;
+
+// The shop's editable presentation and rules. A single row, created on first
+// read so the settings page always has something to load.
+async function shopSettings() {
+  const existing = await prisma.shopSettings.findUnique({ where: { id: 'shop' } });
+  if (existing) return existing;
+  return prisma.shopSettings.create({ data: { id: 'shop' } });
+}
 const MAX_PROOF_BYTES = 3 * 1024 * 1024;
 
 const MAX_PER_IP_PER_HOUR = 10;
@@ -37,16 +45,34 @@ function retailPrice(p: { retailSrp: number | null; srp: number }): number {
   return p.retailSrp ?? p.srp;
 }
 
-// GET /public/shop — the products on sale and the order rules.
+// GET /public/shop — the products on sale, the presentation, and the rules.
 shopRouter.get(
   '/',
   asyncHandler(async (_req, res) => {
+    const settings = await shopSettings();
+    // A switched-off shop shows its closed message and offers nothing to buy.
+    if (!settings.active) {
+      return res.json({
+        active: false,
+        closedMessage: settings.closedMessage,
+        headline: settings.headline,
+        products: [],
+        minOrder: settings.minOrder,
+        deliveryFee: 0,
+        payments: [],
+      });
+    }
     const products = await prisma.product.findMany({
       where: { isActive: true, shopVisible: true },
       orderBy: { srp: 'asc' },
       select: { id: true, name: true, size: true, description: true, srp: true, retailSrp: true, category: true },
     });
     res.json({
+      active: true,
+      headline: settings.headline,
+      tagline: settings.tagline,
+      bannerText: settings.bannerText,
+      sellingPoints: settings.sellingPoints,
       products: products.map((p) => ({
         id: p.id,
         name: p.name,
@@ -55,7 +81,7 @@ shopRouter.get(
         category: p.category,
         price: retailPrice(p),
       })),
-      minOrder: MIN_ORDER,
+      minOrder: settings.minOrder,
       deliveryFee: 0,
       payments: ['CASH_ON_DELIVERY', 'PAY_FIRST'],
     });
@@ -89,6 +115,10 @@ shopRouter.post(
     if (b.website && b.website.trim().length > 0) {
       return res.status(201).json({ ok: true, code: null });
     }
+
+    const settings = await shopSettings();
+    if (!settings.active) throw badRequest('The shop is not taking orders right now. Please check back soon.');
+    const minOrder = settings.minOrder;
 
     const ipHash = hashIp(req);
     if (ipHash) {
@@ -124,9 +154,9 @@ shopRouter.post(
     });
     const subtotal = Math.round(lines.reduce((s, l) => s + l.lineTotal, 0) * 100) / 100;
 
-    if (subtotal < MIN_ORDER) {
+    if (subtotal < minOrder) {
       throw badRequest(
-        `The minimum order is ₱${MIN_ORDER.toLocaleString()}. Your order is ₱${subtotal.toLocaleString()} — please add a little more.`
+        `The minimum order is ₱${minOrder.toLocaleString()}. Your order is ₱${subtotal.toLocaleString()} — please add a little more.`
       );
     }
 

@@ -75,7 +75,9 @@ export async function fulfilShopOrder(orderId: string, principalOrgId: string, a
       data: {
         number: saleNumber(),
         sellerOrgId: principalOrgId,
-        channel: 'POS',
+        // ONLINE marks a shop sale apart from POS and PO on the dashboard and
+        // in the sales report, without changing its trade/inventory behaviour.
+        channel: 'ONLINE',
         distributionType: 'TRADE',
         customerName: order.name,
         customerId: customer!.id,

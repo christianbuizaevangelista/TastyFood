@@ -145,12 +145,20 @@ dashboardRouter.get(
     }
     const lastMonthTotal = round2(lastMonthSales.reduce((s, x) => s + x.total, 0));
 
+    // Regular / Dropship / Online. Online (the JuanPalaman shop) is carved out
+    // of Regular so the three never overlap: a shop sale is a trade sale, so
+    // without excluding it here it would be double-counted as Regular too.
     const byType = {
       trade: round2(
-        sales.filter((s) => s.distributionType === 'TRADE').reduce((s, x) => s + x.total, 0)
+        sales
+          .filter((s) => s.distributionType === 'TRADE' && s.channel !== 'ONLINE')
+          .reduce((s, x) => s + x.total, 0)
       ),
       dropShip: round2(
         sales.filter((s) => s.distributionType === 'DROP_SHIP').reduce((s, x) => s + x.total, 0)
+      ),
+      online: round2(
+        sales.filter((s) => s.channel === 'ONLINE').reduce((s, x) => s + x.total, 0)
       ),
     };
 

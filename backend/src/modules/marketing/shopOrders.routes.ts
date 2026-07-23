@@ -8,12 +8,13 @@ import { notFound } from '../../lib/errors';
 import { sendStoredFile } from '../../lib/upload';
 import { fulfilShopOrder } from './shopFulfil';
 
-// The Principal's side of the JuanPalaman shop: read the orders that came in
-// and move them through fulfilment.
+// The Principal's side of the JuanPalaman shop — a DMS (sales & distribution)
+// feature, not a marketing one: read the orders that came in and move them
+// through fulfilment. Principal-only.
 export const shopOrdersRouter = Router();
 shopOrdersRouter.use(authenticate);
 shopOrdersRouter.use(requireRole('PRINCIPAL'));
-shopOrdersRouter.use(requirePermission('marketing'));
+shopOrdersRouter.use(requirePermission('sales'));
 
 const STATUSES = ['PENDING', 'CONFIRMED', 'PAID', 'SHIPPED', 'DELIVERED', 'CANCELLED'] as const;
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;

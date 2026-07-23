@@ -96,6 +96,8 @@ export function createApp() {
   app.use('/api/purchase-orders', poRouter);
   app.use('/api/pos', posRouter);
   app.use('/api/sales', salesRouter);
+  // The JuanPalaman online shop lives in the DMS — sales & distribution.
+  app.use('/api/shop-orders', shopOrdersRouter);
   app.use('/api/kpi', kpiRouter);
   app.use('/api/dashboard', dashboardRouter);
   app.use('/api/orgs', orgsRouter);
@@ -112,7 +114,7 @@ export function createApp() {
   // than falling through that router's middleware.
   app.use('/api/marketing/applications', applicationsRouter);
   app.use('/api/marketing/ads', adsRouter);
-  app.use('/api/marketing/shop-orders', shopOrdersRouter);
+
   app.use('/api/marketing', marketingRouter);
   app.use('/api/hr', hrRouter);
   app.use('/api/support', supportRouter);

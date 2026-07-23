@@ -59,6 +59,8 @@ enum PoStatus {
 enum SaleChannel {
   PO
   POS
+  // A retail sale that came through the public JuanPalaman online shop.
+  ONLINE
 }
 
 // How a purchase order is paid. MANA = the in-system credits wallet (1 PHP = 1 Mana).
@@ -1344,4 +1346,23 @@ model ShopOrderItem {
   lineTotal Float
 
   @@index([orderId])
+}
+
+// Editable presentation and rules for the public JuanPalaman shop. A single
+// row, edited in place from Marketing — the shop reads it so its look and its
+// order rules can change without a deploy.
+model ShopSettings {
+  id          String  @id @default("shop")
+  active      Boolean @default(true)
+  headline    String  @default("JuanPalaman — order online")
+  tagline     String  @default("Creamy, crunchy and choco spreads, delivered to your door.")
+  // A short promo line shown across the top, e.g. "Free delivery this week".
+  bannerText  String?
+  // Added-value points shown to the buyer (why buy, what's guaranteed).
+  sellingPoints String[] @default([])
+  minOrder    Float   @default(1000)
+  // Message shown when the shop is switched off.
+  closedMessage String @default("Our online shop is taking a short break. Please check back soon.")
+  updatedById String?
+  updatedAt   DateTime @updatedAt
 }

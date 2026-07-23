@@ -712,3 +712,54 @@ marketingRouter.get(
     res.send(csv);
   })
 );
+
+// ---------------------------------------------------------------------------
+// JuanPalaman shop — presentation and rules (the shop ITSELF is in the DMS).
+// ---------------------------------------------------------------------------
+
+async function loadShopSettings() {
+  const existing = await prisma.shopSettings.findUnique({ where: { id: 'shop' } });
+  return existing ?? prisma.shopSettings.create({ data: { id: 'shop' } });
+}
+
+// GET /marketing/shop-settings — the editable landing-page settings.
+marketingRouter.get(
+  '/shop-settings',
+  asyncHandler(async (_req, res) => {
+    res.json(await loadShopSettings());
+  })
+);
+
+const shopSettingsSchema = z.object({
+  active: z.boolean().default(true),
+  headline: z.string().min(1).max(160),
+  tagline: z.string().max(300).nullable().optional(),
+  bannerText: z.string().max(200).nullable().optional(),
+  sellingPoints: z.array(z.string().max(160)).max(6).default([]),
+  minOrder: z.number().min(0).max(1_000_000).default(1000),
+  closedMessage: z.string().max(300).nullable().optional(),
+});
+
+// PUT /marketing/shop-settings — save them.
+marketingRouter.put(
+  '/shop-settings',
+  asyncHandler(async (req, res) => {
+    const b = shopSettingsSchema.parse(req.body);
+    const data = {
+      active: b.active,
+      headline: b.headline,
+      tagline: b.tagline || '',
+      bannerText: b.bannerText || null,
+      sellingPoints: b.sellingPoints.map((s) => s.trim()).filter(Boolean),
+      minOrder: round2(b.minOrder),
+      closedMessage: b.closedMessage || 'Our online shop is taking a short break. Please check back soon.',
+      updatedById: req.auth!.sub,
+    };
+    const settings = await prisma.shopSettings.upsert({
+      where: { id: 'shop' },
+      create: { id: 'shop', ...data },
+      update: data,
+    });
+    res.json(settings);
+  })
+);

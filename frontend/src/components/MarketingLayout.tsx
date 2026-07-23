@@ -8,7 +8,7 @@ const MARKETING_NAV = [
   { to: '/marketing/ad-manager', label: 'Ad Manager', icon: '📈', exact: false },
   { to: '/marketing/lead-funnels', label: 'Lead Funnels', icon: '🎯', exact: false },
   { to: '/marketing/applications', label: 'Applications', icon: '📋', exact: false },
-  { to: '/marketing/shop-orders', label: 'Shop Orders', icon: '🛒', exact: false },
+  { to: '/marketing/shop', label: 'JuanPalaman Shop', icon: '🛍️', exact: false },
   { to: '/marketing/landing-page', label: 'Landing Page', icon: '🌐', exact: false },
 ];
 

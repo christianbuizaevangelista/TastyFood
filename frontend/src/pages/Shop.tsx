@@ -15,6 +15,12 @@ interface Product {
   price: number;
 }
 interface Config {
+  active: boolean;
+  headline?: string;
+  tagline?: string | null;
+  bannerText?: string | null;
+  sellingPoints?: string[];
+  closedMessage?: string;
   products: Product[];
   minOrder: number;
   deliveryFee: number;
@@ -106,6 +112,21 @@ export default function Shop() {
     return <div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>;
   }
 
+  // ---- Shop switched off ---------------------------------------------------
+  if (cfg && cfg.active === false) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-amber-50 px-4">
+        <div className="max-w-md rounded-2xl bg-white p-8 text-center shadow-sm">
+          <img src="/tasty-food-splash.png" alt="Tasty Food" className="mx-auto mb-4 h-12 w-auto" />
+          <h1 className="text-xl font-bold text-slate-800">{cfg.headline || 'JuanPalaman'}</h1>
+          <p className="mt-2 text-slate-500">
+            {cfg.closedMessage || 'Our online shop is taking a short break. Please check back soon.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // ---- Confirmation --------------------------------------------------------
   if (done) {
     const cod = done.paymentMethod === 'CASH_ON_DELIVERY';
@@ -138,14 +159,26 @@ export default function Shop() {
   // ---- Shop ----------------------------------------------------------------
   return (
     <div className="min-h-screen bg-amber-50">
+      {cfg?.bannerText && (
+        <div className="bg-orange-700 px-4 py-2 text-center text-sm font-semibold text-white">{cfg.bannerText}</div>
+      )}
       <header className="bg-gradient-to-br from-amber-500 to-orange-600 px-4 py-10 text-white">
         <div className="mx-auto max-w-3xl">
           <img src="/tasty-food-splash.png" alt="Tasty Food" className="mb-4 h-12 w-auto" />
-          <h1 className="text-3xl font-bold">JuanPalaman — order online</h1>
+          <h1 className="text-3xl font-bold">{cfg?.headline || 'JuanPalaman — order online'}</h1>
           <p className="mt-2 text-amber-50">
-            Creamy, crunchy and choco spreads, delivered to your door. Free delivery nationwide ·
+            {cfg?.tagline || 'Creamy, crunchy and choco spreads, delivered to your door.'} Free delivery ·
             Cash on delivery or pay first · {peso(minOrder)} minimum.
           </p>
+          {(cfg?.sellingPoints ?? []).length > 0 && (
+            <ul className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-sm text-amber-50">
+              {cfg!.sellingPoints!.map((s, i) => (
+                <li key={i} className="flex items-center gap-1.5">
+                  <span className="text-white">✓</span> {s}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </header>
 

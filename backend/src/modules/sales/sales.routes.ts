@@ -176,7 +176,7 @@ salesRouter.get(
       .sort((a, b) => b.revenue - a.revenue);
 
     // Per-channel aggregation (revenue + gross profit).
-    const channelAgg = (ch: 'PO' | 'POS') => {
+    const channelAgg = (ch: 'PO' | 'POS' | 'ONLINE') => {
       const list = sales.filter((s) => s.channel === ch);
       return {
         count: list.length,
@@ -193,10 +193,14 @@ salesRouter.get(
       grossIncome: round2(sales.reduce((g, x) => g + (x.total - sellerCost(x)), 0)),
       units: sales.reduce((s, x) => s + x.items.reduce((u, i) => u + netQty(i), 0), 0),
       // "Distribution" = trade (stock moves down the chain); kept key name `trade`.
+      // Online (the JuanPalaman shop) is excluded so it reads as its own line
+      // rather than inflating trade, which it technically also is.
       trade: {
-        count: sales.filter((s) => s.distributionType === 'TRADE').length,
+        count: sales.filter((s) => s.distributionType === 'TRADE' && s.channel !== 'ONLINE').length,
         revenue: round2(
-          sales.filter((s) => s.distributionType === 'TRADE').reduce((s, x) => s + x.total, 0)
+          sales
+            .filter((s) => s.distributionType === 'TRADE' && s.channel !== 'ONLINE')
+            .reduce((s, x) => s + x.total, 0)
         ),
       },
       dropShip: {
@@ -205,7 +209,11 @@ salesRouter.get(
           sales.filter((s) => s.distributionType === 'DROP_SHIP').reduce((s, x) => s + x.total, 0)
         ),
       },
-      byChannel: { PO: channelAgg('PO'), POS: channelAgg('POS') },
+      online: {
+        count: sales.filter((s) => s.channel === 'ONLINE').length,
+        revenue: round2(sales.filter((s) => s.channel === 'ONLINE').reduce((s, x) => s + x.total, 0)),
+      },
+      byChannel: { PO: channelAgg('PO'), POS: channelAgg('POS'), ONLINE: channelAgg('ONLINE') },
       bySku,
     };
 
