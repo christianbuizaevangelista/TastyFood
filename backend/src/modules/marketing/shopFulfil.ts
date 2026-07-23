@@ -51,7 +51,11 @@ export async function fulfilShopOrder(orderId: string, principalOrgId: string, a
     lineTotal: round2(i.unitPrice * i.quantity),
   }));
 
-  await prisma.$transaction(async (tx) => {
+  // The atomic core: stock out, sale in, order linked. Kept tight so it always
+  // fits inside the interactive-transaction window — the finance posting and the
+  // low-stock check run afterwards, since both are best-effort and idempotent
+  // and would only risk timing the transaction out.
+  const sale = await prisma.$transaction(async (tx) => {
     // Deduct the Principal's stock. allowNegative: a delivered order is already
     // out the door — refusing the movement would leave stock overstated, which
     // is worse than showing the Principal a negative they need to reconcile.
@@ -67,7 +71,7 @@ export async function fulfilShopOrder(orderId: string, principalOrgId: string, a
       });
     }
 
-    const sale = await tx.sale.create({
+    const created = await tx.sale.create({
       data: {
         number: saleNumber(),
         sellerOrgId: principalOrgId,
@@ -84,18 +88,18 @@ export async function fulfilShopOrder(orderId: string, principalOrgId: string, a
       },
     });
 
-    await tx.shopOrder.update({ where: { id: order.id }, data: { saleId: sale.id } });
-
-    // Revenue into the books — same path the Principal's own POS sales take.
-    await postSaleToBooks({
-      saleId: sale.id,
-      total: sale.total,
-      date: sale.createdAt,
-      onAccount: false,
-      label: `JuanPalaman shop order ${order.code}`,
-      createdById: actorUserId,
-    });
+    await tx.shopOrder.update({ where: { id: order.id }, data: { saleId: created.id } });
+    return created;
   });
 
+  // Revenue into the books — same path the Principal's own POS sales take.
+  await postSaleToBooks({
+    saleId: sale.id,
+    total: sale.total,
+    date: sale.createdAt,
+    onAccount: false,
+    label: `JuanPalaman shop order ${order.code}`,
+    createdById: actorUserId,
+  });
   await notifyLowStock(principalOrgId, items.map((i) => i.productId)).catch(() => undefined);
 }
