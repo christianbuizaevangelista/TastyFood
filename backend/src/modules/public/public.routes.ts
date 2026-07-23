@@ -187,10 +187,11 @@ publicRouter.post(
       title: webinar.title,
     };
 
-    res.status(201).json({ ok: true, zoom });
-
-    // Email the joining details (best-effort, never blocks the response).
-    sendWebinarConfirmationEmail({
+    // Email the joining details BEFORE responding. On serverless the container
+    // can freeze the moment the response is flushed, dropping any fetch started
+    // after res.json() — which would leave the sign-up without their Zoom link.
+    // Best-effort: a mail failure must never fail the registration.
+    await sendWebinarConfirmationEmail({
       to: email,
       name: fields.name,
       title: webinar.title,
@@ -199,5 +200,7 @@ publicRouter.post(
       zoomMeetingId: zoom.meetingId,
       zoomPasscode: zoom.passcode,
     }).catch((e) => console.error('[public.register] confirmation email failed', e?.message));
+
+    res.status(201).json({ ok: true, zoom });
   })
 );

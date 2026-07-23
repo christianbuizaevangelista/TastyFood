@@ -137,12 +137,12 @@ applicationsRouter.patch(
       }
     }
 
-    res.json(application);
-
-    // Tell the applicant either way. A decision they are never told about is
-    // the same as no decision at all from where they are sitting.
+    // Tell the applicant either way, BEFORE responding — a fetch started after
+    // res.json() can be dropped when the serverless container freezes, and a
+    // decision they are never told about is the same as no decision at all from
+    // where they are sitting. Best-effort: never let a mail failure fail this.
     if (b.status === 'APPROVED' && existing.status !== 'APPROVED') {
-      sendApplicationApprovedEmail({
+      await sendApplicationApprovedEmail({
         to: existing.email,
         name: existing.name,
         tier: existing.tier,
@@ -152,12 +152,14 @@ applicationsRouter.patch(
         note: b.reviewNote ?? null,
       }).catch((e) => console.error('[applications] approval email failed', e?.message));
     } else if (b.status === 'REJECTED' && existing.status !== 'REJECTED') {
-      sendApplicationRejectedEmail({
+      await sendApplicationRejectedEmail({
         to: existing.email,
         name: existing.name,
         tier: existing.tier,
       }).catch((e) => console.error('[applications] rejection email failed', e?.message));
     }
+
+    res.json(application);
   })
 );
 
@@ -217,9 +219,8 @@ applicationsRouter.patch(
         },
       });
       await advanceLead(app.leadId, ['interview', 'meeting', 'appointment']);
-      res.json(appointment);
 
-      sendAppointmentConfirmedEmail({
+      await sendAppointmentConfirmedEmail({
         to: app.email,
         name: app.name,
         kind: existing.kind,
@@ -229,6 +230,8 @@ applicationsRouter.patch(
         location: appointment.location,
         note: appointment.note,
       }).catch((e) => console.error('[appointments] confirm email failed', e?.message));
+
+      res.json(appointment);
       return;
     }
 
@@ -237,15 +240,15 @@ applicationsRouter.patch(
         where: { id: existing.id },
         data: { status: 'DECLINED', note: b.note ?? existing.note },
       });
-      res.json(appointment);
-
-      sendAppointmentDeclinedEmail({
+      await sendAppointmentDeclinedEmail({
         to: app.email,
         name: app.name,
         requestedAt: existing.requestedAt,
         reason: b.note ?? null,
         statusUrl: `${appOrigin()}/apply/status/${app.token}`,
       }).catch((e) => console.error('[appointments] decline email failed', e?.message));
+
+      res.json(appointment);
       return;
     }
 

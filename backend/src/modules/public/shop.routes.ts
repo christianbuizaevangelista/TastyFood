@@ -200,26 +200,24 @@ shopRouter.post(
       include: { items: true },
     });
 
-    res.status(201).json({
-      ok: true,
-      code: order.code,
-      total: order.total,
-      paymentMethod: order.paymentMethod,
-    });
-
-    // Best-effort emails. An order must never be lost to a mail problem.
-    if (order.email) {
-      sendShopOrderReceiptEmail({
-        to: order.email,
-        name: order.name,
-        code: order.code,
-        items: order.items,
-        total: order.total,
-        paymentMethod: order.paymentMethod,
-      }).catch((e) => console.error('[shop] receipt failed', e?.message));
-    }
-    principalOwnerEmail()
-      .then((owner) =>
+    // Send the buyer's receipt and the owner's alert BEFORE responding. On
+    // serverless the container can freeze the instant the response is flushed,
+    // so work started after res.json() (fire-and-forget) frequently never runs —
+    // which is why these emails weren't arriving. Awaiting keeps the fetches
+    // inside the invocation. A mail failure must still never fail the order, so
+    // every send is best-effort and allSettled swallows individual rejections.
+    const [receiptRes, ownerRes] = await Promise.allSettled([
+      order.email
+        ? sendShopOrderReceiptEmail({
+            to: order.email,
+            name: order.name,
+            code: order.code,
+            items: order.items,
+            total: order.total,
+            paymentMethod: order.paymentMethod,
+          })
+        : Promise.resolve({ sent: false, reason: 'no email' }),
+      principalOwnerEmail().then((owner) =>
         owner
           ? sendShopOrderOwnerAlert({
               to: owner,
@@ -237,9 +235,20 @@ shopRouter.post(
                 hasProof: !!order.proofData,
               },
             })
-          : null
-      )
-      .catch((e) => console.error('[shop] owner alert failed', e?.message));
+          : { sent: false, reason: 'no owner email' }
+      ),
+    ]);
+    if (receiptRes.status === 'rejected') console.error('[shop] receipt failed', receiptRes.reason);
+    else if (!receiptRes.value.sent) console.warn('[shop] receipt not sent:', receiptRes.value.reason);
+    if (ownerRes.status === 'rejected') console.error('[shop] owner alert failed', ownerRes.reason);
+    else if (ownerRes.value && !ownerRes.value.sent) console.warn('[shop] owner alert not sent:', ownerRes.value.reason);
+
+    res.status(201).json({
+      ok: true,
+      code: order.code,
+      total: order.total,
+      paymentMethod: order.paymentMethod,
+    });
   })
 );
 

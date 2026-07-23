@@ -195,21 +195,20 @@ applyRouter.post(
     }
 
     const form = await prisma.material.findFirst({ where: { applicationTier: b.tier } });
-    res.status(201).json({ ok: true, token: application.token, code: application.code, formAvailable: !!form });
-
-    // Confirmation to the applicant, and a heads-up to the Principal. Both are
-    // best-effort: an email problem must never cost us the application.
-    sendApplicationReceivedEmail({
-      to: email,
-      name: application.name,
-      tier: b.tier,
-      token: application.token,
-      code: application.code,
-      formTitle: form?.title ?? null,
-    }).catch((e) => console.error('[apply] applicant email failed', e?.message));
-
-    principalOwnerEmail()
-      .then((owner) =>
+    // Confirmation to the applicant, and a heads-up to the Principal — both sent
+    // BEFORE responding. On serverless, a fetch started after res.json() can be
+    // dropped when the container freezes, so awaiting is what actually delivers
+    // these. Best-effort: an email problem must never cost us the application.
+    await Promise.allSettled([
+      sendApplicationReceivedEmail({
+        to: email,
+        name: application.name,
+        tier: b.tier,
+        token: application.token,
+        code: application.code,
+        formTitle: form?.title ?? null,
+      }),
+      principalOwnerEmail().then((owner) =>
         owner
           ? sendApplicationOwnerAlert({
               to: owner,
@@ -222,8 +221,10 @@ applyRouter.post(
               note: application.note,
             })
           : null
-      )
-      .catch((e) => console.error('[apply] owner alert failed', e?.message));
+      ),
+    ]);
+
+    res.status(201).json({ ok: true, token: application.token, code: application.code, formAvailable: !!form });
   })
 );
 
@@ -333,9 +334,10 @@ applyRouter.post(
     });
 
     await advanceLead(a.leadId, ['interview', 'meeting', 'appointment']);
-    res.status(201).json({ ok: true, status: appointment.status });
 
-    principalOwnerEmail()
+    // Alert the owner BEFORE responding — a fetch started after res.json() can be
+    // dropped when the serverless container freezes. Best-effort.
+    await principalOwnerEmail()
       .then((owner) =>
         owner
           ? sendAppointmentRequestedAlert({
@@ -352,6 +354,8 @@ applyRouter.post(
           : null
       )
       .catch((e) => console.error('[apply] appointment alert failed', e?.message));
+
+    res.status(201).json({ ok: true, status: appointment.status });
   })
 );
 

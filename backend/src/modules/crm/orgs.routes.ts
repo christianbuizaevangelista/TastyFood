@@ -547,14 +547,15 @@ function setActive(active: boolean) {
       where: { id: req.params.id },
       data: { isActive: active },
     });
-    res.json(updated);
-
     // On activating a (reseller-channel) Reseller, notify its upline City and
     // Provincial that the reseller is active, with its name + assigned territory.
-    // Best-effort — never blocks the response.
+    // Sent BEFORE responding — a fetch started after res.json() can be dropped
+    // when the serverless container freezes. Best-effort: never fails the update.
     if (active && org.type === 'RESELLER' && org.segment !== 'RETAIL') {
-      notifyResellerActivated(org).catch((e) => console.error('[reseller-activated] notify failed', e?.message));
+      await notifyResellerActivated(org).catch((e) => console.error('[reseller-activated] notify failed', e?.message));
     }
+
+    res.json(updated);
   });
 }
 
