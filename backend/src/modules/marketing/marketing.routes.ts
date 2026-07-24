@@ -140,7 +140,18 @@ async function fbGetAll(path: string, params: Record<string, string>, token: str
   while (next && guard++ < 50) {
     const res = await gfetch(next);
     const j = await res.json();
-    if (j.error) throw badRequest(`Facebook: ${j.error.message}`);
+    if (j.error) {
+      // Code 190 = the access token expired or was invalidated (e.g. the
+      // Facebook user logged out). Nothing is wrong with the app — the stored
+      // token just needs replacing — so say exactly that instead of leaking
+      // Meta's raw wording.
+      if (j.error.code === 190 || /access token/i.test(j.error.message || '')) {
+        throw badRequest(
+          'Your Facebook connection has expired. Generate a new Meta access token (a non-expiring System User token is best) and update FB_ADS_TOKEN, then sync again.'
+        );
+      }
+      throw badRequest(`Facebook: ${j.error.message}`);
+    }
     out.push(...(j.data || []));
     next = j.paging?.next ?? null;
   }

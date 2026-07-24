@@ -36,9 +36,9 @@ const pages = [
   },
   {
     file: 'join.html',
-    title: 'Maging Tasty Food Distributor',
-    ogTitle: 'Maging Distributor ng Tasty Food',
-    desc: 'Kumita sa pagbebenta ng JuanPalaman. Sumali sa LIBRENG online orientation — walang obligasyon.',
+    title: 'Be Our Distributor — Tasty Food',
+    ogTitle: 'Be Our Distributor — Tasty Food',
+    desc: 'Attend our free webinar and learn how to earn by selling JuanPalaman. Online via Zoom, no obligation.',
     image: `${ORIGIN}/og-join.png`,
     url: `${ORIGIN}/join`,
   },
