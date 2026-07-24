@@ -796,6 +796,17 @@ model FbAdCampaign {
   @@index([brand])
 }
 
+// The Facebook ad account each brand's spend is pulled from — one account per
+// brand so campaigns land under the right business and their spend is read
+// apart in the P&L. The access token is shared (a Meta System User granted
+// access to each account); only the account id differs per brand.
+model AdBrandAccount {
+  brand       String   @id // TASTY_FOOD | JUANPALAMAN | CIELOS | CHRISTIAN_E
+  adAccountId String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 // Annual budget per account (Finance — Budgeting & Forecasting). Actuals come
 // from the journal; forecast is an annualized run-rate of actuals-to-date.
 model Budget {

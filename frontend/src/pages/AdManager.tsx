@@ -108,6 +108,52 @@ function StatRow({ m, spend, leads, impressions, clicks }: { m: Metrics; spend: 
   );
 }
 
+// Per-brand Facebook ad account. Shown when a single brand is selected — this
+// is the account that brand's campaigns and spend are pulled from on sync.
+function BrandAccountConfig({ brandKey, label }: { brandKey: string; label: string }) {
+  const { data, refetch } = useFetch<{ brand: string; adAccountId: string }[]>('/marketing/fb-ads/brand-accounts');
+  const current = data?.find((b) => b.brand === brandKey)?.adAccountId ?? '';
+  const [val, setVal] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const value = val ?? current;
+
+  async function save() {
+    setSaving(true);
+    setErr(null);
+    setNote(null);
+    try {
+      const { data: r } = await api.put<{ adAccountId: string }>(`/marketing/fb-ads/brand-accounts/${brandKey}`, { adAccountId: value });
+      setNote(r.adAccountId ? 'Saved.' : 'Cleared.');
+      setVal(null);
+      refetch();
+    } catch (e) {
+      setErr(apiError(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mb-5 rounded-xl border border-slate-200 bg-white p-4">
+      <div className="text-sm font-semibold text-slate-800">Facebook Ad Account — {label}</div>
+      <p className="mt-0.5 text-xs text-slate-500">
+        The ad account this brand's campaigns and spend are pulled from on Sync. Paste the Ad Account ID from
+        Facebook Ads Manager (numbers only). Leave blank to unlink.
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <input className="input w-72" placeholder="e.g. 1701386417789502" value={value} onChange={(e) => setVal(e.target.value)} />
+        <button className="btn-primary" onClick={save} disabled={saving}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        {note && <span className="text-xs font-medium text-green-600">{note}</span>}
+        {err && <span className="text-xs font-medium text-red-600">{err}</span>}
+      </div>
+    </div>
+  );
+}
+
 export default function AdManager() {
   const [brand, setBrand] = useState('');
   const { data, loading, error, refetch } = useFetch<Tree>(
@@ -170,6 +216,10 @@ export default function AdManager() {
           </button>
         ))}
       </div>
+
+      {brand !== '' && (
+        <BrandAccountConfig key={brand} brandKey={brand} label={brands.find((b) => b.key === brand)?.label ?? brand} />
+      )}
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard label="Spend" value={peso(s?.spend ?? 0)} hint={`${num(s?.campaigns ?? 0)} campaigns`} />

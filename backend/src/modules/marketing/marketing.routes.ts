@@ -8,6 +8,10 @@ import { notFound, badRequest } from '../../lib/errors';
 import { appOrigin } from '../../lib/email';
 import { sendOrientationThankYouEmail } from '../../lib/email.applications';
 import { advanceLead } from '../public/public.service';
+import { AD_BRANDS } from '../../lib/adTargeting';
+
+const BRAND_KEYS = AD_BRANDS.map((b) => b.key) as unknown as [string, ...string[]];
+const brandLabel = (key: string) => AD_BRANDS.find((b) => b.key === key)?.label ?? key;
 
 // Marketing System — a workspace separate from the DMS and Finance & Accounting.
 // First module: Facebook Ads Management. Principal-only (owner or 'marketing').
@@ -158,71 +162,123 @@ async function fbGetAll(path: string, params: Record<string, string>, token: str
   return out;
 }
 
-// POST /marketing/fb-ads/sync — pull campaigns + insights from the connected
-// Meta ad account and upsert them (keyed by fbCampaignId). Manual campaigns are
-// left untouched. Requires FB_ADS_TOKEN + FB_AD_ACCOUNT_ID env vars.
+// Pull + upsert every campaign from ONE ad account, tagging each with its brand.
+async function syncBrandAccount(brand: string, adAccountId: string, token: string, actorId: string): Promise<number> {
+  const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+  const campaigns = await fbGetAll(
+    `${actId}/campaigns`,
+    { fields: 'name,objective,status,daily_budget,lifetime_budget,start_time,stop_time', limit: '200' },
+    token
+  );
+  const insights = await fbGetAll(
+    `${actId}/insights`,
+    { level: 'campaign', fields: 'campaign_id,spend,reach,impressions,clicks,actions', date_preset: 'maximum', limit: '200' },
+    token
+  );
+  const insByCampaign = new Map<string, any>(insights.map((i) => [i.campaign_id, i]));
+
+  let synced = 0;
+  for (const c of campaigns) {
+    const ins = insByCampaign.get(c.id) ?? {};
+    const leads = (ins.actions ?? [])
+      .filter((a: any) => /lead/i.test(a.action_type))
+      .reduce((s: number, a: any) => s + Number(a.value || 0), 0);
+    // Campaign budgets are in currency minor units (÷100); insights spend is
+    // already in major units.
+    const budget = round2(Number(c.daily_budget || c.lifetime_budget || 0) / 100);
+    const data = {
+      name: c.name ?? '(untitled)',
+      // The account this campaign came from belongs to one brand, so every
+      // campaign under it is tagged with that brand on each sync.
+      brand,
+      objective: mapObjective(c.objective),
+      status: mapStatus(c.status),
+      budget,
+      spend: round2(Number(ins.spend || 0)),
+      reach: Math.round(Number(ins.reach || 0)),
+      impressions: Math.round(Number(ins.impressions || 0)),
+      clicks: Math.round(Number(ins.clicks || 0)),
+      leads: Math.round(leads),
+      startDate: c.start_time ? new Date(c.start_time) : null,
+      endDate: c.stop_time ? new Date(c.stop_time) : null,
+      source: 'FACEBOOK',
+      lastSyncedAt: new Date(),
+    };
+    await prisma.fbAdCampaign.upsert({
+      where: { fbCampaignId: c.id },
+      update: data,
+      create: { ...data, fbCampaignId: c.id, createdById: actorId },
+    });
+    synced++;
+  }
+  return synced;
+}
+
+// GET /marketing/fb-ads/brand-accounts — the ad account configured per brand.
+marketingRouter.get(
+  '/fb-ads/brand-accounts',
+  asyncHandler(async (_req, res) => {
+    const rows = await prisma.adBrandAccount.findMany();
+    const byBrand = new Map(rows.map((r) => [r.brand, r.adAccountId]));
+    res.json(AD_BRANDS.map((b) => ({ brand: b.key, label: b.label, note: b.note, adAccountId: byBrand.get(b.key) ?? '' })));
+  })
+);
+
+// PUT /marketing/fb-ads/brand-accounts/:brand — set (or clear) a brand's account.
+const brandAccountSchema = z.object({ adAccountId: z.string().max(40) });
+marketingRouter.put(
+  '/fb-ads/brand-accounts/:brand',
+  asyncHandler(async (req, res) => {
+    const brand = z.enum(BRAND_KEYS).parse(req.params.brand);
+    const { adAccountId } = brandAccountSchema.parse(req.body);
+    // Store the digits only, so "act_123", "123", or a pasted URL all normalise.
+    const id = (adAccountId.match(/\d{5,}/)?.[0] ?? '').trim();
+    if (!id) {
+      await prisma.adBrandAccount.deleteMany({ where: { brand } });
+      return res.json({ brand, adAccountId: '' });
+    }
+    const row = await prisma.adBrandAccount.upsert({
+      where: { brand },
+      update: { adAccountId: id },
+      create: { brand, adAccountId: id },
+    });
+    res.json({ brand: row.brand, adAccountId: row.adAccountId });
+  })
+);
+
+// POST /marketing/fb-ads/sync — pull campaigns + insights from every brand's
+// configured ad account and upsert them (keyed by fbCampaignId), tagging each
+// with its brand. Manual campaigns are left untouched. Needs FB_ADS_TOKEN and at
+// least one brand ad account configured.
 marketingRouter.post(
   '/fb-ads/sync',
   asyncHandler(async (req, res) => {
     const token = process.env.FB_ADS_TOKEN;
-    const acct = process.env.FB_AD_ACCOUNT_ID;
-    if (!token || !acct) {
-      throw badRequest('Facebook is not connected yet. Ask your admin to set the Meta access token and ad account.');
+    if (!token) {
+      throw badRequest('Facebook is not connected yet. Ask your admin to set the Meta access token.');
     }
-    const actId = acct.startsWith('act_') ? acct : `act_${acct}`;
-
-    const campaigns = await fbGetAll(
-      `${actId}/campaigns`,
-      { fields: 'name,objective,status,daily_budget,lifetime_budget,start_time,stop_time', limit: '200' },
-      token
-    );
-    const insights = await fbGetAll(
-      `${actId}/insights`,
-      { level: 'campaign', fields: 'campaign_id,spend,reach,impressions,clicks,actions', date_preset: 'maximum', limit: '200' },
-      token
-    );
-    const insByCampaign = new Map<string, any>(insights.map((i) => [i.campaign_id, i]));
+    const accounts = await prisma.adBrandAccount.findMany();
+    if (accounts.length === 0) {
+      throw badRequest('No ad account is set for any brand yet. Add one in Ad Manager (per brand) first.');
+    }
 
     let synced = 0;
-    for (const c of campaigns) {
-      const ins = insByCampaign.get(c.id) ?? {};
-      const leads = (ins.actions ?? [])
-        .filter((a: any) => /lead/i.test(a.action_type))
-        .reduce((s: number, a: any) => s + Number(a.value || 0), 0);
-      // Campaign budgets are in currency minor units (÷100); insights spend is
-      // already in major units.
-      const budget = round2(Number(c.daily_budget || c.lifetime_budget || 0) / 100);
-      const data = {
-        name: c.name ?? '(untitled)',
-        objective: mapObjective(c.objective),
-        status: mapStatus(c.status),
-        budget,
-        spend: round2(Number(ins.spend || 0)),
-        reach: Math.round(Number(ins.reach || 0)),
-        impressions: Math.round(Number(ins.impressions || 0)),
-        clicks: Math.round(Number(ins.clicks || 0)),
-        leads: Math.round(leads),
-        startDate: c.start_time ? new Date(c.start_time) : null,
-        endDate: c.stop_time ? new Date(c.stop_time) : null,
-        source: 'FACEBOOK',
-        lastSyncedAt: new Date(),
-      };
-      await prisma.fbAdCampaign.upsert({
-        where: { fbCampaignId: c.id },
-        update: data,
-        create: { ...data, fbCampaignId: c.id, createdById: req.auth!.sub },
-      });
-      synced++;
+    const perBrand: { brand: string; label: string; synced: number }[] = [];
+    for (const a of accounts) {
+      const n = await syncBrandAccount(a.brand, a.adAccountId, token, req.auth!.sub);
+      synced += n;
+      perBrand.push({ brand: a.brand, label: brandLabel(a.brand), synced: n });
     }
-    res.json({ synced });
+    res.json({ synced, brands: perBrand });
   })
 );
 
-// GET /marketing/fb-ads/connection — is Facebook wired up (env present)?
+// GET /marketing/fb-ads/connection — token present AND at least one brand wired?
 marketingRouter.get(
   '/fb-ads/connection',
   asyncHandler(async (_req, res) => {
-    res.json({ connected: !!(process.env.FB_ADS_TOKEN && process.env.FB_AD_ACCOUNT_ID) });
+    const configured = await prisma.adBrandAccount.count();
+    res.json({ connected: !!process.env.FB_ADS_TOKEN && configured > 0, brandsConfigured: configured });
   })
 );
 

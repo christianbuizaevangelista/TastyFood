@@ -60,6 +60,23 @@ async function periodCogs(principalId: string, from: Date, to: Date): Promise<nu
   return round2(cogs);
 }
 
+// Facebook ad spend attributed to a period, read live from synced campaigns
+// (like COGS, it never touches the journal — it is a computed operating expense
+// so re-syncing a campaign's cumulative spend never double-posts). A campaign's
+// spend is attributed to the period its run started in (createdAt if it has no
+// start date), which is close enough for a small business's monthly/yearly P&L.
+async function periodAdSpend(from: Date, to: Date): Promise<number> {
+  const rows = await prisma.fbAdCampaign.findMany({
+    where: { source: 'FACEBOOK' },
+    select: { spend: true, startDate: true, createdAt: true },
+  });
+  const total = rows.reduce((s, r) => {
+    const when = r.startDate ?? r.createdAt;
+    return when >= from && when <= to ? s + (r.spend || 0) : s;
+  }, 0);
+  return round2(total);
+}
+
 // =============================================================================
 // Chart of Accounts
 // =============================================================================
@@ -649,6 +666,13 @@ accountingRouter.get(
       .filter((t) => t.account.type === 'EXPENSE')
       .map((t) => ({ code: t.account.code, name: t.account.name, amount: round2(t.debit - t.credit) }))
       .filter((r) => r.amount !== 0);
+
+    // Facebook ad spend, computed live from synced campaigns, added as a
+    // marketing operating expense so ad cost reduces net profit automatically.
+    const adSpend = await periodAdSpend(from, to);
+    if (adSpend > 0) {
+      expenses.push({ code: 'FB-ADS', name: 'Marketing — Facebook Ads', amount: adSpend });
+    }
 
     // Computed Cost of Sales: cost of goods sold on the Principal's own sales this
     // period (Σ sold qty × the Principal's inventory unit cost). Kept SEPARATE
