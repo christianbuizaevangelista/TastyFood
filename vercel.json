@@ -13,6 +13,9 @@
   ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/shop", "destination": "/shop.html" },
+    { "source": "/shop/order/(.*)", "destination": "/shop.html" },
+    { "source": "/join", "destination": "/join.html" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "headers": [

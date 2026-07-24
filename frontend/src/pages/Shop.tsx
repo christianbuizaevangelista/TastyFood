@@ -40,6 +40,38 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+// Cross-promotion: the buyer already likes the product, which makes them the
+// warmest possible distributor lead. Shown on the shop and after checkout — it
+// points to the recruitment page (/join) so orderers discover the earning side.
+function DistributorInvite() {
+  return (
+    <section className="rounded-2xl border border-green-200 bg-green-50 p-6 text-left shadow-sm">
+      <div className="flex items-start gap-3">
+        <div className="text-3xl">💰</div>
+        <div>
+          <h2 className="font-bold text-green-900">Gusto mo bang kumita sa JuanPalaman?</h2>
+          <p className="mt-1 text-sm text-green-800">
+            Maging <strong>distributor</strong> — bumili sa presyong distributor, ibenta sa SRP, at
+            kitain ang diperensya sa bawat benta.
+          </p>
+          <ul className="mt-3 space-y-1 text-sm text-green-800">
+            <li className="flex gap-2"><span>✓</span> Kita na <strong>8%–20%</strong> depende sa antas (Reseller → Provincial)</li>
+            <li className="flex gap-2"><span>✓</span> Puhunan mula sa <strong>₱5,000</strong> na unang order (Reseller)</li>
+            <li className="flex gap-2"><span>✓</span> Libreng system para i-track ang stock at benta mo</li>
+            <li className="flex gap-2"><span>✓</span> <strong>LIBRENG</strong> online orientation — walang obligasyon</li>
+          </ul>
+          <a
+            href="/join"
+            className="mt-4 inline-block rounded-xl bg-green-700 px-6 py-3 font-bold text-white transition hover:bg-green-800"
+          >
+            Alamin: paano maging distributor →
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function Shop() {
   const [cfg, setCfg] = useState<Config | null>(null);
   const [loading, setLoading] = useState(true);
@@ -137,7 +169,8 @@ export default function Shop() {
     const cod = done.paymentMethod === 'CASH_ON_DELIVERY';
     return (
       <div className="min-h-screen bg-amber-50 px-4 py-12">
-        <div className="mx-auto max-w-lg overflow-hidden rounded-2xl bg-white shadow-sm">
+        <div className="mx-auto max-w-lg space-y-5">
+          <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
           <div className="p-8 text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-3xl">🎉</div>
             <h1 className="text-2xl font-bold text-slate-900">Order placed!</h1>
@@ -160,6 +193,8 @@ export default function Shop() {
               Track my order →
             </a>
           </div>
+          </div>
+          <DistributorInvite />
         </div>
       </div>
     );
@@ -341,6 +376,10 @@ export default function Shop() {
             </div>
           </form>
         )}
+
+        <div className="mt-8">
+          <DistributorInvite />
+        </div>
       </div>
 
       <style>{`.input-shop{width:100%;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.625rem 0.75rem;outline:none}.input-shop:focus{border-color:#d97706;box-shadow:0 0 0 1px #d97706}`}</style>
