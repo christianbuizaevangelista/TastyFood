@@ -8,7 +8,7 @@
 // allowed) and only fbevents.js is fetched from connect.facebook.net — which the
 // CSP in vercel.json explicitly allows.
 
-const PIXEL_ID = '1043253218203595';
+const PIXEL_ID = '753803000414526';
 
 declare global {
   interface Window {
