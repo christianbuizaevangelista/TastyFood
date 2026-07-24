@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, apiError } from '../api/client';
+import { initPixel, track } from '../lib/pixel';
 import AddressPicker from '../components/AddressPicker';
 
 // Public JuanPalaman shop (no login). Ads point here; buyers pick products and
@@ -96,6 +97,13 @@ export default function Shop() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Meta Pixel: the shopper landed on the shop (PageView + ViewContent). Ad
+  // campaigns optimise toward and retarget from these events.
+  useEffect(() => {
+    initPixel();
+    track('ViewContent', { content_type: 'product', content_category: 'JuanPalaman' });
+  }, []);
+
   const items = useMemo(
     () => (cfg?.products ?? []).map((p) => ({ ...p, quantity: qty[p.id] ?? 0 })).filter((p) => p.quantity > 0),
     [cfg, qty]
@@ -106,6 +114,10 @@ export default function Shop() {
 
   function step(id: string, by: number) {
     setQty((prev) => ({ ...prev, [id]: Math.max(0, (prev[id] ?? 0) + by) }));
+    if (by > 0) {
+      const p = cfg?.products.find((x) => x.id === id);
+      if (p) track('AddToCart', { content_ids: [id], content_type: 'product', value: p.price, currency: 'PHP' });
+    }
   }
 
   async function submit(e: React.FormEvent) {
@@ -118,6 +130,8 @@ export default function Shop() {
       return setErr('Please attach your proof of payment, or choose Cash on Delivery.');
     }
     setSubmitting(true);
+    const numItems = items.reduce((s, i) => s + i.quantity, 0);
+    track('InitiateCheckout', { value: subtotal, currency: 'PHP', num_items: numItems, content_ids: items.map((i) => i.id) });
     try {
       const payload: any = {
         ...f,
@@ -134,6 +148,16 @@ export default function Shop() {
         '/public/shop/order',
         payload
       );
+      // The conversion. Value + currency let Facebook optimise toward real sales
+      // and report ROAS; contents power dynamic retargeting.
+      track('Purchase', {
+        value: data.total,
+        currency: 'PHP',
+        content_type: 'product',
+        num_items: numItems,
+        content_ids: items.map((i) => i.id),
+        contents: items.map((i) => ({ id: i.id, quantity: i.quantity })),
+      });
       setDone(data);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e2) {
