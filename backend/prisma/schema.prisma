@@ -775,6 +775,9 @@ model FbAdCampaign {
   impressions  Int       @default(0)
   clicks       Int       @default(0)
   leads        Int       @default(0) // results / conversions
+  // Purchases and their peso value from the ad platform, for ROAS.
+  purchases    Int       @default(0)
+  revenue      Float     @default(0)
   startDate    DateTime?
   endDate      DateTime?
   notes        String?
@@ -1241,6 +1244,8 @@ model FbAdSet {
   impressions Int   @default(0)
   clicks      Int   @default(0)
   leads       Int   @default(0)
+  purchases   Int   @default(0)
+  revenue     Float @default(0)
 
   // Targeting, kept as plain fields so it can be compared across ad sets.
   ageMin     Int?
@@ -1289,6 +1294,8 @@ model FbAd {
   impressions Int   @default(0)
   clicks      Int   @default(0)
   leads       Int   @default(0)
+  purchases   Int   @default(0)
+  revenue     Float @default(0)
 
   source       String    @default("MANUAL") // MANUAL | FACEBOOK
   fbAdId       String?   @unique

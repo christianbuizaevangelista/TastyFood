@@ -35,8 +35,10 @@ function totals(rows: AdStats[]): AdStats {
       clicks: a.clicks + r.clicks,
       leads: a.leads + r.leads,
       reach: (a.reach ?? 0) + (r.reach ?? 0),
+      purchases: (a.purchases ?? 0) + (r.purchases ?? 0),
+      revenue: (a.revenue ?? 0) + (r.revenue ?? 0),
     }),
-    { spend: 0, impressions: 0, clicks: 0, leads: 0, reach: 0 }
+    { spend: 0, impressions: 0, clicks: 0, leads: 0, reach: 0, purchases: 0, revenue: 0 }
   );
 }
 
@@ -118,6 +120,8 @@ adsRouter.get(
         leads: t.leads,
         clicks: t.clicks,
         impressions: t.impressions,
+        revenue: round2(t.revenue ?? 0),
+        purchases: t.purchases ?? 0,
         ...m,
       },
       best: scoredAds.slice(0, 3),

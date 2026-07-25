@@ -172,7 +172,7 @@ async function syncBrandAccount(brand: string, adAccountId: string, token: strin
   );
   const insights = await fbGetAll(
     `${actId}/insights`,
-    { level: 'campaign', fields: 'campaign_id,spend,reach,impressions,clicks,actions', date_preset: 'maximum', limit: '200' },
+    { level: 'campaign', fields: 'campaign_id,spend,reach,impressions,clicks,actions,action_values', date_preset: 'maximum', limit: '200' },
     token
   );
   const insByCampaign = new Map<string, any>(insights.map((i) => [i.campaign_id, i]));
@@ -183,6 +183,18 @@ async function syncBrandAccount(brand: string, adAccountId: string, token: strin
     const leads = (ins.actions ?? [])
       .filter((a: any) => /lead/i.test(a.action_type))
       .reduce((s: number, a: any) => s + Number(a.value || 0), 0);
+    // Purchases (count) and their peso value (action_values), for ROAS. Meta
+    // returns SEVERAL purchase action types for the same sale (pixel, omni, web),
+    // so summing them all triple-counts — take the first by priority instead.
+    const pickPurchase = (arr: any[] | undefined) => {
+      for (const t of ['offsite_conversion.fb_pixel_purchase', 'purchase', 'omni_purchase', 'onsite_web_purchase']) {
+        const hit = (arr ?? []).find((a) => a.action_type === t);
+        if (hit) return Number(hit.value || 0);
+      }
+      return 0;
+    };
+    const purchases = pickPurchase(ins.actions);
+    const revenue = pickPurchase(ins.action_values);
     // Campaign budgets are in currency minor units (÷100); insights spend is
     // already in major units.
     const budget = round2(Number(c.daily_budget || c.lifetime_budget || 0) / 100);
@@ -199,6 +211,8 @@ async function syncBrandAccount(brand: string, adAccountId: string, token: strin
       impressions: Math.round(Number(ins.impressions || 0)),
       clicks: Math.round(Number(ins.clicks || 0)),
       leads: Math.round(leads),
+      purchases: Math.round(purchases),
+      revenue: round2(revenue),
       startDate: c.start_time ? new Date(c.start_time) : null,
       endDate: c.stop_time ? new Date(c.stop_time) : null,
       source: 'FACEBOOK',

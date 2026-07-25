@@ -15,16 +15,17 @@ interface Score {
 }
 interface Metrics {
   ctr: number | null; cpc: number | null; cpl: number | null; cvr: number | null; cpm: number | null;
+  roas: number | null; cpp: number | null;
 }
 interface Ad {
   id: string; name: string; status: string; format: string | null;
   headline: string | null; primaryText: string | null; callToAction: string | null;
-  spend: number; reach: number; impressions: number; clicks: number; leads: number;
+  spend: number; reach: number; impressions: number; clicks: number; leads: number; purchases: number; revenue: number;
   source: string; metrics: Metrics; score: Score;
 }
 interface AdSet {
   id: string; campaignId: string; name: string; status: string;
-  budget: number; spend: number; reach: number; impressions: number; clicks: number; leads: number;
+  budget: number; spend: number; reach: number; impressions: number; clicks: number; leads: number; purchases: number; revenue: number;
   ageMin: number | null; ageMax: number | null; genders: string | null;
   locations: string[]; interests: string[]; behaviours: string[]; placements: string[];
   audience: string | null; notes: string | null;
@@ -32,7 +33,7 @@ interface AdSet {
 }
 interface Campaign {
   id: string; name: string; brand: string; objective: string; status: string;
-  budget: number; spend: number; reach: number; impressions: number; clicks: number; leads: number;
+  budget: number; spend: number; reach: number; impressions: number; clicks: number; leads: number; purchases: number; revenue: number;
   source: string; metrics: Metrics; score: Score; adSets: AdSet[];
 }
 interface Best {
@@ -44,7 +45,7 @@ interface Attention {
 }
 interface Tree {
   campaigns: Campaign[];
-  summary: { campaigns: number; adSets: number; ads: number; spend: number; leads: number; clicks: number; impressions: number } & Metrics;
+  summary: { campaigns: number; adSets: number; ads: number; spend: number; leads: number; clicks: number; impressions: number; revenue: number; purchases: number } & Metrics;
   best: Best[]; worst: Best[]; attention: Attention[];
 }
 interface Preset {
@@ -95,15 +96,15 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function StatRow({ m, spend, leads, impressions, clicks }: { m: Metrics; spend: number; leads: number; impressions: number; clicks: number }) {
+function StatRow({ m, spend, leads, impressions, clicks, revenue, purchases }: { m: Metrics; spend: number; leads: number; impressions: number; clicks: number; revenue: number; purchases: number }) {
   return (
     <div className="mt-2 grid grid-cols-3 gap-x-4 gap-y-2 sm:grid-cols-6">
       <Stat label="Spend" value={peso(spend)} />
-      <Stat label="Leads" value={num(leads)} />
-      <Stat label="Cost/lead" value={m.cpl !== null ? peso(m.cpl) : '—'} />
+      <Stat label="Revenue" value={peso(revenue)} />
+      <Stat label="ROAS" value={m.roas !== null ? `${m.roas.toFixed(2)}×` : '—'} />
+      <Stat label="Purchases" value={num(purchases)} />
+      <Stat label="Cost/purchase" value={m.cpp !== null ? peso(m.cpp) : '—'} />
       <Stat label="Click rate" value={m.ctr !== null ? `${m.ctr}%` : '—'} />
-      <Stat label="Clicks" value={num(clicks)} />
-      <Stat label="Shown" value={num(impressions)} />
     </div>
   );
 }
@@ -222,15 +223,23 @@ export default function AdManager() {
       )}
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KpiCard label="Spend" value={peso(s?.spend ?? 0)} hint={`${num(s?.campaigns ?? 0)} campaigns`} />
-        <KpiCard label="Leads" value={num(s?.leads ?? 0)} accent="text-brand-600" hint={`${num(s?.ads ?? 0)} ads running`} />
+        <KpiCard label="Ad spend" value={peso(s?.spend ?? 0)} hint={`${num(s?.campaigns ?? 0)} campaigns`} />
+        <KpiCard label="Revenue" value={peso(s?.revenue ?? 0)} accent="text-green-600" hint={`${num(s?.purchases ?? 0)} purchases`} />
         <KpiCard
-          label="Cost per lead"
-          value={s?.cpl !== null && s?.cpl !== undefined ? peso(s.cpl) : '—'}
-          accent="text-green-600"
-          hint="the number that decides the budget"
+          label="ROAS"
+          value={s?.roas !== null && s?.roas !== undefined ? `${s.roas.toFixed(2)}×` : '—'}
+          accent={(s?.roas ?? 0) >= 1 ? 'text-green-600' : 'text-red-600'}
+          hint="return per ₱1 spent"
+        />
+        <KpiCard
+          label="Cost per purchase"
+          value={s?.cpp !== null && s?.cpp !== undefined ? peso(s.cpp) : '—'}
+          hint="keep below profit per order"
         />
         <KpiCard label="Click rate" value={s?.ctr !== null && s?.ctr !== undefined ? `${s.ctr}%` : '—'} hint={`${num(s?.clicks ?? 0)} clicks`} />
+        <KpiCard label="Cost per click" value={s?.cpc !== null && s?.cpc !== undefined ? peso(s.cpc) : '—'} hint={`${num(s?.impressions ?? 0)} impressions`} />
+        <KpiCard label="Leads" value={num(s?.leads ?? 0)} accent="text-brand-600" hint="from ad platform" />
+        <KpiCard label="Cost per lead" value={s?.cpl !== null && s?.cpl !== undefined ? peso(s.cpl) : '—'} hint="for lead campaigns" />
       </div>
 
       {/* What is winning and what is burning money */}
@@ -377,7 +386,7 @@ export default function AdManager() {
                   </div>
                 </div>
 
-                <StatRow m={c.metrics} spend={c.spend} leads={c.leads} impressions={c.impressions} clicks={c.clicks} />
+                <StatRow m={c.metrics} spend={c.spend} leads={c.leads} impressions={c.impressions} clicks={c.clicks} revenue={c.revenue} purchases={c.purchases} />
 
                 {open && (
                   <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
@@ -423,7 +432,7 @@ export default function AdManager() {
                               </div>
                             )}
 
-                            <StatRow m={st.metrics} spend={st.spend} leads={st.leads} impressions={st.impressions} clicks={st.clicks} />
+                            <StatRow m={st.metrics} spend={st.spend} leads={st.leads} impressions={st.impressions} clicks={st.clicks} revenue={st.revenue} purchases={st.purchases} />
 
                             {sOpen && (
                               <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
@@ -444,7 +453,7 @@ export default function AdManager() {
                                         </button>
                                       </div>
                                       {ad.headline && <div className="mt-1 text-sm text-slate-700">{ad.headline}</div>}
-                                      <StatRow m={ad.metrics} spend={ad.spend} leads={ad.leads} impressions={ad.impressions} clicks={ad.clicks} />
+                                      <StatRow m={ad.metrics} spend={ad.spend} leads={ad.leads} impressions={ad.impressions} clicks={ad.clicks} revenue={ad.revenue} purchases={ad.purchases} />
                                       {ad.score.reason && (
                                         <p className="mt-2 text-xs text-slate-500">{ad.score.reason}</p>
                                       )}

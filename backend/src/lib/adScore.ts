@@ -20,6 +20,8 @@ export interface AdStats {
   clicks: number;
   leads: number;
   reach?: number;
+  purchases?: number; // completed purchases (from the ad platform)
+  revenue?: number; // peso value of those purchases, for ROAS
 }
 
 export interface Metrics {
@@ -28,17 +30,23 @@ export interface Metrics {
   cpl: number | null; // cost per lead — the one that decides the budget
   cvr: number | null; // clicks that became leads, %
   cpm: number | null; // cost per 1,000 impressions
+  roas: number | null; // return on ad spend — revenue ÷ spend (× return per ₱1)
+  cpp: number | null; // cost per purchase
 }
 
 const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 export function metrics(s: AdStats): Metrics {
+  const purchases = s.purchases ?? 0;
+  const revenue = s.revenue ?? 0;
   return {
     ctr: s.impressions > 0 ? r2((s.clicks / s.impressions) * 100) : null,
     cpc: s.clicks > 0 ? r2(s.spend / s.clicks) : null,
     cpl: s.leads > 0 ? r2(s.spend / s.leads) : null,
     cvr: s.clicks > 0 ? r2((s.leads / s.clicks) * 100) : null,
     cpm: s.impressions > 0 ? r2((s.spend / s.impressions) * 1000) : null,
+    roas: s.spend > 0 && revenue > 0 ? r2(revenue / s.spend) : null,
+    cpp: purchases > 0 ? r2(s.spend / purchases) : null,
   };
 }
 
