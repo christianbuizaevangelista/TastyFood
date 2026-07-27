@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, apiError } from '../api/client';
+import { initPixel, track } from '../lib/pixel';
 
 // Public recruitment landing page (no login). Ads point here; visitors register
 // for the Zoom orientation and become leads in the configured funnel.
@@ -180,6 +181,13 @@ export default function Join() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Meta Pixel: a prospect landed on the recruitment page. Ad campaigns pointing
+  // here can optimise toward and retarget from this.
+  useEffect(() => {
+    initPixel();
+    track('ViewContent', { content_category: 'JuanPalaman recruitment' });
+  }, []);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
@@ -190,6 +198,9 @@ export default function Join() {
     setSubmitting(true);
     try {
       const { data } = await api.post<{ zoom: Zoom | null }>('/public/webinar/register', f);
+      // The recruitment conversion: someone registered for the orientation. This
+      // is the event Facebook should optimise these ads toward — not CONTENT_VIEW.
+      track('CompleteRegistration', { content_name: 'Webinar registration', status: true });
       setZoom(data.zoom);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e2) {
