@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { api, apiError } from '../api/client';
 import { useFetch } from '../lib/useFetch';
 import { PageHeader, Spinner, Alert, EmptyState, KpiCard } from '../components/ui';
@@ -105,6 +105,87 @@ function StatRow({ m, spend, leads, impressions, clicks, revenue, purchases }: {
       <Stat label="Purchases" value={num(purchases)} />
       <Stat label="Cost/purchase" value={m.cpp !== null ? peso(m.cpp) : '—'} />
       <Stat label="Click rate" value={m.ctr !== null ? `${m.ctr}%` : '—'} />
+    </div>
+  );
+}
+
+// Date-ranged performance, queried live from Facebook (the tree below is
+// lifetime). Lets the owner check any window — last week, a month, a promo run.
+const fmtDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function presetRange(p: string): { from: string; to: string } | null {
+  const now = new Date();
+  const to = fmtDate(now);
+  if (p === '7') { const f = new Date(now); f.setDate(f.getDate() - 6); return { from: fmtDate(f), to }; }
+  if (p === '30') { const f = new Date(now); f.setDate(f.getDate() - 29); return { from: fmtDate(f), to }; }
+  if (p === 'month') { return { from: fmtDate(new Date(now.getFullYear(), now.getMonth(), 1)), to }; }
+  return null;
+}
+interface RangeData { summary: (Metrics & { spend: number; revenue: number; purchases: number; clicks: number; impressions: number }) | null }
+
+function RangeReport({ brand }: { brand: string }) {
+  const [preset, setPreset] = useState('30');
+  const init = presetRange('30')!;
+  const [from, setFrom] = useState(init.from);
+  const [to, setTo] = useState(init.to);
+  const [data, setData] = useState<RangeData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  function applyPreset(p: string) {
+    setPreset(p);
+    const r = presetRange(p);
+    if (r) { setFrom(r.from); setTo(r.to); }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    api
+      .get<RangeData>(`/marketing/fb-ads/range?${brand ? `brand=${brand}&` : ''}from=${from}&to=${to}`)
+      .then(({ data }) => { if (!cancelled) setData(data); })
+      .catch((e) => { if (!cancelled) { setErr(apiError(e)); setData(null); } })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [brand, from, to]);
+
+  const s = data?.summary;
+  const presets: [string, string][] = [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['month', 'This month']];
+
+  return (
+    <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-semibold text-slate-700">Performance by date</span>
+        {presets.map(([k, l]) => (
+          <button
+            key={k}
+            onClick={() => applyPreset(k)}
+            className={`rounded-lg border px-2.5 py-1 text-xs transition ${preset === k ? 'border-brand-500 bg-brand-50 font-semibold text-brand-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+          >
+            {l}
+          </button>
+        ))}
+        <span className="mx-1 text-slate-300">|</span>
+        <input type="date" className="input h-8 w-auto py-1 text-xs" value={from} max={to} onChange={(e) => { setPreset('custom'); setFrom(e.target.value); }} />
+        <span className="text-slate-400">→</span>
+        <input type="date" className="input h-8 w-auto py-1 text-xs" value={to} min={from} onChange={(e) => { setPreset('custom'); setTo(e.target.value); }} />
+      </div>
+      {err && <div className="mt-2 text-xs text-red-600">{err}</div>}
+      {loading ? (
+        <div className="mt-3 text-sm text-slate-400">Loading…</div>
+      ) : s ? (
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+          <Stat label="Spend" value={peso(s.spend)} />
+          <Stat label="Revenue" value={peso(s.revenue)} />
+          <Stat label="ROAS" value={s.roas !== null ? `${s.roas.toFixed(2)}×` : '—'} />
+          <Stat label="Purchases" value={num(s.purchases)} />
+          <Stat label="Cost/purchase" value={s.cpp !== null ? peso(s.cpp) : '—'} />
+          <Stat label="Click rate" value={s.ctr !== null ? `${s.ctr}%` : '—'} />
+          <Stat label="Clicks" value={num(s.clicks)} />
+        </div>
+      ) : (
+        !err && <div className="mt-3 text-sm text-slate-400">No data for these dates.</div>
+      )}
     </div>
   );
 }
@@ -222,6 +303,9 @@ export default function AdManager() {
         <BrandAccountConfig key={brand} brandKey={brand} label={brands.find((b) => b.key === brand)?.label ?? brand} />
       )}
 
+      <RangeReport brand={brand} />
+
+      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Lifetime totals</div>
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard label="Ad spend" value={peso(s?.spend ?? 0)} hint={`${num(s?.campaigns ?? 0)} campaigns`} />
         <KpiCard label="Revenue" value={peso(s?.revenue ?? 0)} accent="text-green-600" hint={`${num(s?.purchases ?? 0)} purchases`} />

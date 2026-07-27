@@ -162,6 +162,16 @@ async function fbGetAll(path: string, params: Record<string, string>, token: str
   return out;
 }
 
+// Meta returns SEVERAL purchase action types for the same sale (pixel, omni,
+// web); summing them all triple-counts, so take the first by priority.
+function pickPurchaseValue(arr: any[] | undefined): number {
+  for (const t of ['offsite_conversion.fb_pixel_purchase', 'purchase', 'omni_purchase', 'onsite_web_purchase']) {
+    const hit = (arr ?? []).find((a) => a.action_type === t);
+    if (hit) return Number(hit.value || 0);
+  }
+  return 0;
+}
+
 // Pull + upsert every campaign from ONE ad account, tagging each with its brand.
 async function syncBrandAccount(brand: string, adAccountId: string, token: string, actorId: string): Promise<number> {
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
@@ -183,18 +193,9 @@ async function syncBrandAccount(brand: string, adAccountId: string, token: strin
     const leads = (ins.actions ?? [])
       .filter((a: any) => /lead/i.test(a.action_type))
       .reduce((s: number, a: any) => s + Number(a.value || 0), 0);
-    // Purchases (count) and their peso value (action_values), for ROAS. Meta
-    // returns SEVERAL purchase action types for the same sale (pixel, omni, web),
-    // so summing them all triple-counts — take the first by priority instead.
-    const pickPurchase = (arr: any[] | undefined) => {
-      for (const t of ['offsite_conversion.fb_pixel_purchase', 'purchase', 'omni_purchase', 'onsite_web_purchase']) {
-        const hit = (arr ?? []).find((a) => a.action_type === t);
-        if (hit) return Number(hit.value || 0);
-      }
-      return 0;
-    };
-    const purchases = pickPurchase(ins.actions);
-    const revenue = pickPurchase(ins.action_values);
+    // Purchases (count) and their peso value (action_values), for ROAS.
+    const purchases = pickPurchaseValue(ins.actions);
+    const revenue = pickPurchaseValue(ins.action_values);
     // Campaign budgets are in currency minor units (÷100); insights spend is
     // already in major units.
     const budget = round2(Number(c.daily_budget || c.lifetime_budget || 0) / 100);
@@ -313,6 +314,76 @@ marketingRouter.get(
   asyncHandler(async (_req, res) => {
     const configured = await prisma.adBrandAccount.count();
     res.json({ connected: !!process.env.FB_ADS_TOKEN && configured > 0, brandsConfigured: configured });
+  })
+);
+
+// GET /marketing/fb-ads/range?brand=&from=YYYY-MM-DD&to=YYYY-MM-DD
+// Live date-ranged performance straight from Facebook — the stored campaign
+// figures are lifetime, so a custom range has to be queried on demand.
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+marketingRouter.get(
+  '/fb-ads/range',
+  asyncHandler(async (req, res) => {
+    const token = process.env.FB_ADS_TOKEN;
+    if (!token) throw badRequest('Facebook is not connected yet. Set the Meta access token (FB_ADS_TOKEN).');
+    const brand = typeof req.query.brand === 'string' && req.query.brand ? req.query.brand : null;
+    const from = String(req.query.from ?? '').slice(0, 10);
+    const to = String(req.query.to ?? '').slice(0, 10);
+    if (!DATE_RE.test(from) || !DATE_RE.test(to)) throw badRequest('Provide from and to dates (YYYY-MM-DD).');
+
+    const accounts = await prisma.adBrandAccount.findMany({ where: brand ? { brand } : {} });
+    const campaigns: any[] = [];
+    const sum = { spend: 0, impressions: 0, clicks: 0, purchases: 0, revenue: 0 };
+    for (const a of accounts) {
+      const actId = a.adAccountId.startsWith('act_') ? a.adAccountId : `act_${a.adAccountId}`;
+      const rows = await fbGetAll(
+        `${actId}/insights`,
+        {
+          level: 'campaign',
+          fields: 'campaign_id,campaign_name,spend,impressions,clicks,actions,action_values',
+          time_range: JSON.stringify({ since: from, until: to }),
+          limit: '200',
+        },
+        token
+      );
+      for (const r of rows) {
+        const spend = Number(r.spend || 0);
+        const impressions = Math.round(Number(r.impressions || 0));
+        const clicks = Math.round(Number(r.clicks || 0));
+        const purchases = Math.round(pickPurchaseValue(r.actions));
+        const revenue = pickPurchaseValue(r.action_values);
+        sum.spend += spend;
+        sum.impressions += impressions;
+        sum.clicks += clicks;
+        sum.purchases += purchases;
+        sum.revenue += revenue;
+        campaigns.push({
+          id: r.campaign_id,
+          name: r.campaign_name || '(untitled)',
+          brand: a.brand,
+          spend: round2(spend),
+          impressions,
+          clicks,
+          purchases,
+          revenue: round2(revenue),
+          roas: spend > 0 && revenue > 0 ? round2(revenue / spend) : null,
+          ctr: impressions > 0 ? round2((clicks / impressions) * 100) : null,
+          cpp: purchases > 0 ? round2(spend / purchases) : null,
+        });
+      }
+    }
+    const summary = {
+      spend: round2(sum.spend),
+      impressions: sum.impressions,
+      clicks: sum.clicks,
+      purchases: sum.purchases,
+      revenue: round2(sum.revenue),
+      roas: sum.spend > 0 && sum.revenue > 0 ? round2(sum.revenue / sum.spend) : null,
+      ctr: sum.impressions > 0 ? round2((sum.clicks / sum.impressions) * 100) : null,
+      cpc: sum.clicks > 0 ? round2(sum.spend / sum.clicks) : null,
+      cpp: sum.purchases > 0 ? round2(sum.spend / sum.purchases) : null,
+    };
+    res.json({ from, to, summary, campaigns: campaigns.sort((x, y) => y.spend - x.spend) });
   })
 );
 
