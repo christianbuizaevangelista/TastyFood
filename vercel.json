@@ -9,7 +9,8 @@
     }
   },
   "crons": [
-    { "path": "/api/cron/webinar-reminders", "schedule": "0 0 * * *" }
+    { "path": "/api/cron/webinar-reminders", "schedule": "0 0 * * *" },
+    { "path": "/api/cron/fb-ads-sync", "schedule": "0 21 * * *" }
   ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" },

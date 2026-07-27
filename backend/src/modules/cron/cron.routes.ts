@@ -8,6 +8,7 @@ import {
   sendOwnerDayBriefEmail,
 } from '../../lib/email.applications';
 import { principalOwnerEmail } from '../public/public.service';
+import { syncAllBrandAccounts } from '../marketing/marketing.routes';
 
 // Scheduled jobs, invoked by Vercel Cron (or any scheduler) rather than by a
 // signed-in user. Nothing here reads a session cookie, so every route is gated
@@ -201,5 +202,25 @@ cronRouter.all(
       failed: results.filter((r) => !r.sent).length,
       results,
     });
+  })
+);
+
+// GET|POST /cron/fb-ads-sync — pull every brand's Facebook ad performance so the
+// Ad Manager reports (spend, ROAS, purchases…) stay current without anyone
+// clicking "Sync". Upserts are idempotent, so any frequency is safe. A missing
+// token or unconfigured brand is reported, not thrown, so a quiet day is not a
+// cron failure.
+cronRouter.all(
+  '/fb-ads-sync',
+  asyncHandler(async (req, res) => {
+    assertCronCaller(req);
+    try {
+      const result = await syncAllBrandAccounts(); // cron has no session → owner-attributed
+      res.json({ ok: true, ...result });
+    } catch (e: any) {
+      // Don't 500 the scheduler for an expired token / missing config — surface it.
+      console.error('[cron] fb-ads-sync', e?.message);
+      res.json({ ok: false, synced: 0, brands: [], reason: e?.message ?? 'sync failed' });
+    }
   })
 );

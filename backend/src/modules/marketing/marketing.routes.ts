@@ -228,6 +228,38 @@ async function syncBrandAccount(brand: string, adAccountId: string, token: strin
   return synced;
 }
 
+// Run the sync for EVERY brand that has an ad account configured. Shared by the
+// manual "Sync" button and the daily cron. Without an actor (the cron has no
+// session) it attributes any newly-created campaigns to the Principal owner.
+export async function syncAllBrandAccounts(
+  actorId?: string
+): Promise<{ synced: number; brands: { brand: string; label: string; synced: number }[] }> {
+  const token = process.env.FB_ADS_TOKEN;
+  if (!token) throw badRequest('Facebook is not connected yet. Set the Meta access token (FB_ADS_TOKEN).');
+  const accounts = await prisma.adBrandAccount.findMany();
+  if (accounts.length === 0) return { synced: 0, brands: [] };
+
+  let actor = actorId;
+  if (!actor) {
+    const owner = await prisma.user.findFirst({
+      where: { role: 'PRINCIPAL', isOwner: true, isActive: true },
+      select: { id: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    actor = owner?.id;
+  }
+  if (!actor) throw badRequest('No Principal owner to attribute synced campaigns to.');
+
+  let synced = 0;
+  const brands: { brand: string; label: string; synced: number }[] = [];
+  for (const a of accounts) {
+    const n = await syncBrandAccount(a.brand, a.adAccountId, token, actor);
+    synced += n;
+    brands.push({ brand: a.brand, label: brandLabel(a.brand), synced: n });
+  }
+  return { synced, brands };
+}
+
 // GET /marketing/fb-ads/brand-accounts — the ad account configured per brand.
 marketingRouter.get(
   '/fb-ads/brand-accounts',
@@ -267,23 +299,11 @@ marketingRouter.put(
 marketingRouter.post(
   '/fb-ads/sync',
   asyncHandler(async (req, res) => {
-    const token = process.env.FB_ADS_TOKEN;
-    if (!token) {
-      throw badRequest('Facebook is not connected yet. Ask your admin to set the Meta access token.');
-    }
-    const accounts = await prisma.adBrandAccount.findMany();
-    if (accounts.length === 0) {
+    const result = await syncAllBrandAccounts(req.auth!.sub);
+    if (result.brands.length === 0) {
       throw badRequest('No ad account is set for any brand yet. Add one in Ad Manager (per brand) first.');
     }
-
-    let synced = 0;
-    const perBrand: { brand: string; label: string; synced: number }[] = [];
-    for (const a of accounts) {
-      const n = await syncBrandAccount(a.brand, a.adAccountId, token, req.auth!.sub);
-      synced += n;
-      perBrand.push({ brand: a.brand, label: brandLabel(a.brand), synced: n });
-    }
-    res.json({ synced, brands: perBrand });
+    res.json(result);
   })
 );
 
