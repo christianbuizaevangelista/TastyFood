@@ -8,7 +8,7 @@ import { authenticate } from '../../middleware/auth';
 import { assertInScope, requirePermission } from '../../middleware/rbac';
 import { getDescendantOrgIds, getAncestorOrgIds } from '../../lib/scope';
 import { badRequest, forbidden, notFound, conflict } from '../../lib/errors';
-import { TIER_DISCOUNT, RETAIL_DISCOUNT, ALLOWED_PARENTS } from '../../lib/pricing';
+import { TIER_DISCOUNT, RETAIL_DISCOUNT, ALLOWED_PARENTS, TIER_MIN_ORDER } from '../../lib/pricing';
 import { hashPassword, verifyPassword } from '../../lib/auth';
 import { canApproveOrgOnboarding } from './approvals.service';
 import { LEVEL_FOR_TYPE } from '../territories/territories.routes';
@@ -250,6 +250,9 @@ orgsRouter.post(
           contactPhone: body.contactPhone,
           address: body.address,
           salesTarget: isRetail ? 0 : body.salesTarget ?? 0,
+          // New distributors carry a per-transaction minimum order by tier;
+          // RETAIL accounts have none.
+          minOrderAmount: isRetail ? null : TIER_MIN_ORDER[effectiveType],
         },
       });
       if (hasAdmin) {
@@ -358,6 +361,8 @@ const updateSchema = z.object({
   address: z.string().optional(),
   notes: z.string().optional(),
   salesTarget: z.number().min(0).optional(),
+  // Per-transaction minimum order. Null clears it (no minimum); a number sets it.
+  minOrderAmount: z.number().min(0).nullable().optional(),
   // Assign/move this account to a geographic territory ('' or null = unassign).
   // Once assigned, the account automatically appears on the Org Structure map.
   territoryId: z.string().nullable().optional(),

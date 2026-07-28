@@ -154,6 +154,10 @@ model Organization {
 
   // KPI target (revenue) for the current period.
   salesTarget Float @default(0)
+  // Minimum amount per purchase order, stamped at onboarding by tier. Null =
+  // no minimum (existing accounts, RETAIL, Principal). A regular order below
+  // this is blocked.
+  minOrderAmount Float?
 
   // "Mana" credits wallet (1 PHP = 1 Mana). Used to pre-pay purchase orders.
   manaBalance Float @default(0)

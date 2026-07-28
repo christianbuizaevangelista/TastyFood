@@ -11,6 +11,17 @@ export const TIER_DISCOUNT: Record<OrgType, number> = {
 // Discount off SRP for a RETAIL-segment distributor (buys from the Principal).
 export const RETAIL_DISCOUNT = 0.15;
 
+// Minimum purchase-order amount per transaction, applied to NEWLY-onboarded
+// distributors by tier. It is stamped onto the account at onboarding, so
+// existing accounts (which have none) are grandfathered and never blocked.
+// RETAIL and the Principal have no minimum.
+export const TIER_MIN_ORDER: Record<OrgType, number> = {
+  PRINCIPAL: 0,
+  PROVINCIAL: 100000,
+  CITY: 30000,
+  RESELLER: 5000,
+};
+
 // The tier each org type buys from (its immediate parent).
 export const PARENT_TYPE: Record<OrgType, OrgType | null> = {
   PRINCIPAL: null,

@@ -270,6 +270,22 @@ poRouter.post(
       );
     }
 
+    // Newly-onboarded distributors carry a per-transaction minimum order (by
+    // tier). Enforce it on their OWN regular stock purchases — not stock-ins
+    // (Principal restock) and not drop-ships (those fulfil a single customer, so
+    // a large minimum would make no sense). Existing accounts have no minimum.
+    if (
+      !isStockIn &&
+      body.distributionType !== 'DROP_SHIP' &&
+      buyer.minOrderAmount != null &&
+      priced.total < buyer.minOrderAmount
+    ) {
+      const peso = (n: number) => `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      throw badRequest(
+        `The minimum order for your account is ${peso(buyer.minOrderAmount)} per transaction. This order is only ${peso(priced.total)} — please add more items to reach the minimum before completing it.`
+      );
+    }
+
     const po = await prisma.$transaction(async (tx) => {
       const created = await tx.purchaseOrder.create({
         data: {
