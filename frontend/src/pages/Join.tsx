@@ -48,7 +48,7 @@ const CAPITAL = [
 const CREDENTIALS = [
   { value: '2015', label: 'Building since' },
   { value: '28+', label: 'Provinces reached' },
-  { value: 'GMP', label: 'Compliant production' },
+  { value: 'GMP', label: 'Implementation' },
   { value: '16', label: 'Active distributors' },
 ];
 
@@ -66,19 +66,19 @@ const PRODUCTS = [
 
 const PACKAGES = [
   {
-    name: 'Reseller', territory: 'Assigned exclusive area',
+    name: 'Reseller', territory: 'Assigned territory',
     retail: '8%', foodservice: '6%', entry: '₱5,000', entryLabel: 'minimum initial order', featured: false,
-    gets: ['Starter bundle of best sellers', 'Exclusive rights to your area', 'Free access to the DMS'],
+    gets: ['Starter bundle of best sellers', 'Rights to your assigned area', 'Free access to the DMS'],
   },
   {
     name: 'City Distributor', territory: 'City / municipality',
-    retail: '15%', foodservice: '11%', entry: '₱30,000', entryLabel: 'refundable security bond', featured: false,
-    gets: ['City-wide exclusive territory', 'Supply resellers in your city', 'Free access to the DMS'],
+    retail: '15%', foodservice: '11%', entry: '₱30,000', entryLabel: 'security bond + ₱30,000 initial order', featured: false,
+    gets: ['City-wide assigned territory', 'Supply resellers in your city', 'Free access to the DMS'],
   },
   {
     name: 'Provincial Distributor', territory: 'Province-wide',
-    retail: '20%', foodservice: '15%', entry: '₱100,000', entryLabel: 'refundable security bond', featured: true,
-    gets: ['Province-wide exclusive territory', 'Buy directly from the factory', 'Free access to the DMS'],
+    retail: '20%', foodservice: '15%', entry: '₱100,000', entryLabel: 'security bond + ₱100,000 initial order', featured: true,
+    gets: ['Province-wide assigned territory', 'Buy directly from the factory', 'Free access to the DMS'],
   },
 ];
 
@@ -96,7 +96,7 @@ const PROOF = [
 
 const REASONS = [
   { icon: '💰', title: 'Healthy margins', body: 'Tiered discounts that protect your profit at every level.' },
-  { icon: '🗺️', title: 'Territory protection', body: 'Exclusive coverage — no channel conflict in your area.' },
+  { icon: '🗺️', title: 'Assigned territory', body: 'Your own assigned coverage area — no channel conflict.' },
   { icon: '🥜', title: 'Fast-moving products', body: 'Everyday food with steady demand and repeat purchase.' },
   { icon: '🤝', title: 'Full partner support', body: 'Materials, training, and a dedicated account officer.' },
 ];
@@ -120,8 +120,8 @@ const STEPS = [
 ];
 
 const FAQ = [
-  { q: 'How much capital do I need to start?', a: 'A reseller starts with a ₱5,000 minimum initial order. City distributors post a ₱30,000 refundable security bond, and provincial distributors ₱100,000 — both refundable under the terms of the partnership agreement.' },
-  { q: 'Is the territory really exclusive?', a: 'Yes. Qualified distributors are assigned an exclusive coverage area, and the channel is structured so provincial, city, and reseller levels do not compete with each other in the same territory.' },
+  { q: 'How much capital do I need to start?', a: 'A reseller starts with a ₱5,000 minimum initial order. A City distributor posts a ₱30,000 refundable security bond plus a ₱30,000 initial order; a Provincial distributor a ₱100,000 refundable security bond plus a ₱100,000 initial order. The security bond is refundable under the terms of the partnership agreement.' },
+  { q: 'Is a territory assigned to me?', a: 'Yes. Qualified distributors are assigned a coverage area, and the channel is structured so provincial, city, and reseller levels do not compete with each other in the same assigned territory.' },
   { q: 'What if my area is already taken?', a: 'Join the orientation anyway — we check territory availability live and can discuss nearby areas or a different partner level that still fits you.' },
   { q: 'Do I need an existing business?', a: 'No. Resellers only need a valid ID and basic business information. Many of our partners started as home sellers or small store owners.' },
   { q: 'How do I track my orders and sales?', a: 'Every partner gets free access to the Tasty Food Distribution Management System — order online, track stock and sales, and see your performance in one dashboard.' },
@@ -319,10 +319,10 @@ export default function Join() {
         <div className="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-2">
           <div>
             <div className="mb-4 inline-block rounded-full bg-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-wider">
-              Exclusive Distributorship Opportunity
+              Distributorship Opportunity
             </div>
             <h1 className="text-3xl font-bold leading-tight sm:text-4xl">
-              {webinar?.headline || 'Own an exclusive Tasty Food distributorship'}
+              {webinar?.headline || 'Run your own Tasty Food distributorship'}
             </h1>
             <p className="mt-4 text-lg text-green-50">
               {webinar?.description ||
@@ -332,8 +332,8 @@ export default function Join() {
                 casual "pang-benta-benta" crowd self-select out before inquiring. */}
             <div className="mt-5 flex flex-wrap gap-2 text-sm">
               <span className="rounded-lg bg-white/15 px-3 py-1.5"><b>Reseller</b> · from ₱5,000</span>
-              <span className="rounded-lg bg-white/15 px-3 py-1.5"><b>City</b> · ₱30,000 bond</span>
-              <span className="rounded-lg bg-white/20 px-3 py-1.5 ring-1 ring-white/40"><b>Provincial</b> · ₱100,000 bond</span>
+              <span className="rounded-lg bg-white/15 px-3 py-1.5"><b>City</b> · ₱30,000 bond + ₱30,000 order</span>
+              <span className="rounded-lg bg-white/20 px-3 py-1.5 ring-1 ring-white/40"><b>Provincial</b> · ₱100,000 bond + ₱100,000 order</span>
             </div>
 
             {when && (
@@ -382,7 +382,7 @@ export default function Join() {
           ))}
         </div>
         <p className="mx-auto mt-4 max-w-5xl text-xs text-green-100/80">
-          Founded 2015 · Incorporated 2017 · GMP-compliant production · FDA LTO in process
+          Founded 2015 · Incorporated 2017 · GMP Implementation · FDA LTO in process
         </p>
       </header>
 
