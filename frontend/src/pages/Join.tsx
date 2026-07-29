@@ -35,6 +35,16 @@ const INTERESTS = [
   { value: 'UNSURE', label: "I'm not sure yet", hint: 'help me choose' },
 ];
 
+// Capital band — the single most useful qualifier. It screens serious partners
+// from the casual "pang-benta-benta" crowd and tells us which tier fits them.
+const CAPITAL = [
+  { value: '', label: 'Select your ready capital…' },
+  { value: 'Below ₱5,000', label: 'Below ₱5,000' },
+  { value: '₱5,000 – ₱30,000', label: '₱5,000 – ₱30,000 (Reseller)' },
+  { value: '₱30,000 – ₱100,000', label: '₱30,000 – ₱100,000 (City)' },
+  { value: '₱100,000 and up', label: '₱100,000 and up (Provincial)' },
+];
+
 const CREDENTIALS = [
   { value: '2015', label: 'Building since' },
   { value: '28+', label: 'Provinces reached' },
@@ -162,7 +172,7 @@ export default function Join() {
   const [err, setErr] = useState<string | null>(null);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [f, setF] = useState({
-    name: '', email: '', phone: '', city: '', province: '', interest: 'UNSURE', message: '', website: '',
+    name: '', email: '', phone: '', city: '', province: '', interest: 'UNSURE', capital: '', message: '', website: '',
     sessionId: '',
   });
   const set = (k: keyof typeof f, v: string) => setF((prev) => ({ ...prev, [k]: v }));
@@ -193,6 +203,10 @@ export default function Join() {
     setErr(null);
     if ((webinar?.sessions?.length ?? 0) > 0 && !f.sessionId) {
       setErr('Please choose a schedule for the orientation.');
+      return;
+    }
+    if (!f.capital) {
+      setErr('Please tell us how much capital you are ready to invest.');
       return;
     }
     setSubmitting(true);
@@ -305,15 +319,22 @@ export default function Join() {
         <div className="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-2">
           <div>
             <div className="mb-4 inline-block rounded-full bg-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-wider">
-              Distributor &amp; Reseller Partnership Program
+              Exclusive Distributorship Opportunity
             </div>
             <h1 className="text-3xl font-bold leading-tight sm:text-4xl">
-              {webinar?.headline || 'Build your own food distribution business'}
+              {webinar?.headline || 'Own an exclusive Tasty Food distributorship'}
             </h1>
             <p className="mt-4 text-lg text-green-50">
               {webinar?.description ||
-                'Tasty Food is expanding across the Philippines. Join our free online orientation to see the products, the margins, and whether your territory is still open.'}
+                'A real distribution business with your own protected territory — not a sideline. For partners ready to invest and build. Join the free orientation to see the margins, the numbers, and whether your area is still open.'}
             </p>
+            {/* Capital stated up front — it qualifies serious partners and lets the
+                casual "pang-benta-benta" crowd self-select out before inquiring. */}
+            <div className="mt-5 flex flex-wrap gap-2 text-sm">
+              <span className="rounded-lg bg-white/15 px-3 py-1.5"><b>Reseller</b> · from ₱5,000</span>
+              <span className="rounded-lg bg-white/15 px-3 py-1.5"><b>City</b> · ₱30,000 bond</span>
+              <span className="rounded-lg bg-white/20 px-3 py-1.5 ring-1 ring-white/40"><b>Provincial</b> · ₱100,000 bond</span>
+            </div>
 
             {when && (
               <div className="mt-6 inline-flex items-center gap-3 rounded-xl bg-white/15 px-4 py-3">
@@ -697,6 +718,21 @@ export default function Join() {
                     <option key={i.value} value={i.value}>{i.label} — {i.hint}</option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  How much capital are you ready to invest? <span className="text-brand-600">*</span>
+                </label>
+                <select
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2.5 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                  value={f.capital} onChange={(e) => set('capital', e.target.value)} required
+                >
+                  {CAPITAL.map((c) => (
+                    <option key={c.value} value={c.value} disabled={c.value === ''}>{c.label}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-slate-400">This helps us match you to the right distributorship level.</p>
               </div>
 
               <div>

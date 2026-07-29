@@ -65,6 +65,8 @@ const registerSchema = z.object({
   city: z.string().max(120).optional(),
   province: z.string().max(120).optional(),
   interest: z.enum(INTERESTS).default('UNSURE'),
+  // Capital band they can invest — the key qualifier for serious partners.
+  capital: z.string().max(60).optional(),
   // Which of the offered schedules they picked.
   sessionId: z.string().optional(),
   message: z.string().max(1000).optional(),
@@ -162,6 +164,8 @@ publicRouter.post(
                 note: `Registered for "${webinar.title}"${
                   session ? ` — ${session.scheduledAt.toISOString()}` : ''
                 }. Interested in: ${b.interest}.${
+                  b.capital ? ` Capital: ${b.capital}.` : ''
+                }${
                   fields.message ? ` Message: ${fields.message}` : ''
                 }`,
                 createdById: webinar.createdById,
