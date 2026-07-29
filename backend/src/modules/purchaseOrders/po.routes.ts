@@ -466,18 +466,47 @@ poRouter.post(
   })
 );
 
-// Seller fulfills an APPROVED PO. Trade -> deduct seller inventory + record a
+// Seller marks an APPROVED PO ready. Whether the buyer collects it or the seller
+// delivers depends on the tier: the Principal's goods are PICKED UP at the
+// warehouse by the Provincial; a Provincial/City DELIVERS to its buyer. Drop-ship
+// always ships out, so it is a delivery. The buyer is emailed either way.
+poRouter.post(
+  '/:id/ready',
+  asyncHandler(async (req, res) => {
+    const po = await loadScopedPo(req, req.params.id);
+    requireSeller(req, po);
+    if (po.buyerOrgId === po.sellerOrgId) throw badRequest('A stock-in order does not need a ready step.');
+    if (po.status !== 'APPROVED') throw conflict(`Cannot mark ready a PO in status ${po.status}`);
+
+    const mode: 'PICKUP' | 'DELIVER' =
+      po.distributionType !== 'DROP_SHIP' && po.sellerOrg.type === 'PRINCIPAL' ? 'PICKUP' : 'DELIVER';
+
+    const updated = await prisma.purchaseOrder.update({
+      where: { id: po.id },
+      data: { status: 'READY', readyAt: new Date() },
+    });
+    await notifyBuyerPoStatus(po, mode === 'PICKUP' ? 'READY_PICKUP' : 'READY_DELIVER');
+    res.json(updated);
+  })
+);
+
+// Seller fulfills a READY PO (delivered / picked up). Trade -> deduct seller
 // Sale for the seller. Drop-ship -> still record the Sale, but no stock change.
 poRouter.post(
   '/:id/fulfill',
   asyncHandler(async (req, res) => {
     const po = await loadScopedPo(req, req.params.id);
     requireSeller(req, po);
-    if (po.status !== 'APPROVED') throw conflict(`Cannot fulfill a PO in status ${po.status}`);
 
     // A stock-in PO (Principal restock) has buyer == seller: no stock is
     // deducted and no sale is recorded — it only adds stock on receipt.
     const isStockIn = po.buyerOrgId === po.sellerOrgId;
+    // Distributor orders must pass the READY (ready for pick-up / delivery) step
+    // before fulfilment; a stock-in has no buyer to ready, so it goes straight
+    // from APPROVED.
+    if (isStockIn ? po.status !== 'APPROVED' : po.status !== 'READY') {
+      throw conflict(`Cannot fulfill a PO in status ${po.status} — it must be ${isStockIn ? 'APPROVED' : 'READY'} first.`);
+    }
 
     // Only RETAIL distributors buy on account (Accounts Receivable). Reseller-
     // channel distributors (Provincial/City/Reseller) pay cash.

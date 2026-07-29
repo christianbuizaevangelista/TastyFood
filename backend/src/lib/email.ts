@@ -364,7 +364,11 @@ export async function sendStaffInviteEmail(p: {
 const PO_STATUS: Record<string, { label: string; emoji: string; msg: string }> = {
   APPROVED: { label: 'Approved', emoji: '✅', msg: 'has been approved by your supplier and is being prepared.' },
   CANCELLED: { label: 'Rejected', emoji: '❌', msg: 'was rejected by your supplier. Please contact them for details.' },
-  FULFILLED: { label: 'Fulfilled', emoji: '📦', msg: 'has been fulfilled and is on its way. You can mark it received in the app.' },
+  // The DB status is READY; the notification uses one of these two so the buyer
+  // knows whether to collect the goods or wait for delivery.
+  READY_PICKUP: { label: 'Ready for Pick-up', emoji: '📦', msg: 'is ready for PICK-UP at your supplier’s warehouse. Please arrange to collect it.' },
+  READY_DELIVER: { label: 'Ready for Delivery', emoji: '🚚', msg: 'is ready and will be DELIVERED to you by your supplier.' },
+  FULFILLED: { label: 'Fulfilled', emoji: '📦', msg: 'has been fulfilled and is on its way / handed over. Please mark it received (with the actual quantity) in the app.' },
 };
 export async function sendPoStatusEmail(p: {
   to: string;

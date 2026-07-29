@@ -50,6 +50,7 @@ enum PoStatus {
   DRAFT
   SUBMITTED
   APPROVED
+  READY
   FULFILLED
   PARTIALLY_RECEIVED
   RECEIVED
@@ -356,6 +357,7 @@ model PurchaseOrder {
 
   submittedAt DateTime?
   approvedAt  DateTime?
+  readyAt     DateTime?
   fulfilledAt DateTime?
   receivedAt  DateTime?
 

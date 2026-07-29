@@ -5,6 +5,7 @@ export type PoStatus =
   | 'DRAFT'
   | 'SUBMITTED'
   | 'APPROVED'
+  | 'READY'
   | 'FULFILLED'
   | 'PARTIALLY_RECEIVED'
   | 'RECEIVED'

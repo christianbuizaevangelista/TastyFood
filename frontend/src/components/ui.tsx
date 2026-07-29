@@ -32,6 +32,7 @@ export function KpiCard({ label, value, hint, accent }: { label: string; value: 
 
 const STATUS_STYLES: Record<string, string> = {
   APPROVED: 'bg-green-100 text-green-700',
+  READY: 'bg-sky-100 text-sky-700',
   RECEIVED: 'bg-green-100 text-green-700',
   FULFILLED: 'bg-emerald-100 text-emerald-700',
   PARTIALLY_RECEIVED: 'bg-orange-100 text-orange-700',

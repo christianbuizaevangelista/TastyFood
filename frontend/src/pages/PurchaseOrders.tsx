@@ -75,11 +75,18 @@ function actionsFor(po: PO, myOrgId: string, role: string): { label: string; pat
   const a: { label: string; path: string }[] = [];
   if (isBuyer && po.status === 'DRAFT') a.push({ label: 'Submit', path: 'submit' });
   if (isSeller && po.status === 'SUBMITTED') a.push({ label: 'Approve', path: 'approve' });
-  if (isSeller && po.status === 'APPROVED') a.push({ label: 'Fulfill', path: 'fulfill' });
+  // After approval the seller marks it ready. The Principal's goods are collected
+  // at the warehouse (pick-up); a Provincial/City delivers to its buyer. Drop-ship
+  // always ships out, so it is a delivery.
+  if (isSeller && po.status === 'APPROVED') {
+    const isPickup = po.distributionType !== 'DROP_SHIP' && po.sellerOrg.type === 'PRINCIPAL';
+    a.push({ label: isPickup ? 'Ready for Pick-up' : 'Ready to Deliver', path: 'ready' });
+  }
+  if (isSeller && po.status === 'READY') a.push({ label: 'Fulfill', path: 'fulfill' });
   // Cancel: buyer (pre-fulfillment) OR seller/Principal (any non-terminal stage).
-  const buyerCancel = isBuyer && ['DRAFT', 'SUBMITTED', 'APPROVED'].includes(po.status);
+  const buyerCancel = isBuyer && ['DRAFT', 'SUBMITTED', 'APPROVED', 'READY'].includes(po.status);
   const supplierCancel =
-    (isSeller || isPrincipal) && ['SUBMITTED', 'APPROVED', 'FULFILLED', 'PARTIALLY_RECEIVED'].includes(po.status);
+    (isSeller || isPrincipal) && ['SUBMITTED', 'APPROVED', 'READY', 'FULFILLED', 'PARTIALLY_RECEIVED'].includes(po.status);
   if (buyerCancel || supplierCancel) a.push({ label: 'Cancel', path: 'cancel' });
   return a;
 }
