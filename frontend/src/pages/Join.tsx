@@ -123,7 +123,7 @@ const FAQ = [
   { q: 'How much capital do I need to start?', a: 'A reseller starts with a ₱5,000 minimum initial order. A City distributor posts a ₱30,000 refundable security bond plus a ₱30,000 initial order; a Provincial distributor a ₱100,000 refundable security bond plus a ₱100,000 initial order. The security bond is refundable under the terms of the partnership agreement.' },
   { q: 'Is a territory assigned to me?', a: 'Yes. Qualified distributors are assigned a coverage area, and the channel is structured so provincial, city, and reseller levels do not compete with each other in the same assigned territory.' },
   { q: 'What if my area is already taken?', a: 'Join the orientation anyway — we check territory availability live and can discuss nearby areas or a different partner level that still fits you.' },
-  { q: 'Do I need an existing business?', a: 'No. Resellers only need a valid ID and basic business information. Many of our partners started as home sellers or small store owners.' },
+  { q: 'Who is this partnership for?', a: 'Serious individuals and business owners ready to invest in and run their own distribution territory — with the capital for the security bond and initial order, and the commitment to grow sales in their area. A City or Provincial distributorship is a real business partnership, not a sideline.' },
   { q: 'How do I track my orders and sales?', a: 'Every partner gets free access to the Tasty Food Distribution Management System — order online, track stock and sales, and see your performance in one dashboard.' },
   { q: 'Is the orientation really free?', a: 'Yes, completely free and online via Zoom. There is no obligation to sign up afterwards.' },
 ];
