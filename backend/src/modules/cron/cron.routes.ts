@@ -2,7 +2,12 @@ import { Router } from 'express';
 import { prisma } from '../../lib/prisma';
 import { asyncHandler } from '../../lib/http';
 import { unauthorized } from '../../lib/errors';
-import { sendWebinarReminderEmail, WebinarReminderKind, appOrigin } from '../../lib/email';
+import {
+  sendWebinarReminderEmail,
+  sendWebinarNoShowReinviteEmail,
+  WebinarReminderKind,
+  appOrigin,
+} from '../../lib/email';
 import {
   sendAppointmentMorningEmail,
   sendOwnerDayBriefEmail,
@@ -117,6 +122,71 @@ cronRouter.all(
           await prisma.webinarRegistration.update({
             where: { id: r.id },
             data: { [due.field]: null },
+          });
+        }
+      }
+    }
+
+    // ---- No-show re-invitations ------------------------------------------
+    // The morning after a session, anyone who registered but was never marked
+    // as attended gets one automatic re-invitation to the next open schedule.
+    // Stamped once (reinviteAt) so a repeat run never mails them twice, and
+    // bounded to sessions that ended in the last few days so a first deploy
+    // does not reach back over long-past no-shows. Depends on the owner having
+    // ticked attendance by the time this runs (08:00 Manila).
+    const REINVITE_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000; // look back 3 days
+    const REINVITE_MIN_AGE_MS = 2 * 60 * 60 * 1000; // only once ~2h past start
+    const endedSessions = await prisma.webinarSession.findMany({
+      where: {
+        isActive: true,
+        scheduledAt: {
+          gte: new Date(now.getTime() - REINVITE_MAX_AGE_MS),
+          lte: new Date(now.getTime() - REINVITE_MIN_AGE_MS),
+        },
+      },
+      include: { webinar: true, registrations: true },
+    });
+
+    // No-shows are pointed at the soonest still-open session of the same
+    // webinar. Cached per webinar so each is looked up only once.
+    const nextOpenByWebinar = new Map<string, Date | null>();
+    async function nextOpenSession(webinarId: string): Promise<Date | null> {
+      if (nextOpenByWebinar.has(webinarId)) return nextOpenByWebinar.get(webinarId)!;
+      const nxt = await prisma.webinarSession.findFirst({
+        where: { webinarId, isActive: true, scheduledAt: { gt: now } },
+        orderBy: { scheduledAt: 'asc' },
+        select: { scheduledAt: true },
+      });
+      const at = nxt?.scheduledAt ?? null;
+      nextOpenByWebinar.set(webinarId, at);
+      return at;
+    }
+
+    for (const s of endedSessions) {
+      for (const r of s.registrations) {
+        if (r.attended || r.reinviteAt) continue;
+
+        // Stamp BEFORE sending — a duplicate re-invite is worse than a missed
+        // one, so a send that throws after the mail left is not retried.
+        await prisma.webinarRegistration.update({
+          where: { id: r.id },
+          data: { reinviteAt: now },
+        });
+
+        const nextAt = await nextOpenSession(s.webinarId);
+        const out = await sendWebinarNoShowReinviteEmail({
+          to: r.email,
+          name: r.name,
+          title: s.webinar.title,
+          nextAt,
+        });
+        results.push({ kind: 'NO_SHOW_REINVITE', to: r.email, ...out });
+
+        // A send that never left is retried on the next run.
+        if (!out.sent) {
+          await prisma.webinarRegistration.update({
+            where: { id: r.id },
+            data: { reinviteAt: null },
           });
         }
       }

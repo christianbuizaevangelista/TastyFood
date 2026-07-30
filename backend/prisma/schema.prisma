@@ -972,6 +972,9 @@ model WebinarRegistration {
   remindLateAt DateTime?
   // The day-after thank-you and follow-up, sent only to people who attended.
   thankYouAt   DateTime?
+  // The automatic re-invitation sent to a no-show after their session ends.
+  // Stamped once so a repeated cron run never re-invites the same person twice.
+  reinviteAt   DateTime?
   createdAt    DateTime        @default(now())
 
   // One sign-up per email per webinar; re-submitting updates the existing row.

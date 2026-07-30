@@ -1004,3 +1004,73 @@ export async function sendWebinarReminderEmail(p: {
     return { sent: false, reason: err?.message ?? 'send failed' };
   }
 }
+
+// Sent automatically the morning after a session to anyone who registered but
+// was not marked as having attended. Warm, corporate tone: we still want them,
+// here is the next schedule, and a private call is on the table if none fit.
+export async function sendWebinarNoShowReinviteEmail(p: {
+  to: string;
+  name: string;
+  title: string;
+  // The soonest upcoming schedule still open, if any.
+  nextAt?: Date | null;
+}): Promise<{ sent: boolean; reason?: string }> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM || 'Tasty Food <onboarding@resend.dev>';
+  if (!p.to) return { sent: false, reason: 'no recipient email' };
+  if (!apiKey) {
+    console.log(`[email] RESEND_API_KEY not set — no-show re-invite for ${p.to}`);
+    return { sent: false, reason: 'RESEND_API_KEY not configured' };
+  }
+
+  const when = p.nextAt
+    ? new Date(p.nextAt).toLocaleString('en-PH', {
+        dateStyle: 'full',
+        timeStyle: 'short',
+        timeZone: 'Asia/Manila',
+      })
+    : null;
+
+  const joinUrl = `${appOrigin()}/join`;
+
+  const schedule = when
+    ? `<p>Our next orientation is on <strong>${when}</strong> (Philippine time).
+       Reserve your slot below and we will send your joining details right away.</p>`
+    : `<p>Reserve a slot for the next available orientation below and we will send
+       your joining details right away.</p>`;
+
+  const html = emailShell(
+    'Distributor Orientation',
+    `<h2 style="margin:0 0 8px;color:#0b9444;font-size:18px">We missed you 👋</h2>
+     <p>Hi ${p.name}, we noticed you were not able to join <strong>${p.title}</strong>.
+     No worries — we have saved a place for you.</p>
+     ${schedule}
+     <p style="text-align:center;margin:22px 0">
+       <a href="${joinUrl}" style="background:#0b9444;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:bold;display:inline-block">Reserve my slot</a>
+     </p>
+     <p style="color:#666;font-size:14px">If none of the schedules work for you, simply reply to this
+     email and we will arrange a one-on-one call at a time that suits you.</p>
+     <p style="color:#888;font-size:13px">We look forward to walking you through the partnership.</p>`
+  );
+
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from,
+        to: [p.to],
+        subject: `We missed you — your next Tasty Food orientation`,
+        html,
+      }),
+    });
+    if (!res.ok) {
+      console.error('[email] Resend error', res.status, await res.text());
+      return { sent: false, reason: `Resend responded ${res.status}` };
+    }
+    return { sent: true };
+  } catch (err: any) {
+    console.error('[email] no-show re-invite send failed', err?.message);
+    return { sent: false, reason: err?.message ?? 'send failed' };
+  }
+}
