@@ -303,8 +303,12 @@ orgsRouter.post(
 );
 
 // When a reseller-channel account joins or leaves the network, announce it to
-// the OTHER two tiers across the whole network. Retail-segment accounts are a
-// separate channel — they neither trigger nor receive these.
+// the OTHER two tiers — but only to accounts on the SAME vertical branch as the
+// changed account (its upline and downline), never to siblings or unrelated
+// branches. This keeps parallel groups unaware of one another: a Provincial
+// hears nothing about a fellow Provincial's account or anything beneath it.
+// Retail-segment accounts are a separate channel — they neither trigger nor
+// receive these.
 const OTHER_TIERS: Record<string, OrgType[]> = {
   PROVINCIAL: ['CITY', 'RESELLER'],
   CITY: ['PROVINCIAL', 'RESELLER'],
@@ -319,8 +323,18 @@ async function notifyNetworkChange(
   const tiers = OTHER_TIERS[org.type];
   if (!tiers) return;
 
+  // The branch this account belongs to: everyone above it (upline) and below it
+  // (downline). Anyone outside this set is on a parallel branch and must not be
+  // told. getDescendantOrgIds includes the org itself; the NOT below drops it.
+  const [ancestors, descendants] = await Promise.all([
+    getAncestorOrgIds(org.id),
+    getDescendantOrgIds(org.id),
+  ]);
+  const branch = [...new Set([...ancestors, ...descendants])];
+
   const audience = await prisma.organization.findMany({
     where: {
+      id: { in: branch },
       type: { in: tiers },
       segment: { not: 'RETAIL' },
       status: 'APPROVED',
