@@ -213,6 +213,9 @@ model User {
   // Invite flow for staff to set their own password.
   inviteToken         String?      @unique
   inviteExpires       DateTime?
+  // When the account holder accepted the Terms & Conditions, captured the
+  // moment they set their password from the invite link. Null = not recorded.
+  termsAcceptedAt     DateTime?
   // Brute-force protection: consecutive failed logins and a temporary lock.
   failedLoginAttempts Int          @default(0)
   lockedUntil         DateTime?

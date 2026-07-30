@@ -156,8 +156,16 @@ authRouter.get(
 authRouter.post(
   '/accept-invite',
   asyncHandler(async (req, res) => {
-    const { token, password } = z
-      .object({ token: z.string().min(1), password: z.string().min(6) })
+    const { token, password, acceptedTerms } = z
+      .object({
+        token: z.string().min(1),
+        password: z.string().min(6),
+        // The Terms & Conditions must be accepted before an account can be
+        // activated. Enforced here too — never trust the checkbox alone.
+        acceptedTerms: z.literal(true, {
+          errorMap: () => ({ message: 'You must accept the Terms & Conditions to continue' }),
+        }),
+      })
       .parse(req.body);
     const user = await prisma.user.findUnique({ where: { inviteToken: token } });
     if (!user || !user.inviteExpires || user.inviteExpires < new Date()) {
@@ -171,6 +179,7 @@ authRouter.post(
         isActive: true,
         inviteToken: null,
         inviteExpires: null,
+        termsAcceptedAt: new Date(),
       },
     });
     res.json({ ok: true });
