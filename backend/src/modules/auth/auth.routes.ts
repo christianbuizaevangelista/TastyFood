@@ -156,14 +156,19 @@ authRouter.get(
 authRouter.post(
   '/accept-invite',
   asyncHandler(async (req, res) => {
-    const { token, password, acceptedTerms } = z
+    // Every required document must be acknowledged before an account can be
+    // activated. Enforced here too — never trust the checkboxes alone.
+    const mustAccept = (label: string) =>
+      z.literal(true, { errorMap: () => ({ message: `Please confirm: ${label}` }) });
+    const { token, password, acknowledgements } = z
       .object({
         token: z.string().min(1),
         password: z.string().min(6),
-        // The Terms & Conditions must be accepted before an account can be
-        // activated. Enforced here too — never trust the checkbox alone.
-        acceptedTerms: z.literal(true, {
-          errorMap: () => ({ message: 'You must accept the Terms & Conditions to continue' }),
+        acknowledgements: z.object({
+          operationsManual: mustAccept('you have read the Distributor Operations Manual'),
+          codeOfConduct: mustAccept('you have read the Distributor Code of Conduct'),
+          privacyPolicy: mustAccept('you have read the Privacy Policy'),
+          legallyBound: mustAccept('you agree to be legally bound by the above documents'),
         }),
       })
       .parse(req.body);
@@ -172,6 +177,7 @@ authRouter.post(
       throw forbidden('This invite link is invalid or has expired');
     }
     const { hashPassword } = await import('../../lib/auth');
+    const acceptedAt = new Date();
     await prisma.user.update({
       where: { id: user.id },
       data: {
@@ -179,7 +185,17 @@ authRouter.post(
         isActive: true,
         inviteToken: null,
         inviteExpires: null,
-        termsAcceptedAt: new Date(),
+        termsAcceptedAt: acceptedAt,
+        // Electronic acceptance record (documents + versions acknowledged).
+        acceptedDocuments: {
+          acceptedAt: acceptedAt.toISOString(),
+          documents: [
+            { key: 'operations_manual', title: 'Distributor Operations Manual' },
+            { key: 'code_of_conduct', title: 'Distributor Code of Conduct' },
+            { key: 'privacy_policy', title: 'Privacy Policy', code: 'PP-001', version: '1.0' },
+          ],
+          legallyBound: true,
+        },
       },
     });
     res.json({ ok: true });
