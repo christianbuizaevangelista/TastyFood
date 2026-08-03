@@ -96,7 +96,7 @@ export const PRIVACY_POLICY = {
     {
       heading: '11. Contact Information',
       paras: [
-        'Questions, requests, or concerns regarding this Privacy Policy may be directed to Tasty Food Manufacturing Inc., 9109 Gen. Antonio, Purok 10, Bacao II, General Trias City, Cavite.',
+        'Questions, requests, or concerns regarding this Privacy Policy may be directed to Tasty Food Manufacturing Inc., 171 Purok 5, Brgy. Banay Banay, Amadeo, Cavite.',
       ],
     },
     {
