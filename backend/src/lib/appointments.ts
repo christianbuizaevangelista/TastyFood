@@ -3,14 +3,12 @@
 // here so the two can never drift apart.
 
 // Office visits happen at the plant. Both the address and the maps link are
-// read from here so the booking form and the emails never drift apart.
+// read from here so the booking form and the emails never drift apart. The
+// maps link is the company's own precise pin — an address search can land on
+// the wrong side of a long street.
 export const OFFICE_ADDRESS =
   '171 Purok 5, Brgy. Banay Banay, Amadeo, Cavite';
-// Address-based Google Maps search for the new location. Swap in the company's
-// own precise pin (a short maps.app.goo.gl link) once available — a search can
-// land on the wrong side of a long street.
-export const OFFICE_MAPS_URL =
-  'https://www.google.com/maps/search/?api=1&query=171+Purok+5+Brgy+Banay+Banay+Amadeo+Cavite';
+export const OFFICE_MAPS_URL = 'https://maps.app.goo.gl/WT6QXNCKQGFpqXCAA';
 
 // The standing Zoom room for applicant meetings. It lives in an environment
 // variable rather than in this file because the link carries its own passcode
