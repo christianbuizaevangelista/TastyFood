@@ -2,12 +2,15 @@
 // office actually is. Both the public booking form and the emails read from
 // here so the two can never drift apart.
 
-// Office visits happen at the plant. The maps link is the company's own pin —
-// an address typed into a phone at a junction is how people get lost, and a
-// search by address can land on the wrong side of a long street.
+// Office visits happen at the plant. Both the address and the maps link are
+// read from here so the booking form and the emails never drift apart.
 export const OFFICE_ADDRESS =
-  '9109 General Antonio Street, Purok 10, Bacao 2, General Trias City, Cavite 4107';
-export const OFFICE_MAPS_URL = 'https://maps.app.goo.gl/8XcTD66EHXueKu9n8';
+  '171 Purok 5, Brgy. Banay Banay, Amadeo, Cavite';
+// Address-based Google Maps search for the new location. Swap in the company's
+// own precise pin (a short maps.app.goo.gl link) once available — a search can
+// land on the wrong side of a long street.
+export const OFFICE_MAPS_URL =
+  'https://www.google.com/maps/search/?api=1&query=171+Purok+5+Brgy+Banay+Banay+Amadeo+Cavite';
 
 // The standing Zoom room for applicant meetings. It lives in an environment
 // variable rather than in this file because the link carries its own passcode
